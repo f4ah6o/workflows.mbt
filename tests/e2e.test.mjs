@@ -920,24 +920,24 @@ test("subscribe exposes step and retry attempt event shapes", async (t) => {
     "step_completed",
     "workflow_completed",
   ]);
-  assert.equal(events[0].stepName, "retry-me");
+  assert.equal(events[0].stepName, "retry-me-1");
   assert.deepEqual(
     events.filter((event) => event.type === "attempt_started").map(
       ({ stepName, attempt }) => ({ stepName, attempt }),
     ),
     [
-      { stepName: "retry-me", attempt: 1 },
-      { stepName: "retry-me", attempt: 2 },
-      { stepName: "retry-me", attempt: 3 },
+      { stepName: "retry-me-1", attempt: 1 },
+      { stepName: "retry-me-1", attempt: 2 },
+      { stepName: "retry-me-1", attempt: 3 },
     ],
   );
   for (const event of events.filter((event) => event.type === "attempt_errored")) {
-    assert.equal(event.stepName, "retry-me");
+    assert.equal(event.stepName, "retry-me-1");
     assert.equal(event.error.name, "Error");
     assert.ok(event.retryDelayMs >= 0 && event.retryDelayMs <= 80);
   }
   assert.equal(events.at(-2).type, "step_completed");
-  assert.equal(events.at(-2).stepName, "retry-me");
+  assert.equal(events.at(-2).stepName, "retry-me-1");
   assert.deepEqual(events.at(-2).output, { attempt: 3 });
 });
 
@@ -957,7 +957,7 @@ test("subscribe exposes normalized sleep and wait event metadata", async (t) => 
     filter: ["sleep_started", "sleep_completed", "workflow_completed"],
   });
   assert.equal(sleepEvents[0].type, "sleep_started");
-  assert.equal(sleepEvents[0].stepName, "pause");
+  assert.equal(sleepEvents[0].stepName, "pause-1");
   assert.equal(sleepEvents[0].durationMs, 5);
   assert.equal(sleepEvents[1].type, "sleep_completed");
 
@@ -975,8 +975,8 @@ test("subscribe exposes normalized sleep and wait event metadata", async (t) => 
       type, stepName, eventType,
     })),
     [
-      { type: "wait_started", stepName: "approval", eventType: "approved" },
-      { type: "wait_completed", stepName: "approval", eventType: undefined },
+      { type: "wait_started", stepName: "approval-1", eventType: "approved" },
+      { type: "wait_completed", stepName: "approval-1", eventType: undefined },
       { type: "workflow_completed", stepName: undefined, eventType: undefined },
     ],
   );
@@ -1022,7 +1022,7 @@ test("subscribe exposes rollback step and attempt lifecycle in reverse order", a
     events.filter((event) => event.type === "rollback_step_started").map(
       (event) => event.stepName,
     ),
-    ["auto-failing", "auto-first"],
+    ["auto-failing-1", "auto-first-1"],
   );
   assert.equal(events.at(-1).error.message, "automatic failure");
 });
