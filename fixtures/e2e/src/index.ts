@@ -330,6 +330,9 @@ export class WrappedRaceWorkflow extends WorkflowEntrypoint<
       ]);
     });
     await step.sleep("race-pause", event.payload.sleepMs);
-    return { winner };
+    return await step.do("race-after-replay", async ({ step: current }) => ({
+      winner,
+      count: current.count,
+    }));
   }
 }
