@@ -70,7 +70,11 @@ function mapEvent(row, publicInstanceId) {
         ...base,
         type: "step_completed",
         stepName: detail.name,
-        ...(detail.output == null ? {} : { output: decodeDurableValue(detail.output) }),
+        ...(detail.redacted
+          ? { output: "[REDACTED]" }
+          : detail.output == null
+            ? {}
+            : { output: decodeDurableValue(detail.output) }),
       };
     case "step.errored":
       return { ...base, type: "step_errored", stepName: detail.name };
