@@ -25,6 +25,7 @@ export class SQLiteStorage extends Storage {
       );
       CREATE TABLE IF NOT EXISTS instances (
         id TEXT PRIMARY KEY,
+        public_id TEXT NOT NULL,
         workflow_name TEXT NOT NULL,
         status TEXT NOT NULL,
         payload TEXT NOT NULL,
@@ -151,6 +152,13 @@ export class SQLiteStorage extends Storage {
         this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
       }
     };
+    ensureColumn("instances", "public_id", "TEXT");
+    this.db.prepare(
+      "UPDATE instances SET public_id=id WHERE public_id IS NULL",
+    ).run();
+    this.db.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_instances_workflow_public_id ON instances(workflow_name, public_id)",
+    );
     ensureColumn("instances", "rollback_outcome", "TEXT");
     ensureColumn("instances", "rollback_error", "TEXT");
     ensureColumn("instances", "rollback_cause", "TEXT");
@@ -186,23 +194,31 @@ export class SQLiteStorage extends Storage {
     schedule = null,
     retention = null,
   }) {
+    if (this.getInstanceByPublic(workflowName, id)) {
+      const error = new Error(`Workflow instance already exists: ${id}`);
+      error.name = "WorkflowInstanceAlreadyExistsError";
+      throw error;
+    }
+    const storageId = this.getInstance(id)
+      ? `wf:${encodeURIComponent(workflowName)}:${id}`
+      : id;
     const now = Date.now();
     this.db.prepare(`
       INSERT INTO instances(
-        id, workflow_name, status, payload, schedule_cron, scheduled_time,
+        id, public_id, workflow_name, status, payload, schedule_cron, scheduled_time,
         success_retention_ms, error_retention_ms, expires_at,
         created_at, updated_at
       )
-      VALUES(?, ?, 'queued', ?, ?, ?, ?, ?, NULL, ?, ?)
+      VALUES(?, ?, ?, 'queued', ?, ?, ?, ?, ?, NULL, ?, ?)
     `).run(
-      id, workflowName, payload,
+      storageId, id, workflowName, payload,
       schedule?.cron ?? null, schedule?.scheduledTime ?? null,
       retention?.successRetentionMs ?? null,
       retention?.errorRetentionMs ?? null,
       now, now,
     );
-    this.log(id, "instance.created", null);
-    return this.getInstance(id);
+    this.log(storageId, "instance.created", null);
+    return this.getInstance(storageId);
   }
 
   claimScheduledInstance({
@@ -221,7 +237,7 @@ export class SQLiteStorage extends Storage {
         return { created: false, id: existing.instance_id };
       }
 
-      this.createInstance({
+      const instance = this.createInstance({
         id,
         workflowName,
         payload,
@@ -231,13 +247,13 @@ export class SQLiteStorage extends Storage {
         INSERT INTO scheduled_runs(
           workflow_name, cron, scheduled_time, instance_id, created_at
         ) VALUES(?, ?, ?, ?, ?)
-      `).run(workflowName, cron, scheduledTime, id, Date.now());
+      `).run(workflowName, cron, scheduledTime, instance.id, Date.now());
       this.log(
-        id,
+        instance.id,
         "instance.scheduled",
         JSON.stringify({ cron, scheduledTime }),
       );
-      return { created: true, id };
+      return { created: true, id: instance.public_id };
     })();
   }
 
@@ -265,6 +281,18 @@ export class SQLiteStorage extends Storage {
 
   getInstance(id) {
     return this.db.prepare("SELECT * FROM instances WHERE id = ?").get(id) ?? null;
+  }
+
+  getInstanceByPublic(workflowName, publicId) {
+    return this.db.prepare(
+      "SELECT * FROM instances WHERE workflow_name=? AND public_id=?",
+    ).get(workflowName, publicId) ?? null;
+  }
+
+  findInstancesByPublic(publicId) {
+    return this.db.prepare(
+      "SELECT * FROM instances WHERE public_id=? ORDER BY created_at",
+    ).all(publicId);
   }
 
   listInstances(workflowName) {
