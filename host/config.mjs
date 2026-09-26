@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { parse } from "jsonc-parser";
+import { loadLocalDevEnv } from "./env.mjs";
 
 function readJsonc(path) {
   const errors = [];
@@ -30,21 +31,37 @@ export function loadProjectConfig(configPath = "wrangler.jsonc", overrides = {})
     overrides.storagePath ??
     (isAbsolute(configuredStorage) ? configuredStorage : join(root, configuredStorage));
 
+  const requiredSecrets = Array.isArray(wrangler?.secrets?.required)
+    ? wrangler.secrets.required
+    : null;
+  const localDevEnv = loadLocalDevEnv(root, { requiredSecrets });
+
   return {
     root,
     configPath: absoluteConfig,
     main: resolve(root, wrangler.main),
     name: wrangler.name ?? "workflows-mbt-project",
     compatibilityDate: wrangler.compatibility_date ?? null,
+    compatibilityFlags: Array.isArray(wrangler.compatibility_flags)
+      ? wrangler.compatibility_flags
+      : [],
+    vars: wrangler.vars && typeof wrangler.vars === "object" ? wrangler.vars : {},
+    localDevEnv,
+    requiredSecrets,
     workflows: wrangler.workflows.map((workflow) => ({
       name: workflow.name,
       binding: workflow.binding,
       className: workflow.class_name,
+      schedules: Array.isArray(workflow.schedules) ? workflow.schedules : [],
+      defaultRetention: workflow.default_retention ?? null,
     })),
     storagePath: resolve(storagePath),
     buildDir: resolve(overrides.buildDir ?? join(root, ".workflows/bundles")),
     ignoredWranglerFields: Object.keys(wrangler).filter(
-      (key) => !["name", "main", "compatibility_date", "workflows"].includes(key),
+      (key) => ![
+        "name", "main", "compatibility_date", "compatibility_flags",
+        "workflows", "vars", "secrets",
+      ].includes(key),
     ),
   };
 }

@@ -32,12 +32,7 @@ export class WorkflowStep {
     if (typeof callback !== "function") {
       throw new TypeError("step.do requires a callback");
     }
-    if (rollbackOptions?.rollback) {
-      throw new UnsupportedError(
-        "Rollback handlers are not implemented in workflows.mbt v0.1",
-      );
-    }
-    return await context().stepDo(name, config, callback);
+    return await context().stepDo(name, config, callback, rollbackOptions ?? null);
   }
 
   async sleep(name, duration) {

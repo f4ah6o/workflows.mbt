@@ -22,6 +22,88 @@
       "name": "duplicate",
       "binding": "DUPLICATE",
       "class_name": "DuplicateWorkflow"
+    },
+    {
+      "name": "parallel",
+      "binding": "PARALLEL",
+      "class_name": "ParallelWorkflow"
+    },
+    {
+      "name": "parallel-restart",
+      "binding": "PARALLEL_RESTART",
+      "class_name": "ParallelRestartWorkflow"
+    },
+    {
+      "name": "promise-combinators",
+      "binding": "PROMISE_COMBINATORS",
+      "class_name": "PromiseCombinatorsWorkflow"
+    },
+    {
+      "name": "rollback",
+      "binding": "ROLLBACK",
+      "class_name": "RollbackWorkflow"
+    },
+    {
+      "name": "scheduled",
+      "binding": "SCHEDULED",
+      "class_name": "ScheduledWorkflow",
+      "schedules": [
+        "* * * * *"
+      ]
+    },
+    {
+      "name": "retained",
+      "binding": "RETAINED",
+      "class_name": "DuplicateWorkflow",
+      "default_retention": {
+        "success_retention": "40 milliseconds",
+        "error_retention": "60 milliseconds"
+      }
+    },
+    {
+      "name": "error",
+      "binding": "ERROR",
+      "class_name": "ErrorWorkflow"
+    },
+    {
+      "name": "pause",
+      "binding": "PAUSE",
+      "class_name": "PauseWorkflow"
+    },
+    {
+      "name": "automatic-rollback",
+      "binding": "AUTOMATIC_ROLLBACK",
+      "class_name": "AutomaticRollbackWorkflow"
+    },
+    {
+      "name": "structured-replay",
+      "binding": "STRUCTURED_REPLAY",
+      "class_name": "StructuredReplayWorkflow"
+    },
+    {
+      "name": "wrapped-race",
+      "binding": "WRAPPED_RACE",
+      "class_name": "WrappedRaceWorkflow"
+    },
+    {
+      "name": "sensitive",
+      "binding": "SENSITIVE",
+      "class_name": "SensitiveWorkflow"
+    },
+    {
+      "name": "default-config",
+      "binding": "DEFAULT_CONFIG",
+      "class_name": "DefaultConfigWorkflow"
+    },
+    {
+      "name": "parallel-wait",
+      "binding": "PARALLEL_WAIT",
+      "class_name": "ParallelWaitWorkflow"
+    },
+    {
+      "name": "self-delete",
+      "binding": "SELF_DELETE",
+      "class_name": "SelfDeleteWorkflow"
     }
   ]
 }

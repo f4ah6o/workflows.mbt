@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
@@ -25,11 +26,21 @@ export class SQLiteStorage extends Storage {
       );
       CREATE TABLE IF NOT EXISTS instances (
         id TEXT PRIMARY KEY,
+        public_id TEXT NOT NULL,
         workflow_name TEXT NOT NULL,
         status TEXT NOT NULL,
         payload TEXT NOT NULL,
         output TEXT,
         error TEXT,
+        rollback_outcome TEXT,
+        rollback_error TEXT,
+        rollback_cause TEXT,
+        rollback_terminal_status TEXT,
+        schedule_cron TEXT,
+        scheduled_time INTEGER,
+        success_retention_ms INTEGER,
+        error_retention_ms INTEGER,
+        expires_at INTEGER,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         FOREIGN KEY(workflow_name) REFERENCES workflows(name)
@@ -88,10 +99,33 @@ export class SQLiteStorage extends Storage {
         step_type TEXT NOT NULL,
         step_name TEXT NOT NULL,
         step_count INTEGER NOT NULL,
+        ordinal INTEGER,
         state TEXT NOT NULL,
         config TEXT,
+        output TEXT,
+        step_error TEXT,
+        attempt INTEGER NOT NULL DEFAULT 0,
+        wake_at INTEGER,
+        rollback_error TEXT,
         created_at INTEGER NOT NULL,
+        completed_at INTEGER,
         PRIMARY KEY(instance_id, step_type, step_name, step_count),
+        FOREIGN KEY(instance_id) REFERENCES instances(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS workflow_schedules (
+        workflow_name TEXT NOT NULL,
+        cron TEXT NOT NULL,
+        last_checked_at INTEGER NOT NULL,
+        PRIMARY KEY(workflow_name, cron),
+        FOREIGN KEY(workflow_name) REFERENCES workflows(name)
+      );
+      CREATE TABLE IF NOT EXISTS scheduled_runs (
+        workflow_name TEXT NOT NULL,
+        cron TEXT NOT NULL,
+        scheduled_time INTEGER NOT NULL,
+        instance_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY(workflow_name, cron, scheduled_time),
         FOREIGN KEY(instance_id) REFERENCES instances(id) ON DELETE CASCADE
       );
       CREATE TABLE IF NOT EXISTS execution_events (
@@ -106,7 +140,42 @@ export class SQLiteStorage extends Storage {
       CREATE INDEX IF NOT EXISTS idx_timers_wake ON timers(wake_at);
       CREATE INDEX IF NOT EXISTS idx_events_unconsumed ON events(instance_id, type, consumed_at);
       CREATE INDEX IF NOT EXISTS idx_steps_ordinal ON steps(instance_id, ordinal);
+      CREATE INDEX IF NOT EXISTS idx_rollback_runnable
+        ON rollback_registrations(instance_id, state, wake_at);
     `);
+    this.#migrate();
+  }
+
+  #migrate() {
+    const ensureColumn = (table, name, definition) => {
+      const columns = this.db.prepare(`PRAGMA table_info(${table})`).all();
+      if (!columns.some((column) => column.name === name)) {
+        this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
+      }
+    };
+    ensureColumn("instances", "public_id", "TEXT");
+    this.db.prepare(
+      "UPDATE instances SET public_id=id WHERE public_id IS NULL",
+    ).run();
+    this.db.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_instances_workflow_public_id ON instances(workflow_name, public_id)",
+    );
+    ensureColumn("instances", "rollback_outcome", "TEXT");
+    ensureColumn("instances", "rollback_error", "TEXT");
+    ensureColumn("instances", "rollback_cause", "TEXT");
+    ensureColumn("instances", "rollback_terminal_status", "TEXT");
+    ensureColumn("instances", "schedule_cron", "TEXT");
+    ensureColumn("instances", "scheduled_time", "INTEGER");
+    ensureColumn("instances", "success_retention_ms", "INTEGER");
+    ensureColumn("instances", "error_retention_ms", "INTEGER");
+    ensureColumn("instances", "expires_at", "INTEGER");
+    ensureColumn("rollback_registrations", "ordinal", "INTEGER");
+    ensureColumn("rollback_registrations", "output", "TEXT");
+    ensureColumn("rollback_registrations", "step_error", "TEXT");
+    ensureColumn("rollback_registrations", "attempt", "INTEGER NOT NULL DEFAULT 0");
+    ensureColumn("rollback_registrations", "wake_at", "INTEGER");
+    ensureColumn("rollback_registrations", "rollback_error", "TEXT");
+    ensureColumn("rollback_registrations", "completed_at", "INTEGER");
   }
 
   registerWorkflow(workflow) {
@@ -119,21 +188,119 @@ export class SQLiteStorage extends Storage {
     `).run({ ...workflow, now: Date.now() });
   }
 
-  createInstance({ id, workflowName, payload }) {
+  createInstance({
+    id,
+    workflowName,
+    payload,
+    schedule = null,
+    retention = null,
+  }) {
+    if (this.getInstanceByPublic(workflowName, id)) {
+      const error = new Error(`Workflow instance already exists: ${id}`);
+      error.name = "WorkflowInstanceAlreadyExistsError";
+      throw error;
+    }
+    let storageId = id;
+    if (this.getInstance(storageId)) {
+      do {
+        storageId = `wf_${randomUUID()}`;
+      } while (this.getInstance(storageId));
+    }
     const now = Date.now();
     this.db.prepare(`
-      INSERT INTO instances(id, workflow_name, status, payload, created_at, updated_at)
-      VALUES(?, ?, 'queued', ?, ?, ?)
-    `).run(id, workflowName, payload, now, now);
-    this.log(id, "instance.created", null);
-    return this.getInstance(id);
+      INSERT INTO instances(
+        id, public_id, workflow_name, status, payload, schedule_cron, scheduled_time,
+        success_retention_ms, error_retention_ms, expires_at,
+        created_at, updated_at
+      )
+      VALUES(?, ?, ?, 'queued', ?, ?, ?, ?, ?, NULL, ?, ?)
+    `).run(
+      storageId, id, workflowName, payload,
+      schedule?.cron ?? null, schedule?.scheduledTime ?? null,
+      retention?.successRetentionMs ?? null,
+      retention?.errorRetentionMs ?? null,
+      now, now,
+    );
+    this.log(storageId, "instance.created", null);
+    return this.getInstance(storageId);
+  }
+
+  claimScheduledInstance({
+    id,
+    workflowName,
+    payload,
+    cron,
+    scheduledTime,
+  }) {
+    return this.db.transaction(() => {
+      const existing = this.db.prepare(`
+        SELECT instance_id FROM scheduled_runs
+        WHERE workflow_name=? AND cron=? AND scheduled_time=?
+      `).get(workflowName, cron, scheduledTime);
+      if (existing) {
+        return { created: false, id: existing.instance_id };
+      }
+
+      const instance = this.createInstance({
+        id,
+        workflowName,
+        payload,
+        schedule: { cron, scheduledTime },
+      });
+      this.db.prepare(`
+        INSERT INTO scheduled_runs(
+          workflow_name, cron, scheduled_time, instance_id, created_at
+        ) VALUES(?, ?, ?, ?, ?)
+      `).run(workflowName, cron, scheduledTime, instance.id, Date.now());
+      this.log(
+        instance.id,
+        "instance.scheduled",
+        JSON.stringify({ cron, scheduledTime }),
+      );
+      return { created: true, id: instance.public_id };
+    })();
+  }
+
+  getScheduleCursor(workflowName, cron) {
+    return this.db.prepare(`
+      SELECT last_checked_at FROM workflow_schedules
+      WHERE workflow_name=? AND cron=?
+    `).get(workflowName, cron)?.last_checked_at ?? null;
+  }
+
+  setScheduleCursor(workflowName, cron, lastCheckedAt) {
+    this.db.prepare(`
+      INSERT INTO workflow_schedules(workflow_name, cron, last_checked_at)
+      VALUES(?, ?, ?)
+      ON CONFLICT(workflow_name, cron)
+      DO UPDATE SET last_checked_at=excluded.last_checked_at
+    `).run(workflowName, cron, Math.trunc(lastCheckedAt));
+  }
+
+  deleteExpired(now = Date.now()) {
+    return this.db.prepare(
+      "DELETE FROM instances WHERE expires_at IS NOT NULL AND expires_at <= ?",
+    ).run(now).changes;
   }
 
   getInstance(id) {
     return this.db.prepare("SELECT * FROM instances WHERE id = ?").get(id) ?? null;
   }
 
+  getInstanceByPublic(workflowName, publicId) {
+    return this.db.prepare(
+      "SELECT * FROM instances WHERE workflow_name=? AND public_id=?",
+    ).get(workflowName, publicId) ?? null;
+  }
+
+  findInstancesByPublic(publicId) {
+    return this.db.prepare(
+      "SELECT * FROM instances WHERE public_id=? ORDER BY created_at",
+    ).all(publicId);
+  }
+
   listInstances(workflowName) {
+    this.deleteExpired(Date.now());
     return this.db.prepare(
       "SELECT * FROM instances WHERE workflow_name = ? ORDER BY created_at",
     ).all(workflowName);
@@ -142,17 +309,37 @@ export class SQLiteStorage extends Storage {
   setInstanceStatus(id, status, { output = undefined, error = undefined } = {}) {
     const current = this.getInstance(id);
     if (!current) throw new Error(`Unknown workflow instance: ${id}`);
+    const nextOutput = output === undefined ? current.output : output;
+    const nextError = error === undefined ? current.error : error;
+    const now = Date.now();
+    let expiresAt = current.expires_at;
+    if (status === "complete" || status === "terminated") {
+      expiresAt = current.success_retention_ms == null
+        ? null
+        : now + current.success_retention_ms;
+    } else if (status === "errored") {
+      expiresAt = current.error_retention_ms == null
+        ? null
+        : now + current.error_retention_ms;
+    }
     this.db.prepare(`
-      UPDATE instances SET status=@status, output=@output, error=@error, updated_at=@now
+      UPDATE instances
+      SET status=@status, output=@output, error=@error,
+          expires_at=@expiresAt, updated_at=@now
       WHERE id=@id
     `).run({
       id,
       status,
-      output: output === undefined ? current.output : output,
-      error: error === undefined ? current.error : error,
-      now: Date.now(),
+      output: nextOutput,
+      error: nextError,
+      expiresAt,
+      now,
     });
-    this.log(id, `instance.${status}`, null);
+    this.log(
+      id,
+      `instance.${status}`,
+      JSON.stringify({ output: nextOutput, error: nextError }),
+    );
   }
 
   deleteInstance(id) {
@@ -166,8 +353,25 @@ export class SQLiteStorage extends Storage {
       LEFT JOIN timers t ON t.instance_id = i.id
       WHERE i.status IN ('queued', 'running')
          OR (i.status = 'waiting' AND t.wake_at <= ?)
+         OR (
+           i.status = 'rollingBack'
+           AND (
+             NOT EXISTS (
+               SELECT 1 FROM rollback_registrations rr0
+               WHERE rr0.instance_id = i.id
+             )
+             OR EXISTS (
+               SELECT 1 FROM rollback_registrations rr
+               WHERE rr.instance_id = i.id
+                 AND (
+                   rr.state IN ('pending', 'running')
+                   OR (rr.state = 'waiting_retry' AND rr.wake_at <= ?)
+                 )
+             )
+           )
+         )
       ORDER BY i.created_at
-    `).all(now);
+    `).all(now, now);
   }
 
   getStep(identity) {
@@ -183,7 +387,7 @@ export class SQLiteStorage extends Storage {
   }
 
   ensureStep(identity, ordinal, state, config, eventType = null) {
-    this.db.prepare(`
+    const result = this.db.prepare(`
       INSERT OR IGNORE INTO steps(
         instance_id, type, name, count, ordinal, state, config, event_type, created_at
       ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -191,6 +395,34 @@ export class SQLiteStorage extends Storage {
       identity.instanceId, identity.type, identity.name, identity.count,
       ordinal, state, config, eventType, Date.now(),
     );
+    if (result.changes > 0) {
+      if (identity.type === "do") {
+        this.log(
+          identity.instanceId,
+          "step.started",
+          JSON.stringify({ name: identity.name, config }),
+        );
+      } else if (identity.type === "sleep") {
+        let durationMs;
+        try {
+          const parsed = JSON.parse(config ?? "{}");
+          durationMs = typeof parsed.durationMs === "number"
+            ? parsed.durationMs
+            : undefined;
+        } catch {}
+        this.log(
+          identity.instanceId,
+          "sleep.started",
+          JSON.stringify({ name: identity.name, durationMs }),
+        );
+      } else if (identity.type === "waitForEvent") {
+        this.log(
+          identity.instanceId,
+          "wait.started",
+          JSON.stringify({ name: identity.name, eventType }),
+        );
+      }
+    }
     return this.getStep(identity);
   }
 
@@ -214,15 +446,30 @@ export class SQLiteStorage extends Storage {
       identity.instanceId, identity.type, identity.name, identity.count,
       attempt, Date.now(),
     );
+    this.log(
+      identity.instanceId,
+      "attempt.started",
+      JSON.stringify({ name: identity.name, attempt }),
+    );
   }
 
-  finishAttempt(identity, attempt, state, error = null) {
+  finishAttempt(identity, attempt, state, error = null, retryDelayMs = null) {
     this.db.prepare(`
       UPDATE attempts SET state=?, finished_at=?, error=?
       WHERE instance_id=? AND step_type=? AND step_name=? AND step_count=? AND attempt=?
     `).run(
       state, Date.now(), error, identity.instanceId, identity.type,
       identity.name, identity.count, attempt,
+    );
+    this.log(
+      identity.instanceId,
+      state === "completed" ? "attempt.completed" : "attempt.errored",
+      JSON.stringify({
+        name: identity.name,
+        attempt,
+        error,
+        retryDelayMs,
+      }),
     );
   }
 
@@ -241,29 +488,59 @@ export class SQLiteStorage extends Storage {
     `).all(identity.instanceId, identity.type, identity.name, identity.count);
   }
 
-  completeDoStep(identity, attempt, output) {
+  completeDoStep(identity, attempt, output, rollback = null) {
     this.db.transaction(() => {
       this.finishAttempt(identity, attempt, "completed", null);
       this.updateStep(identity, {
         state: "completed", output, error: null, completed_at: Date.now(),
       });
+      const step = this.getStep(identity);
+      let sensitiveOutput = false;
+      try {
+        sensitiveOutput = JSON.parse(step?.config ?? "{}")?.sensitive === "output";
+      } catch {}
+      this.log(
+        identity.instanceId,
+        "step.completed",
+        JSON.stringify({
+          name: identity.name,
+          output: sensitiveOutput ? null : output,
+          redacted: sensitiveOutput,
+        }),
+      );
+      if (rollback) {
+        this.registerRollback(
+          identity, identity.ordinal, rollback.config, output, null,
+        );
+      }
       this.deleteTimer(identity, "retry");
     })();
   }
 
-  finishDoStepTerminal(identity, attempt, error) {
+  finishDoStepTerminal(identity, attempt, error, rollback = null) {
     this.db.transaction(() => {
       this.finishAttempt(identity, attempt, "failed", error);
       this.updateStep(identity, {
         state: "failed", error, completed_at: Date.now(),
       });
+      this.log(
+        identity.instanceId,
+        "step.errored",
+        JSON.stringify({ name: identity.name, error }),
+      );
+      if (rollback) {
+        this.registerRollback(
+          identity, identity.ordinal, rollback.config, null, error,
+        );
+      }
       this.deleteTimer(identity, "retry");
     })();
   }
 
   scheduleRetry(identity, attempt, error, wakeAt) {
     this.db.transaction(() => {
-      this.finishAttempt(identity, attempt, "failed", error);
+      const retryDelayMs = Math.max(0, Math.trunc(wakeAt - Date.now()));
+      this.finishAttempt(identity, attempt, "failed", error, retryDelayMs);
       this.updateStep(identity, { state: "waiting_retry", error, completed_at: null });
       this.putTimer(identity, "retry", wakeAt);
     })();
@@ -316,6 +593,13 @@ export class SQLiteStorage extends Storage {
         state: "completed", output: null, error: null, completed_at: Date.now(),
       });
       this.deleteTimer(identity, kind);
+      if (kind === "sleep") {
+        this.log(
+          identity.instanceId,
+          "sleep.completed",
+          JSON.stringify({ name: identity.name }),
+        );
+      }
     })();
   }
 
@@ -341,6 +625,11 @@ export class SQLiteStorage extends Storage {
           state: "completed", output, error: null, completed_at: consumedAt,
         });
         this.deleteTimer(identity, "event-timeout");
+        this.log(
+          identity.instanceId,
+          "wait.completed",
+          JSON.stringify({ name: identity.name }),
+        );
         return { step: this.getStep(identity), event, timer: null };
       }
 
@@ -359,6 +648,11 @@ export class SQLiteStorage extends Storage {
         state: "failed", error, completed_at: Date.now(),
       });
       this.deleteTimer(identity, "event-timeout");
+      this.log(
+        identity.instanceId,
+        "wait.timed_out",
+        JSON.stringify({ name: identity.name }),
+      );
     })();
   }
 
@@ -380,6 +674,197 @@ export class SQLiteStorage extends Storage {
         `).run(now, instanceId);
       }
     })();
+  }
+
+  registerRollback(identity, ordinal, config, output = null, stepError = null) {
+    this.db.prepare(`
+      INSERT INTO rollback_registrations(
+        instance_id, step_type, step_name, step_count, ordinal, state, config,
+        output, step_error, attempt, created_at
+      ) VALUES(?, ?, ?, ?, ?, 'registered', ?, ?, ?, 0, ?)
+      ON CONFLICT(instance_id, step_type, step_name, step_count)
+      DO UPDATE SET
+        ordinal=excluded.ordinal,
+        config=excluded.config,
+        output=excluded.output,
+        step_error=excluded.step_error
+      WHERE rollback_registrations.state = 'registered'
+    `).run(
+      identity.instanceId, identity.type, identity.name, identity.count,
+      ordinal, config, output, stepError, Date.now(),
+    );
+  }
+
+  listRollbackRegistrations(instanceId) {
+    return this.db.prepare(`
+      SELECT * FROM rollback_registrations
+      WHERE instance_id=?
+      ORDER BY ordinal DESC, created_at DESC
+    `).all(instanceId);
+  }
+
+  getRollbackRegistration(identity) {
+    return this.db.prepare(`
+      SELECT * FROM rollback_registrations
+      WHERE instance_id=? AND step_type=? AND step_name=? AND step_count=?
+    `).get(
+      identity.instanceId, identity.type, identity.name, identity.count,
+    ) ?? null;
+  }
+
+  beginRollback(id, { terminalStatus = "terminated", cause = null } = {}) {
+    return this.db.transaction(() => {
+      const instance = this.getInstance(id);
+      if (!instance) throw new Error(`Unknown workflow instance: ${id}`);
+      this.db.prepare(`
+        UPDATE rollback_registrations
+        SET state='pending', attempt=0, wake_at=NULL, rollback_error=NULL, completed_at=NULL
+        WHERE instance_id=? AND state='registered'
+      `).run(id);
+      this.db.prepare(`
+        UPDATE instances
+        SET status='rollingBack', rollback_outcome=NULL, rollback_error=NULL,
+            rollback_cause=?, rollback_terminal_status=?, updated_at=?
+        WHERE id=?
+      `).run(cause, terminalStatus, Date.now(), id);
+      this.log(
+        id,
+        "instance.rollback.started",
+        JSON.stringify({ terminalStatus, cause }),
+      );
+    })();
+  }
+
+  startRollbackAttempt(identity, attempt) {
+    const current = this.getRollbackRegistration(identity);
+    this.db.prepare(`
+      UPDATE rollback_registrations
+      SET state='running', attempt=?, wake_at=NULL, rollback_error=NULL
+      WHERE instance_id=? AND step_type=? AND step_name=? AND step_count=?
+    `).run(
+      attempt, identity.instanceId, identity.type, identity.name, identity.count,
+    );
+    if ((current?.attempt ?? 0) === 0) {
+      this.log(
+        identity.instanceId,
+        "rollback.step.started",
+        JSON.stringify({ name: identity.name, config: current?.config ?? null }),
+      );
+    }
+    this.log(
+      identity.instanceId,
+      "rollback.attempt.started",
+      JSON.stringify({ name: identity.name, attempt }),
+    );
+  }
+
+  completeRollback(identity) {
+    const current = this.getRollbackRegistration(identity);
+    this.db.prepare(`
+      UPDATE rollback_registrations
+      SET state='completed', wake_at=NULL, rollback_error=NULL, completed_at=?
+      WHERE instance_id=? AND step_type=? AND step_name=? AND step_count=?
+    `).run(
+      Date.now(), identity.instanceId, identity.type, identity.name, identity.count,
+    );
+    this.log(
+      identity.instanceId,
+      "rollback.attempt.completed",
+      JSON.stringify({ name: identity.name, attempt: current?.attempt ?? 1 }),
+    );
+    this.log(
+      identity.instanceId,
+      "rollback.step.completed",
+      JSON.stringify({ name: identity.name }),
+    );
+  }
+
+  scheduleRollbackRetry(identity, attempt, error, wakeAt) {
+    this.db.prepare(`
+      UPDATE rollback_registrations
+      SET state='waiting_retry', attempt=?, wake_at=?, rollback_error=?, completed_at=NULL
+      WHERE instance_id=? AND step_type=? AND step_name=? AND step_count=?
+    `).run(
+      attempt, Math.trunc(wakeAt), error,
+      identity.instanceId, identity.type, identity.name, identity.count,
+    );
+    this.log(
+      identity.instanceId,
+      "rollback.attempt.errored",
+      JSON.stringify({
+        name: identity.name,
+        attempt,
+        error,
+        retryDelayMs: Math.max(0, Math.trunc(wakeAt - Date.now())),
+      }),
+    );
+  }
+
+  failRollback(identity, attempt, error) {
+    this.db.prepare(`
+      UPDATE rollback_registrations
+      SET state='failed', attempt=?, wake_at=NULL, rollback_error=?, completed_at=?
+      WHERE instance_id=? AND step_type=? AND step_name=? AND step_count=?
+    `).run(
+      attempt, error, Date.now(),
+      identity.instanceId, identity.type, identity.name, identity.count,
+    );
+    this.log(
+      identity.instanceId,
+      "rollback.attempt.errored",
+      JSON.stringify({ name: identity.name, attempt, error }),
+    );
+    this.log(
+      identity.instanceId,
+      "rollback.step.errored",
+      JSON.stringify({ name: identity.name, error }),
+    );
+  }
+
+  finishRollback(id, outcome, error = null) {
+    const instance = this.getInstance(id);
+    if (!instance) throw new Error(`Unknown workflow instance: ${id}`);
+    const terminalStatus = instance.rollback_terminal_status ?? "terminated";
+    const now = Date.now();
+    const retentionMs = terminalStatus === "errored"
+      ? instance.error_retention_ms
+      : instance.success_retention_ms;
+    const expiresAt = retentionMs == null ? null : now + retentionMs;
+    this.db.prepare(`
+      UPDATE instances
+      SET status=?, rollback_outcome=?, rollback_error=?,
+          expires_at=?, updated_at=?
+      WHERE id=?
+    `).run(terminalStatus, outcome, error, expiresAt, now, id);
+    this.log(id, `instance.rollback.${outcome}`, error);
+    this.log(
+      id,
+      `instance.${terminalStatus}`,
+      JSON.stringify({
+        rollbackOutcome: outcome,
+        error: terminalStatus === "errored" ? instance.error : null,
+      }),
+    );
+  }
+
+  markInstanceStarted(instanceId, params) {
+    const existing = this.db.prepare(`
+      SELECT 1 FROM execution_events
+      WHERE instance_id=? AND kind='instance.started'
+      LIMIT 1
+    `).get(instanceId);
+    if (!existing) {
+      this.log(instanceId, "instance.started", JSON.stringify({ params }));
+    }
+  }
+
+  listExecutionEvents(instanceId, afterId = 0, limit = 100) {
+    return this.db.prepare(`
+      SELECT * FROM execution_events
+      WHERE instance_id=? AND id>?
+      ORDER BY id
+      LIMIT ?
+    `).all(instanceId, afterId, limit);
   }
 
   restartInstance(id, from = null) {
@@ -421,7 +906,10 @@ export class SQLiteStorage extends Storage {
         `).run(id, step.type, step.name, step.count);
       }
       this.db.prepare(`
-        UPDATE instances SET status='queued', output=NULL, error=NULL, updated_at=?
+        UPDATE instances
+        SET status='queued', output=NULL, error=NULL, expires_at=NULL,
+            rollback_outcome=NULL, rollback_error=NULL, rollback_cause=NULL,
+            rollback_terminal_status=NULL, updated_at=?
         WHERE id=?
       `).run(Date.now(), id);
       this.log(id, "instance.restarted", JSON.stringify(from));

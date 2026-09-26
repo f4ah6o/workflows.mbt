@@ -1,0 +1,104 @@
+const RANGES = [
+  [0, 59],
+  [0, 23],
+  [1, 31],
+  [1, 12],
+  [0, 7],
+];
+
+const MONTHS = new Map([
+  ["JAN", 1], ["FEB", 2], ["MAR", 3], ["APR", 4],
+  ["MAY", 5], ["JUN", 6], ["JUL", 7], ["AUG", 8],
+  ["SEP", 9], ["OCT", 10], ["NOV", 11], ["DEC", 12],
+]);
+
+const DAYS = new Map([
+  ["SUN", 0], ["MON", 1], ["TUE", 2], ["WED", 3],
+  ["THU", 4], ["FRI", 5], ["SAT", 6],
+]);
+
+function parseValue(text, fieldIndex) {
+  const upper = text.toUpperCase();
+  if (fieldIndex === 3 && MONTHS.has(upper)) return MONTHS.get(upper);
+  if (fieldIndex === 4 && DAYS.has(upper)) return DAYS.get(upper);
+  return Number(text);
+}
+
+function expandPart(part, min, max, fieldIndex) {
+  const [base, stepText] = part.split("/");
+  const step = stepText == null ? 1 : Number(stepText);
+  if (!Number.isInteger(step) || step < 1) {
+    throw new TypeError(`Invalid cron step: ${part}`);
+  }
+
+  let start;
+  let end;
+  if (base === "*") {
+    start = min;
+    end = max;
+  } else if (base.includes("-")) {
+    const [left, right] = base.split("-");
+    start = parseValue(left, fieldIndex);
+    end = parseValue(right, fieldIndex);
+  } else {
+    start = parseValue(base, fieldIndex);
+    end = start;
+  }
+
+  if (
+    !Number.isInteger(start) || !Number.isInteger(end) ||
+    start < min || end > max || start > end
+  ) {
+    throw new TypeError(`Invalid cron field value: ${part}`);
+  }
+
+  const out = new Set();
+  for (let value = start; value <= end; value += step) {
+    out.add(fieldIndex === 4 && value === 7 ? 0 : value);
+  }
+  return out;
+}
+
+function parseField(text, fieldIndex) {
+  const [min, max] = RANGES[fieldIndex];
+  const values = new Set();
+  for (const part of text.split(",")) {
+    for (const value of expandPart(part, min, max, fieldIndex)) values.add(value);
+  }
+  return { values, wildcard: text === "*" };
+}
+
+export function parseCron(expression) {
+  if (typeof expression !== "string") throw new TypeError("cron must be a string");
+  const fields = expression.trim().split(/\s+/);
+  if (fields.length !== 5) {
+    throw new TypeError(`Cron expression must contain 5 fields: ${expression}`);
+  }
+  return fields.map(parseField);
+}
+
+export function matchesCron(expression, timestamp) {
+  const fields = parseCron(expression);
+  const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
+  if (Number.isNaN(date.getTime())) throw new TypeError("Invalid cron timestamp");
+
+  const values = [
+    date.getUTCMinutes(),
+    date.getUTCHours(),
+    date.getUTCDate(),
+    date.getUTCMonth() + 1,
+    date.getUTCDay(),
+  ];
+  const minuteHourMonth =
+    fields[0].values.has(values[0]) &&
+    fields[1].values.has(values[1]) &&
+    fields[3].values.has(values[3]);
+  if (!minuteHourMonth) return false;
+
+  const domMatches = fields[2].values.has(values[2]);
+  const dowMatches = fields[4].values.has(values[4]);
+  if (fields[2].wildcard && fields[4].wildcard) return true;
+  if (fields[2].wildcard) return dowMatches;
+  if (fields[4].wildcard) return domMatches;
+  return domMatches || dowMatches;
+}

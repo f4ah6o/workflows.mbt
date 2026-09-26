@@ -1,6 +1,6 @@
 # Cloudflare Workflows full-compatibility gaps
 
-Status: open  
+Status: closed  
 Created: 2026-09-26  
 Target: `main`
 
@@ -532,3 +532,48 @@ This issue can be closed when:
 Even after closure, reserve the phrase **fully compatible** for a separately
 maintained compatibility statement with an explicit upstream version/date and a
 known-differences list.
+
+
+---
+
+## Implementation result
+
+Closed: 2026-09-26
+
+The broad-compatibility milestone is implemented and covered by CI.
+
+Implemented and tested in this milestone:
+
+- concurrent durable operations with Promise combinators
+- type-preserving structured persistence and SIGKILL/restart replay
+- durable automatic and explicit rollback / compensation
+- scheduled workflow metadata and local cron scheduling
+- `WorkflowInstance.subscribe()` history/live/cursor/filter behavior
+- per-Workflow instance ID namespace and retention
+- default Worker `fetch` handler compatibility
+- non-blocking `ctx.waitUntil()`
+- streamed Worker HTTP responses with backpressure
+- running-instance delete and self-delete execution stop semantics
+- collision-safe workflow-scoped internal storage IDs
+- Wrangler workflow schedules, vars, local secrets, and retention inputs
+- Cloudflare-style core Workflows REST facade
+- state-model behavior including `waitingForPause` and active rollback
+- current step defaults including 10 minute timeout and retry limit validation
+- sensitive step-output redaction
+
+Known differences are maintained in `COMPATIBILITY.md`. Operational/platform
+hardening that is not required for this milestone is tracked separately in
+`issues/open/20260926-post-compatibility-hardening-p2.md`.
+
+Final milestone validation before closure:
+
+- MoonBit check: PASS
+- MoonBit JS kernel build: PASS
+- MoonBit tests: PASS
+- compatibility host tests: PASS
+- durable process E2E: PASS
+- GitHub Actions CI run #91 on `7c3fd5deb5498639f41ade0754b8e9007495adf0`: PASS
+
+Post-review regression coverage includes the four PR review blockers: internal
+storage-ID collision, non-blocking `waitUntil()`, running/self delete, and
+streaming Worker responses.
