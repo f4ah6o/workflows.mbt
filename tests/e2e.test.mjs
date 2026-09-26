@@ -845,12 +845,16 @@ test("workflow failure automatically rolls back completed and failed registered 
 
 
 async function collectSubscriptionEvents(instance, options = {}) {
-  using subscription = await instance.subscribe(options);
+  const subscription = await instance.subscribe(options);
   const events = [];
-  while (true) {
-    const result = await subscription.next();
-    if (result.done) return events;
-    events.push(result.value);
+  try {
+    while (true) {
+      const result = await subscription.next();
+      if (result.done) return events;
+      events.push(result.value);
+    }
+  } finally {
+    subscription[Symbol.dispose]();
   }
 }
 
@@ -902,12 +906,9 @@ test("subscribe exposes step and retry attempt event shapes", async (t) => {
     assert.equal(event.error.name, "Error");
     assert.ok(event.retryDelayMs >= 0 && event.retryDelayMs <= 80);
   }
-  assert.deepEqual(events.at(-2), {
-    ...events.at(-2),
-    type: "step_completed",
-    stepName: "retry-me",
-    output: { attempt: 3 },
-  });
+  assert.equal(events.at(-2).type, "step_completed");
+  assert.equal(events.at(-2).stepName, "retry-me");
+  assert.deepEqual(events.at(-2).output, { attempt: 3 });
 });
 
 test("subscribe exposes normalized sleep and wait event metadata", async (t) => {
