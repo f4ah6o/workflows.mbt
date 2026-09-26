@@ -288,22 +288,32 @@ export class SQLiteStorage extends Storage {
     `).all(identity.instanceId, identity.type, identity.name, identity.count);
   }
 
-  completeDoStep(identity, attempt, output) {
+  completeDoStep(identity, attempt, output, rollback = null) {
     this.db.transaction(() => {
       this.finishAttempt(identity, attempt, "completed", null);
       this.updateStep(identity, {
         state: "completed", output, error: null, completed_at: Date.now(),
       });
+      if (rollback) {
+        this.registerRollback(
+          identity, identity.ordinal, rollback.config, output, null,
+        );
+      }
       this.deleteTimer(identity, "retry");
     })();
   }
 
-  finishDoStepTerminal(identity, attempt, error) {
+  finishDoStepTerminal(identity, attempt, error, rollback = null) {
     this.db.transaction(() => {
       this.finishAttempt(identity, attempt, "failed", error);
       this.updateStep(identity, {
         state: "failed", error, completed_at: Date.now(),
       });
+      if (rollback) {
+        this.registerRollback(
+          identity, identity.ordinal, rollback.config, null, error,
+        );
+      }
       this.deleteTimer(identity, "retry");
     })();
   }
