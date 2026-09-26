@@ -201,6 +201,7 @@ completion.
 - [x] default Worker `fetch(request, env, ctx)` host
 - [x] `ctx.waitUntil()` returns the HTTP response without awaiting background work
 - [x] streamed Worker `Response.body` is forwarded incrementally with backpressure
+- [x] multiple `Set-Cookie` response headers are preserved as separate header values
 - [ ] Wrangler named environments / `--env` overlay semantics
 - [ ] full Wrangler clone
 
