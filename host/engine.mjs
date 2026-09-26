@@ -419,9 +419,12 @@ export class WorkflowRuntime {
       const rollbackConfig = execution.normalizedConfig(handler.config ?? {});
       if (
         !Number.isInteger(rollbackConfig.retries.limit) ||
-        rollbackConfig.retries.limit < 0
+        rollbackConfig.retries.limit < 0 ||
+        rollbackConfig.retries.limit > 10_000
       ) {
-        const error = new TypeError("rollback retries.limit must be a non-negative integer");
+        const error = new TypeError(
+          "rollback retries.limit must be an integer between 0 and 10000",
+        );
         const encodedError = serializeError(error);
         this.storage.failRollback(identity, Math.max(1, registration.attempt || 0), encodedError);
         this.storage.finishRollback(id, "failed", encodedError);
@@ -658,6 +661,7 @@ class ExecutionContext {
         delay: retries.delay ?? this.kernel.defaultRetryDelayMs(),
         backoff: retries.backoff ?? this.kernel.defaultBackoff(),
       },
+      timeout: config.timeout ?? this.kernel.defaultStepTimeout(),
     };
   }
 
@@ -704,8 +708,12 @@ class ExecutionContext {
     }
 
     const normalized = this.normalizedConfig(config);
-    if (!Number.isInteger(normalized.retries.limit) || normalized.retries.limit < 0) {
-      throw new TypeError("retries.limit must be a non-negative integer");
+    if (
+      !Number.isInteger(normalized.retries.limit) ||
+      normalized.retries.limit < 0 ||
+      normalized.retries.limit > 10_000
+    ) {
+      throw new TypeError("retries.limit must be an integer between 0 and 10000");
     }
 
     step = this.storage.ensureStep(
