@@ -111,11 +111,28 @@ export class WorkflowRuntime {
     return env;
   }
 
-  requireInstance(id) {
+  requireStoredInstance(storageId) {
     this.storage.deleteExpired(Date.now());
-    const row = this.storage.getInstance(id);
-    if (!row) throw new Error(`Workflow instance not found: ${id}`);
+    const row = this.storage.getInstance(storageId);
+    if (!row) throw new Error(`Workflow instance not found: ${storageId}`);
     return row;
+  }
+
+  requireInstance(id, workflowName = null) {
+    this.storage.deleteExpired(Date.now());
+    if (workflowName != null) {
+      const row = this.storage.getInstanceByPublic(workflowName, id);
+      if (!row) throw new Error(`Workflow instance not found: ${id}`);
+      return row;
+    }
+    const rows = this.storage.findInstancesByPublic(id);
+    if (rows.length === 0) throw new Error(`Workflow instance not found: ${id}`);
+    if (rows.length > 1) {
+      throw new Error(
+        `Workflow instance id is ambiguous across workflows: ${id}`,
+      );
+    }
+    return rows[0];
   }
 
   async createInstance(workflowName, options = {}) {
@@ -152,7 +169,7 @@ export class WorkflowRuntime {
         : parseDuration(errorRetention, "error retention"),
     };
     this.storage.createInstance({ id, workflowName, payload, retention });
-    return new WorkflowInstanceHandle(this, id);
+    return new WorkflowInstanceHandle(this, workflowName, id);
   }
 
   async trigger(workflowName, options = {}, { run = true } = {}) {
@@ -161,10 +178,10 @@ export class WorkflowRuntime {
     return instance;
   }
 
-  instanceStatus(id) {
-    const row = this.requireInstance(id);
+  instanceStatus(id, workflowName = null) {
+    const row = this.requireInstance(id, workflowName);
     return {
-      id: row.id,
+      id: row.public_id,
       workflowName: row.workflow_name,
       status: row.status === "rollingBack" ? "running" : row.status,
       output: row.output == null ? undefined : decodeDurableValue(row.output),
@@ -184,7 +201,7 @@ export class WorkflowRuntime {
     const event = {
       payload: Object.freeze(JSON.parse(row.payload)),
       timestamp: new Date(row.created_at),
-      instanceId: row.id,
+      instanceId: row.public_id,
       workflowName: row.workflow_name,
     };
     if (row.schedule_cron != null && row.scheduled_time != null) {
@@ -236,8 +253,8 @@ export class WorkflowRuntime {
     return created;
   }
 
-  async sendEvent(id, event) {
-    const instance = this.requireInstance(id);
+  async sendEvent(id, event, workflowName = null) {
+    const instance = this.requireInstance(id, workflowName);
     if (!["queued", "running", "waiting", "waitingForPause"].includes(instance.status)) {
       throw new Error(`Cannot send event to instance in state ${instance.status}`);
     }
@@ -250,7 +267,7 @@ export class WorkflowRuntime {
       );
     }
     const payload = serializeJson(event.payload ?? null, "event payload");
-    this.storage.addEvent(id, event.type, payload);
+    this.storage.addEvent(instance.id, event.type, payload);
   }
 
   async runPending({ maxRounds = 100 } = {}) {
@@ -268,7 +285,7 @@ export class WorkflowRuntime {
   }
 
   async runInstance(id) {
-    let row = this.requireInstance(id);
+    let row = this.requireStoredInstance(id);
     if (row.status === "rollingBack") {
       await this.runRollbackInstance(id);
       return;
@@ -295,7 +312,7 @@ export class WorkflowRuntime {
         (settled) => settled.status === "rejected" && settled.reason instanceof SuspendExecution,
       );
       if (suspension) throw suspension.reason;
-      row = this.requireInstance(id);
+      row = this.requireStoredInstance(id);
       if (row.status === "waitingForPause") {
         this.storage.setInstanceStatus(id, "paused");
         return;
@@ -307,7 +324,7 @@ export class WorkflowRuntime {
       this.storage.setInstanceStatus(id, "complete", { output: encoded, error: null });
     } catch (error) {
       await execution.settleOperations();
-      row = this.requireInstance(id);
+      row = this.requireStoredInstance(id);
       if (row.status === "waitingForPause") {
         this.storage.setInstanceStatus(id, "paused");
         return;
@@ -338,7 +355,7 @@ export class WorkflowRuntime {
   }
 
   async runRollbackInstance(id) {
-    const row = this.requireInstance(id);
+    const row = this.requireStoredInstance(id);
     if (row.status !== "rollingBack") return;
 
     const workflow = this.workflowByName.get(row.workflow_name);
