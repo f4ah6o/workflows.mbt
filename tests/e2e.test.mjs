@@ -104,8 +104,10 @@ function spawnDev(configPath, paths) {
 
 async function stopChild(child, signal = "SIGTERM") {
   if (child.exitCode != null || child.signalCode != null) return;
-  child.kill(signal);
-  await once(child, "exit");
+  const exited = once(child, "exit");
+  const sent = child.kill(signal);
+  if (!sent && (child.exitCode != null || child.signalCode != null)) return;
+  await exited;
 }
 
 function dbSnapshot(path, query, ...args) {
