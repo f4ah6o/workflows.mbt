@@ -348,3 +348,13 @@ export class SensitiveWorkflow extends WorkflowEntrypoint<{}, {}> {
     return { preserved: secret.token === "super-secret" };
   }
 }
+
+
+export class DefaultConfigWorkflow extends WorkflowEntrypoint<{}, {}> {
+  async run(_event: WorkflowEvent<{}>, step: WorkflowStep) {
+    return await step.do("default-config", async (ctx) => ({
+      retries: ctx.config.retries,
+      timeout: ctx.config.timeout,
+    }));
+  }
+}
