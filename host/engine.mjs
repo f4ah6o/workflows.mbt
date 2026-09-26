@@ -191,9 +191,15 @@ export class WorkflowRuntime {
     globalThis.__WORKFLOWS_MBT_CONTEXT__ = execution;
     try {
       const result = await instance.run(event, execution.stepFacade);
+      const pending = await execution.settleOperations();
+      const suspension = pending.find(
+        (settled) => settled.status === "rejected" && settled.reason instanceof SuspendExecution,
+      );
+      if (suspension) throw suspension.reason;
       const encoded = encodeDurableValue(result, "workflow output");
       this.storage.setInstanceStatus(id, "complete", { output: encoded, error: null });
     } catch (error) {
+      await execution.settleOperations();
       if (error instanceof SuspendExecution) {
         row = this.requireInstance(id);
         if (!["paused", "terminated"].includes(row.status)) {
@@ -229,17 +235,13 @@ class ExecutionContext {
     this.instance = instance;
     this.counts = new Map();
     this.ordinal = 0;
-    this.operationInFlight = false;
+    this.pendingOperations = new Set();
     this.stepFacade = {
       do: (name, first, second, third) =>
-        this.runExclusive("step.do", () =>
-          this.compatStepDo(name, first, second, third),
-        ),
-      sleep: (...args) => this.runExclusive("step.sleep", () => this.sleep(...args)),
-      sleepUntil: (...args) =>
-        this.runExclusive("step.sleepUntil", () => this.sleepUntil(...args)),
-      waitForEvent: (...args) =>
-        this.runExclusive("step.waitForEvent", () => this.waitForEvent(...args)),
+        this.trackOperation(this.compatStepDo(name, first, second, third)),
+      sleep: (...args) => this.trackOperation(this.sleep(...args)),
+      sleepUntil: (...args) => this.trackOperation(this.sleepUntil(...args)),
+      waitForEvent: (...args) => this.trackOperation(this.waitForEvent(...args)),
     };
   }
 
@@ -271,20 +273,23 @@ class ExecutionContext {
     return await this.stepDo(name, config, callback);
   }
 
-  async runExclusive(label, operation) {
-    if (this.operationInFlight) {
-      const error = new Error(
-        `Concurrent durable step operation ${label} is unsupported in workflows.mbt v0.1`,
-      );
-      error.name = "WorkflowsMbtParallelUnsupportedError";
-      throw error;
+  trackOperation(operation) {
+    const promise = Promise.resolve(operation);
+    this.pendingOperations.add(promise);
+    promise.then(
+      () => this.pendingOperations.delete(promise),
+      () => this.pendingOperations.delete(promise),
+    );
+    return promise;
+  }
+
+  async settleOperations() {
+    const settled = [];
+    while (this.pendingOperations.size) {
+      const batch = [...this.pendingOperations];
+      settled.push(...await Promise.allSettled(batch));
     }
-    this.operationInFlight = true;
-    try {
-      return await operation();
-    } finally {
-      this.operationInFlight = false;
-    }
+    return settled;
   }
 
   nextIdentity(type, name) {
