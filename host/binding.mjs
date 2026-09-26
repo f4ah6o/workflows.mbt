@@ -1,3 +1,4 @@
+import { WorkflowSubscription } from "./subscription.mjs";
 export class WorkflowBinding {
   constructor(runtime, workflow) {
     this.runtime = runtime;
@@ -103,7 +104,8 @@ export class WorkflowInstanceHandle {
     return this.runtime.sendEvent(this.id, event);
   }
 
-  async subscribe() {
-    throw new Error("WorkflowInstance.subscribe is not implemented in workflows.mbt v0.1");
+  async subscribe(options = {}) {
+    this.runtime.requireInstance(this.id);
+    return new WorkflowSubscription(this.runtime, this.id, options);
   }
 }
