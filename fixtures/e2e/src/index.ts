@@ -358,3 +358,25 @@ export class DefaultConfigWorkflow extends WorkflowEntrypoint<{}, {}> {
     }));
   }
 }
+
+
+export class ParallelWaitWorkflow extends WorkflowEntrypoint<{}, BaseParams> {
+  async run(event: WorkflowEvent<BaseParams>, step: WorkflowStep) {
+    const results = await Promise.allSettled([
+      step.do("parallel-before-event", async () => {
+        const response = await fetch(`${event.payload.baseUrl}/parallel-before-event`);
+        if (!response.ok) throw new Error("parallel before event failed");
+        return "ready";
+      }),
+      step.waitForEvent("parallel-approval", {
+        type: "approved",
+        timeout: "5 seconds",
+      }),
+    ]);
+
+    const fulfilled = results
+      .filter((entry) => entry.status === "fulfilled")
+      .map((entry) => entry.value);
+    return { fulfilled };
+  }
+}
