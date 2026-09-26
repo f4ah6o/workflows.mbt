@@ -1444,3 +1444,26 @@ test("a workflow deleting itself stops at await instance.delete()", async (t) =>
   assert.equal(runtime.storage.getInstanceByPublic("self-delete", instance.id), null);
   assert.equal(counter.counts.get("/after-self-delete"), undefined);
 });
+
+
+test("default Worker preserves multiple Set-Cookie response headers", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-worker-cookies-");
+  const runtime = await openRuntime(basicConfig, paths);
+  t.after(() => runtime.close());
+
+  const server = await startWorkflowHttpServer(runtime, {
+    host: "127.0.0.1",
+    port: 0,
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const address = server.address();
+
+  const response = await fetch(`http://127.0.0.1:${address.port}/cookies`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-cookie-test"), "ok");
+  assert.deepEqual(response.headers.getSetCookie(), [
+    "first=one; Path=/; HttpOnly",
+    "second=two; Path=/; SameSite=Lax",
+  ]);
+  assert.equal(await response.text(), "cookies");
+});
