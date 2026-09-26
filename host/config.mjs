@@ -41,6 +41,7 @@ export function loadProjectConfig(configPath = "wrangler.jsonc", overrides = {})
       binding: workflow.binding,
       className: workflow.class_name,
       schedules: Array.isArray(workflow.schedules) ? workflow.schedules : [],
+      defaultRetention: workflow.default_retention ?? null,
     })),
     storagePath: resolve(storagePath),
     buildDir: resolve(overrides.buildDir ?? join(root, ".workflows/bundles")),
