@@ -335,11 +335,13 @@ export class SQLiteStorage extends Storage {
       expiresAt,
       now,
     });
-    this.log(
-      id,
-      `instance.${status}`,
-      JSON.stringify({ output: nextOutput, error: nextError }),
-    );
+    if (current.status !== status) {
+      this.log(
+        id,
+        `instance.${status}`,
+        JSON.stringify({ output: nextOutput, error: nextError }),
+      );
+    }
   }
 
   deleteInstance(id) {
@@ -400,7 +402,7 @@ export class SQLiteStorage extends Storage {
         this.log(
           identity.instanceId,
           "step.started",
-          JSON.stringify({ name: identity.name, config }),
+          JSON.stringify({ name: `${identity.name}-${identity.count}`, config }),
         );
       } else if (identity.type === "sleep") {
         let durationMs;
@@ -413,13 +415,13 @@ export class SQLiteStorage extends Storage {
         this.log(
           identity.instanceId,
           "sleep.started",
-          JSON.stringify({ name: identity.name, durationMs }),
+          JSON.stringify({ name: `${identity.name}-${identity.count}`, durationMs }),
         );
       } else if (identity.type === "waitForEvent") {
         this.log(
           identity.instanceId,
           "wait.started",
-          JSON.stringify({ name: identity.name, eventType }),
+          JSON.stringify({ name: `${identity.name}-${identity.count}`, eventType }),
         );
       }
     }
@@ -449,7 +451,7 @@ export class SQLiteStorage extends Storage {
     this.log(
       identity.instanceId,
       "attempt.started",
-      JSON.stringify({ name: identity.name, attempt }),
+      JSON.stringify({ name: `${identity.name}-${identity.count}`, attempt }),
     );
   }
 
@@ -465,7 +467,7 @@ export class SQLiteStorage extends Storage {
       identity.instanceId,
       state === "completed" ? "attempt.completed" : "attempt.errored",
       JSON.stringify({
-        name: identity.name,
+        name: `${identity.name}-${identity.count}`,
         attempt,
         error,
         retryDelayMs,
@@ -503,7 +505,7 @@ export class SQLiteStorage extends Storage {
         identity.instanceId,
         "step.completed",
         JSON.stringify({
-          name: identity.name,
+          name: `${identity.name}-${identity.count}`,
           output: sensitiveOutput ? null : output,
           redacted: sensitiveOutput,
         }),
@@ -526,7 +528,7 @@ export class SQLiteStorage extends Storage {
       this.log(
         identity.instanceId,
         "step.errored",
-        JSON.stringify({ name: identity.name, error }),
+        JSON.stringify({ name: `${identity.name}-${identity.count}`, error }),
       );
       if (rollback) {
         this.registerRollback(
@@ -597,7 +599,7 @@ export class SQLiteStorage extends Storage {
         this.log(
           identity.instanceId,
           "sleep.completed",
-          JSON.stringify({ name: identity.name }),
+          JSON.stringify({ name: `${identity.name}-${identity.count}` }),
         );
       }
     })();
@@ -628,7 +630,7 @@ export class SQLiteStorage extends Storage {
         this.log(
           identity.instanceId,
           "wait.completed",
-          JSON.stringify({ name: identity.name }),
+          JSON.stringify({ name: `${identity.name}-${identity.count}` }),
         );
         return { step: this.getStep(identity), event, timer: null };
       }
@@ -651,7 +653,7 @@ export class SQLiteStorage extends Storage {
       this.log(
         identity.instanceId,
         "wait.timed_out",
-        JSON.stringify({ name: identity.name }),
+        JSON.stringify({ name: `${identity.name}-${identity.count}` }),
       );
     })();
   }
@@ -748,13 +750,13 @@ export class SQLiteStorage extends Storage {
       this.log(
         identity.instanceId,
         "rollback.step.started",
-        JSON.stringify({ name: identity.name, config: current?.config ?? null }),
+        JSON.stringify({ name: `${identity.name}-${identity.count}`, config: current?.config ?? null }),
       );
     }
     this.log(
       identity.instanceId,
       "rollback.attempt.started",
-      JSON.stringify({ name: identity.name, attempt }),
+      JSON.stringify({ name: `${identity.name}-${identity.count}`, attempt }),
     );
   }
 
@@ -770,12 +772,12 @@ export class SQLiteStorage extends Storage {
     this.log(
       identity.instanceId,
       "rollback.attempt.completed",
-      JSON.stringify({ name: identity.name, attempt: current?.attempt ?? 1 }),
+      JSON.stringify({ name: `${identity.name}-${identity.count}`, attempt: current?.attempt ?? 1 }),
     );
     this.log(
       identity.instanceId,
       "rollback.step.completed",
-      JSON.stringify({ name: identity.name }),
+      JSON.stringify({ name: `${identity.name}-${identity.count}` }),
     );
   }
 
@@ -792,7 +794,7 @@ export class SQLiteStorage extends Storage {
       identity.instanceId,
       "rollback.attempt.errored",
       JSON.stringify({
-        name: identity.name,
+        name: `${identity.name}-${identity.count}`,
         attempt,
         error,
         retryDelayMs: Math.max(0, Math.trunc(wakeAt - Date.now())),
@@ -812,12 +814,12 @@ export class SQLiteStorage extends Storage {
     this.log(
       identity.instanceId,
       "rollback.attempt.errored",
-      JSON.stringify({ name: identity.name, attempt, error }),
+      JSON.stringify({ name: `${identity.name}-${identity.count}`, attempt, error }),
     );
     this.log(
       identity.instanceId,
       "rollback.step.errored",
-      JSON.stringify({ name: identity.name, error }),
+      JSON.stringify({ name: `${identity.name}-${identity.count}`, error }),
     );
   }
 

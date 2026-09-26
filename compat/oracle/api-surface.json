@@ -1,0 +1,96 @@
+{
+  "formatVersion": 1,
+  "source": "@cloudflare/workers-types",
+  "hashes": {
+    "Workflow": "d4c77dae",
+    "WorkflowInstance": "6df1eaa9",
+    "WorkflowInstanceCreateOptions": "7df1518a",
+    "InstanceStatus": "c0b3a793",
+    "WorkflowInstanceSubscribeOptions": "dd5398c9",
+    "WorkflowStep": "a4b48249",
+    "WorkflowEntrypoint": "6dbc79a6"
+  },
+  "members": {
+    "Workflow": [
+      "create",
+      "createBatch",
+      "deleteBatch",
+      "get"
+    ],
+    "WorkflowInstance": [
+      "delete",
+      "id",
+      "pause",
+      "restart",
+      "resume",
+      "sendEvent",
+      "status",
+      "subscribe",
+      "terminate"
+    ],
+    "WorkflowInstanceCreateOptions": [
+      "id",
+      "locationHint",
+      "params",
+      "retention"
+    ],
+    "WorkflowInstanceSubscribeOptions": [
+      "cursor",
+      "filter"
+    ],
+    "WorkflowStep": [
+      "do",
+      "sleep",
+      "sleepUntil",
+      "waitForEvent"
+    ],
+    "WorkflowEntrypoint": [
+      "ctx",
+      "env",
+      "run"
+    ]
+  },
+  "instanceStatusValues": [
+    "complete",
+    "errored",
+    "paused",
+    "queued",
+    "rollingBack",
+    "running",
+    "terminated",
+    "unknown",
+    "waiting",
+    "waitingForPause"
+  ],
+  "eventTypes": [
+    "attempt_completed",
+    "attempt_errored",
+    "attempt_started",
+    "rollback_attempt_completed",
+    "rollback_attempt_errored",
+    "rollback_attempt_started",
+    "rollback_completed",
+    "rollback_errored",
+    "rollback_started",
+    "rollback_step_completed",
+    "rollback_step_errored",
+    "rollback_step_started",
+    "sleep_completed",
+    "sleep_started",
+    "step_completed",
+    "step_errored",
+    "step_started",
+    "wait_completed",
+    "wait_started",
+    "wait_timed_out",
+    "workflow_completed",
+    "workflow_errored",
+    "workflow_paused",
+    "workflow_queued",
+    "workflow_running",
+    "workflow_started",
+    "workflow_terminated",
+    "workflow_waiting",
+    "workflow_waiting_for_pause"
+  ]
+}

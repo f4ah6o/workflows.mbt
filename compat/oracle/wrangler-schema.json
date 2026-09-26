@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "source": "wrangler/config-schema.json",
+  "workflowBindingKeys": [
+    "binding",
+    "class_name",
+    "concurrency",
+    "default_retention",
+    "limits",
+    "name",
+    "schedules",
+    "script_name"
+  ],
+  "trackedKinds": {
+    "binding": "string",
+    "name": "string",
+    "class_name": "string",
+    "script_name": "string",
+    "schedules": "array|string"
+  }
+}
