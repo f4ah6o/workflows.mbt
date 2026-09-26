@@ -133,12 +133,27 @@ export class WorkflowRuntime {
     return {
       id: row.id,
       workflowName: row.workflow_name,
-      status: row.status,
+      status: row.status === "rollingBack" ? "running" : row.status,
       output: row.output == null ? undefined : decodeDurableValue(row.output),
       error: row.error == null ? undefined : JSON.parse(row.error),
+      rollback: row.rollback_outcome == null
+        ? null
+        : {
+            outcome: row.rollback_outcome,
+            error: row.rollback_error == null ? undefined : JSON.parse(row.rollback_error),
+          },
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
     };
+  }
+
+  workflowEvent(row) {
+    return Object.freeze({
+      payload: Object.freeze(JSON.parse(row.payload)),
+      timestamp: new Date(row.created_at),
+      instanceId: row.id,
+      workflowName: row.workflow_name,
+    });
   }
 
   async sendEvent(id, event) {
@@ -170,8 +185,12 @@ export class WorkflowRuntime {
 
   async runInstance(id) {
     let row = this.requireInstance(id);
+    if (row.status === "rollingBack") {
+      await this.runRollbackInstance(id);
+      return;
+    }
     if (!this.kernel.canExecuteInstance(row.status)) return;
-    if (["paused", "terminated", "complete", "errored", "rollingBack"].includes(row.status)) {
+    if (["paused", "terminated", "complete", "errored"].includes(row.status)) {
       return;
     }
 
@@ -180,12 +199,7 @@ export class WorkflowRuntime {
     const WorkflowClass = this.workflowModule[workflow.className];
     const execution = new ExecutionContext(this, row);
     const instance = new WorkflowClass({}, this.env());
-    const event = Object.freeze({
-      payload: Object.freeze(JSON.parse(row.payload)),
-      timestamp: new Date(row.created_at),
-      instanceId: row.id,
-      workflowName: row.workflow_name,
-    });
+    const event = this.workflowEvent(row);
 
     this.storage.setInstanceStatus(id, "running", { error: null });
     globalThis.__WORKFLOWS_MBT_CONTEXT__ = execution;
@@ -215,6 +229,153 @@ export class WorkflowRuntime {
     }
   }
 
+  async runRollbackInstance(id) {
+    const row = this.requireInstance(id);
+    if (row.status !== "rollingBack") return;
+
+    const workflow = this.workflowByName.get(row.workflow_name);
+    if (!workflow) throw new Error(`Workflow registration disappeared: ${row.workflow_name}`);
+    const WorkflowClass = this.workflowModule[workflow.className];
+    const execution = new ExecutionContext(this, row, { rollbackHydration: true });
+    const instance = new WorkflowClass({}, this.env());
+    const event = this.workflowEvent(row);
+
+    globalThis.__WORKFLOWS_MBT_CONTEXT__ = execution;
+    try {
+      try {
+        await instance.run(event, execution.stepFacade);
+      } catch {
+        // Forward execution is replayed only far enough to reconstruct rollback
+        // closures. Its first unfinished/failed boundary is expected here.
+      }
+      await execution.settleOperations();
+    } finally {
+      delete globalThis.__WORKFLOWS_MBT_CONTEXT__;
+    }
+
+    const registrations = this.storage.listRollbackRegistrations(id);
+    for (const registration of registrations) {
+      if (registration.state === "completed") continue;
+      if (registration.state === "failed") {
+        this.storage.finishRollback(id, "failed", registration.rollback_error);
+        return;
+      }
+      if (
+        registration.state === "waiting_retry" &&
+        registration.wake_at != null &&
+        !this.kernel.deadlineReady(Date.now(), registration.wake_at)
+      ) {
+        return;
+      }
+
+      const identity = {
+        instanceId: id,
+        type: registration.step_type,
+        name: registration.step_name,
+        count: registration.step_count,
+        key: this.kernel.stepKey(
+          id, registration.step_type, registration.step_name, registration.step_count,
+        ),
+        ordinal: registration.ordinal,
+      };
+      const handler = execution.rollbackHandlers.get(identity.key);
+      if (!handler) {
+        const error = new Error(
+          `Rollback handler could not be reconstructed for ${identity.type}/${identity.name}/${identity.count}`,
+        );
+        error.name = "WorkflowRollbackHandlerMissingError";
+        const encodedError = serializeError(error);
+        const attempt = Math.max(1, registration.attempt || 0);
+        this.storage.failRollback(identity, attempt, encodedError);
+        this.storage.finishRollback(id, "failed", encodedError);
+        return;
+      }
+
+      const rollbackConfig = execution.normalizedConfig(handler.config ?? {});
+      if (
+        !Number.isInteger(rollbackConfig.retries.limit) ||
+        rollbackConfig.retries.limit < 0
+      ) {
+        const error = new TypeError("rollback retries.limit must be a non-negative integer");
+        const encodedError = serializeError(error);
+        this.storage.failRollback(identity, Math.max(1, registration.attempt || 0), encodedError);
+        this.storage.finishRollback(id, "failed", encodedError);
+        return;
+      }
+
+      const forwardStep = this.storage.getStep(identity);
+      const forwardConfig = forwardStep?.config ? JSON.parse(forwardStep.config) : {};
+      const rollbackContext = {
+        ctx: {
+          step: { name: identity.name, count: identity.count },
+          attempt: Math.max(1, this.storage.countAttempts(identity)),
+          config: forwardConfig,
+        },
+        error: registration.step_error == null
+          ? undefined
+          : deserializeError(registration.step_error),
+        output: registration.output == null
+          ? undefined
+          : decodeDurableValue(registration.output),
+      };
+      const attempt =
+        registration.state === "running" && registration.attempt > 0
+          ? registration.attempt
+          : registration.attempt + 1;
+      this.storage.startRollbackAttempt(identity, attempt);
+
+      try {
+        const timeoutMs = rollbackConfig.timeout == null
+          ? null
+          : parseDuration(rollbackConfig.timeout, "rollback timeout");
+        await withTimeout(
+          Promise.resolve().then(() => handler.rollback(rollbackContext)),
+          timeoutMs,
+        );
+        this.storage.completeRollback(identity);
+      } catch (error) {
+        const encodedError = serializeError(error);
+        const terminal =
+          Boolean(error?.nonRetryable || error?.name === "NonRetryableError") ||
+          attempt > rollbackConfig.retries.limit;
+        if (terminal) {
+          this.storage.failRollback(identity, attempt, encodedError);
+          this.storage.finishRollback(id, "failed", encodedError);
+          return;
+        }
+
+        let delayMs;
+        if (typeof rollbackConfig.retries.delay === "function") {
+          const dynamic = await rollbackConfig.retries.delay({
+            ctx: rollbackContext.ctx,
+            error,
+          });
+          delayMs = parseDuration(dynamic, "rollback retry delay");
+        } else {
+          const base = parseDuration(rollbackConfig.retries.delay, "rollback retry delay");
+          if (base > 2_000_000_000) {
+            const rangeError = new RangeError(
+              "Static rollback retry delay above 2,000,000,000ms is not supported",
+            );
+            const rangeEncoded = serializeError(rangeError);
+            this.storage.failRollback(identity, attempt, rangeEncoded);
+            this.storage.finishRollback(id, "failed", rangeEncoded);
+            return;
+          }
+          delayMs = this.kernel.retryDelayMs(
+            Math.trunc(base), attempt, rollbackConfig.retries.backoff,
+          );
+        }
+        this.storage.scheduleRollbackRetry(
+          identity, attempt, encodedError, Date.now() + delayMs,
+        );
+        return;
+      }
+    }
+
+    this.storage.finishRollback(id, "complete", null);
+  }
+
   async dev({ pollMs = 100, signal } = {}) {
     while (!signal?.aborted) {
       await this.runPending();
@@ -228,11 +389,13 @@ export class WorkflowRuntime {
 }
 
 class ExecutionContext {
-  constructor(runtime, instance) {
+  constructor(runtime, instance, { rollbackHydration = false } = {}) {
     this.runtime = runtime;
     this.storage = runtime.storage;
     this.kernel = runtime.kernel;
     this.instance = instance;
+    this.rollbackHydration = rollbackHydration;
+    this.rollbackHandlers = new Map();
     this.counts = new Map();
     this.ordinal = 0;
     this.pendingOperations = new Set();
@@ -262,15 +425,17 @@ class ExecutionContext {
     if (typeof callback !== "function") {
       throw new TypeError("step.do requires a callback");
     }
-    if (rollbackOptions?.rollback) {
-      const error = new Error(
-        "Rollback handlers are not implemented in workflows.mbt v0.1",
-      );
-      error.name = "WorkflowsMbtUnsupportedError";
-      throw error;
+    if (rollbackOptions != null && typeof rollbackOptions !== "object") {
+      throw new TypeError("step.do rollback options must be an object");
+    }
+    if (
+      rollbackOptions?.rollback != null &&
+      typeof rollbackOptions.rollback !== "function"
+    ) {
+      throw new TypeError("step.do rollback must be a function");
     }
 
-    return await this.stepDo(name, config, callback);
+    return await this.stepDo(name, config, callback, rollbackOptions ?? null);
   }
 
   trackOperation(operation) {
@@ -322,13 +487,46 @@ class ExecutionContext {
     };
   }
 
-  async stepDo(name, config, callback) {
+  async stepDo(name, config, callback, rollbackOptions = null) {
     const identity = this.nextIdentity("do", name);
+    const rollback = rollbackOptions?.rollback
+      ? {
+          rollback: rollbackOptions.rollback,
+          config: rollbackOptions.rollbackConfig ?? {},
+        }
+      : null;
+    if (rollback) {
+      this.rollbackHandlers.set(identity.key, rollback);
+    }
+
     let step = this.storage.getStep(identity);
     if (step && this.kernel.shouldReplayOutput(step.state)) {
+      if (rollback && !this.rollbackHydration) {
+        this.storage.registerRollback(
+          identity,
+          identity.ordinal,
+          observableConfig(this.normalizedConfig(rollback.config)),
+          step.output,
+          null,
+        );
+      }
       return decodeDurableValue(step.output);
     }
-    if (step?.state === "failed") throw deserializeError(step.error);
+    if (step?.state === "failed") {
+      if (rollback && !this.rollbackHydration) {
+        this.storage.registerRollback(
+          identity,
+          identity.ordinal,
+          observableConfig(this.normalizedConfig(rollback.config)),
+          null,
+          step.error,
+        );
+      }
+      throw deserializeError(step.error);
+    }
+    if (this.rollbackHydration) {
+      throw new SuspendExecution("rollback-hydration-boundary");
+    }
 
     const normalized = this.normalizedConfig(config);
     if (!Number.isInteger(normalized.retries.limit) || normalized.retries.limit < 0) {
@@ -363,7 +561,14 @@ class ExecutionContext {
         timeoutMs,
       );
       const encoded = encodeDurableValue(result, `step "${name}" output`);
-      this.storage.completeDoStep(identity, attempt, encoded);
+      this.storage.completeDoStep(
+        identity,
+        attempt,
+        encoded,
+        rollback
+          ? { config: observableConfig(this.normalizedConfig(rollback.config)) }
+          : null,
+      );
       return result;
     } catch (error) {
       const encodedError = serializeError(error);
@@ -371,7 +576,14 @@ class ExecutionContext {
         Boolean(error?.nonRetryable || error?.name === "NonRetryableError") ||
         attempt > normalized.retries.limit;
       if (terminal) {
-        this.storage.finishDoStepTerminal(identity, attempt, encodedError);
+        this.storage.finishDoStepTerminal(
+          identity,
+          attempt,
+          encodedError,
+          rollback
+            ? { config: observableConfig(this.normalizedConfig(rollback.config)) }
+            : null,
+        );
         throw error;
       }
 
@@ -400,6 +612,9 @@ class ExecutionContext {
     const identity = this.nextIdentity("sleep", name);
     const existing = this.storage.getStep(identity);
     if (existing?.state === "completed") return;
+    if (this.rollbackHydration) {
+      throw new SuspendExecution("rollback-hydration-boundary");
+    }
 
     const waitMs = parseDuration(duration, "sleep duration");
     const initialWakeAt = Date.now() + waitMs;
@@ -422,6 +637,9 @@ class ExecutionContext {
     const identity = this.nextIdentity("sleep", name);
     const existing = this.storage.getStep(identity);
     if (existing?.state === "completed") return;
+    if (this.rollbackHydration) {
+      throw new SuspendExecution("rollback-hydration-boundary");
+    }
 
     const wakeAt = parseSleepUntil(timestamp);
     const { step, timer } = this.storage.waitOnTimer(
@@ -457,6 +675,9 @@ class ExecutionContext {
     const existing = this.storage.getStep(identity);
     if (existing?.state === "completed") return decodeDurableValue(existing.output);
     if (existing?.state === "failed") throw deserializeError(existing.error);
+    if (this.rollbackHydration) {
+      throw new SuspendExecution("rollback-hydration-boundary");
+    }
 
     const timeoutMs = parseDuration(
       options.timeout ?? this.kernel.defaultWaitTimeoutMs(),
