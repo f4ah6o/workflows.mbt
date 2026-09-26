@@ -898,6 +898,7 @@ test("subscribe exposes step and retry attempt event shapes", async (t) => {
     id: "subscribe-retry",
     params: { baseUrl: counter.baseUrl },
   });
+  await drain(runtime, instance.id);
   const events = await collectSubscriptionEvents(instance, {
     filter: [
       "step_started",
@@ -951,6 +952,7 @@ test("subscribe exposes normalized sleep and wait event metadata", async (t) => 
     id: "subscribe-sleep",
     params: { baseUrl: counter.baseUrl, sleepMs: 5 },
   });
+  await drain(runtime, sleeping.id);
   const sleepEvents = await collectSubscriptionEvents(sleeping, {
     filter: ["sleep_started", "sleep_completed", "workflow_completed"],
   });
