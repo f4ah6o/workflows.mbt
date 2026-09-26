@@ -100,7 +100,11 @@ export class WorkflowRuntime {
   }
 
   env() {
-    const env = { ...this.userEnv };
+    const env = {
+      ...this.config.vars,
+      ...this.config.localDevEnv,
+      ...this.userEnv,
+    };
     for (const workflow of this.config.workflows) {
       env[workflow.binding] = new WorkflowBinding(this, workflow);
     }
