@@ -336,3 +336,15 @@ export class WrappedRaceWorkflow extends WorkflowEntrypoint<
     }));
   }
 }
+
+
+export class SensitiveWorkflow extends WorkflowEntrypoint<{}, {}> {
+  async run(_event: WorkflowEvent<{}>, step: WorkflowStep) {
+    const secret = await step.do(
+      "sensitive-output",
+      { sensitive: "output" },
+      async () => ({ token: "super-secret", visibleToWorkflow: true }),
+    );
+    return { preserved: secret.token === "super-secret" };
+  }
+}
