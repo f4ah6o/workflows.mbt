@@ -50,6 +50,25 @@
       "schedules": [
         "* * * * *"
       ]
+    },
+    {
+      "name": "retained",
+      "binding": "RETAINED",
+      "class_name": "DuplicateWorkflow",
+      "default_retention": {
+        "success_retention": "40 milliseconds",
+        "error_retention": "60 milliseconds"
+      }
+    },
+    {
+      "name": "error",
+      "binding": "ERROR",
+      "class_name": "ErrorWorkflow"
+    },
+    {
+      "name": "pause",
+      "binding": "PAUSE",
+      "class_name": "PauseWorkflow"
     }
   ]
 }
