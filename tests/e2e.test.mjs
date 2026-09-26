@@ -1031,3 +1031,119 @@ test("instance ids are scoped to each workflow binding", async (t) => {
   assert.equal((await error.status()).workflowName, "error");
   assert.equal(runtime.storage.getInstanceByPublic("duplicate", "shared-id"), null);
 });
+
+
+test("structured non-JSON step values preserve types across SIGKILL replay", async (t) => {
+  const counter = await startCounterServer();
+  t.after(() => counter.server.close());
+  const paths = tempRuntimePaths("workflows-mbt-structured-restart-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  const instance = await runtime.trigger(
+    "structured-replay",
+    {
+      id: "structured-restart-1",
+      params: { baseUrl: counter.baseUrl, sleepMs: 500 },
+    },
+    { run: false },
+  );
+  runtime.close();
+
+  const first = spawnDev(e2eConfig, paths);
+  t.after(() => stopChild(first, "SIGKILL"));
+  await poll(() => {
+    const rows = dbSnapshot(
+      paths.storagePath,
+      "SELECT name, state FROM steps WHERE instance_id=? ORDER BY ordinal",
+      instance.id,
+    );
+    return rows.some(
+      (row) => row.name === "structured-pause" && row.state === "waiting",
+    ) ? rows : null;
+  });
+  await stopChild(first, "SIGKILL");
+  assert.equal(counter.counts.get("/structured"), 1);
+
+  const second = spawnDev(e2eConfig, paths);
+  t.after(() => stopChild(second, "SIGKILL"));
+  await poll(() => {
+    const [row] = dbSnapshot(
+      paths.storagePath,
+      "SELECT status FROM instances WHERE public_id=? AND workflow_name='structured-replay'",
+      instance.id,
+    );
+    return row?.status === "complete";
+  }, { timeout: 5000 });
+  await stopChild(second, "SIGTERM");
+
+  const verify = await openRuntime(e2eConfig, paths);
+  t.after(() => verify.close());
+  const status = verify.instanceStatus(instance.id, "structured-replay");
+  assert.equal(counter.counts.get("/structured"), 1);
+  assert.equal(status.output.dateIsDate, true);
+  assert.ok(status.output.date instanceof Date);
+  assert.equal(status.output.date.toISOString(), "2026-09-26T00:00:00.000Z");
+  assert.equal(status.output.mapIsMap, true);
+  assert.ok(status.output.map instanceof Map);
+  assert.equal(status.output.map.get("answer"), 42);
+  assert.equal(status.output.setIsSet, true);
+  assert.ok(status.output.set instanceof Set);
+  assert.deepEqual([...status.output.set], ["a", "b"]);
+  assert.equal(status.output.bytesIsUint8Array, true);
+  assert.ok(status.output.bytes instanceof Uint8Array);
+  assert.deepEqual([...status.output.bytes], [1, 2, 255]);
+  assert.equal(status.output.bigintIsBigInt, true);
+  assert.equal(status.output.bigint, 9007199254740993n);
+});
+
+test("outer step.do makes Promise.race winner durable across replay", async (t) => {
+  const counter = await startCounterServer();
+  t.after(() => counter.server.close());
+  const paths = tempRuntimePaths("workflows-mbt-race-replay-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  const instance = await runtime.trigger(
+    "wrapped-race",
+    {
+      id: "wrapped-race-1",
+      params: { baseUrl: counter.baseUrl, sleepMs: 500 },
+    },
+    { run: false },
+  );
+  runtime.close();
+
+  const first = spawnDev(e2eConfig, paths);
+  t.after(() => stopChild(first, "SIGKILL"));
+  await poll(() => {
+    const rows = dbSnapshot(
+      paths.storagePath,
+      "SELECT name, state FROM steps WHERE instance_id=? ORDER BY ordinal",
+      instance.id,
+    );
+    return rows.some(
+      (row) => row.name === "race-pause" && row.state === "waiting",
+    ) ? rows : null;
+  });
+  await stopChild(first, "SIGKILL");
+  assert.equal(counter.counts.get("/race-fast"), 1);
+  assert.equal(counter.counts.get("/race-slow"), 1);
+
+  const second = spawnDev(e2eConfig, paths);
+  t.after(() => stopChild(second, "SIGKILL"));
+  await poll(() => {
+    const [row] = dbSnapshot(
+      paths.storagePath,
+      "SELECT status, output FROM instances WHERE public_id=? AND workflow_name='wrapped-race'",
+      instance.id,
+    );
+    return row?.status === "complete" ? row : null;
+  }, { timeout: 5000 });
+  await stopChild(second, "SIGTERM");
+
+  const verify = await openRuntime(e2eConfig, paths);
+  t.after(() => verify.close());
+  assert.deepEqual(
+    verify.instanceStatus(instance.id, "wrapped-race").output,
+    { winner: "fast" },
+  );
+  assert.equal(counter.counts.get("/race-fast"), 1);
+  assert.equal(counter.counts.get("/race-slow"), 1);
+});
