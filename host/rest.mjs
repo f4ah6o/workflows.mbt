@@ -1,5 +1,20 @@
-function json(value, init = {}) {
-  return Response.json(value, init);
+function ok(result, { status = 200, resultInfo } = {}) {
+  return Response.json({
+    success: true,
+    errors: [],
+    messages: [],
+    result,
+    ...(resultInfo == null ? {} : { result_info: resultInfo }),
+  }, { status });
+}
+
+function fail(code, message, status = 400) {
+  return Response.json({
+    success: false,
+    errors: [{ code, message }],
+    messages: [],
+    result: null,
+  }, { status });
 }
 
 function statusBody(runtime, workflowName, id) {
@@ -41,7 +56,7 @@ export async function handleWorkflowRest(runtime, request) {
   const workflowName = decodeURIComponent(parts[3]);
   const workflow = runtime.workflowByName.get(workflowName);
   if (!workflow) {
-    return json({ errors: [{ code: 404, message: "Workflow not found" }] }, { status: 404 });
+    return fail(404, "Workflow not found", 404);
   }
   if (parts[4] !== "instances") return null;
 
@@ -51,7 +66,13 @@ export async function handleWorkflowRest(runtime, request) {
         const instances = runtime.storage.listInstances(workflowName).map((row) =>
           statusBody(runtime, workflowName, row.public_id)
         );
-        return json({ result: instances });
+        return ok(instances, {
+          resultInfo: {
+            count: instances.length,
+            per_page: instances.length,
+            total_count: instances.length,
+          },
+        });
       }
       if (request.method === "POST") {
         const body = await readJson(request);
@@ -60,18 +81,54 @@ export async function handleWorkflowRest(runtime, request) {
           params: parseParams(body.params),
           retention: body.instance_retention,
         });
-        return json({ result: statusBody(runtime, workflowName, instance.id) }, { status: 201 });
+        return ok({
+          id: instance.id,
+          status: runtime.instanceStatus(instance.id, workflowName).status,
+          trigger_source: "api",
+        });
       }
-      return json({ errors: [{ code: 405, message: "Method not allowed" }] }, { status: 405 });
+      return fail(405, "Method not allowed", 405);
+    }
+
+    const binding = runtime.env()[workflow.binding];
+
+    if (parts.length === 6 && parts[5] === "batch" && request.method === "POST") {
+      const body = await readJson(request);
+      if (!Array.isArray(body) || body.length < 1 || body.length > 100) {
+        return fail(400, "Batch body must contain 1..100 instances", 400);
+      }
+      const created = [];
+      for (const item of body) {
+        try {
+          const instance = await runtime.createInstance(workflowName, {
+            id: item.instance_id,
+            params: parseParams(item.params),
+            retention: item.instance_retention,
+          });
+          created.push({
+            id: instance.id,
+            status: runtime.instanceStatus(instance.id, workflowName).status,
+            trigger_source: "api",
+          });
+        } catch (error) {
+          if (error?.name !== "WorkflowInstanceAlreadyExistsError") throw error;
+        }
+      }
+      return ok(created, {
+        resultInfo: {
+          count: created.length,
+          per_page: created.length,
+          total_count: created.length,
+        },
+      });
     }
 
     const instanceId = decodeURIComponent(parts[5]);
-    const binding = runtime.env()[workflow.binding];
     const instance = await binding.get(instanceId);
 
     if (parts.length === 6) {
       if (request.method === "GET") {
-        return json({ result: statusBody(runtime, workflowName, instanceId) });
+        return ok(statusBody(runtime, workflowName, instanceId));
       }
       if (request.method === "DELETE") {
         await instance.delete();
@@ -88,12 +145,13 @@ export async function handleWorkflowRest(runtime, request) {
       } else if (body.status === "restart") {
         await instance.restart(body.from ? { from: body.from } : undefined);
       } else {
-        return json(
-          { errors: [{ code: 400, message: "Unsupported workflow lifecycle status" }] },
-          { status: 400 },
-        );
+        return fail(400, "Unsupported workflow lifecycle status", 400);
       }
-      return json({ result: statusBody(runtime, workflowName, instanceId) });
+      const status = runtime.instanceStatus(instanceId, workflowName);
+      return ok({
+        status: status.status,
+        timestamp: status.updatedAt.toISOString(),
+      });
     }
 
     if (
@@ -107,20 +165,19 @@ export async function handleWorkflowRest(runtime, request) {
         type: eventType,
         payload: body.payload ?? body,
       });
-      return json({ result: { id: instanceId, accepted: true } }, { status: 202 });
+      return ok({
+        instanceId,
+        timestamp: new Date().toISOString(),
+      });
     }
 
-    return json({ errors: [{ code: 404, message: "Endpoint not found" }] }, { status: 404 });
+    return fail(404, "Endpoint not found", 404);
   } catch (error) {
     const notFound = String(error?.message).includes("not found");
-    return json(
-      {
-        errors: [{
-          code: notFound ? 404 : 400,
-          message: error?.message ?? String(error),
-        }],
-      },
-      { status: notFound ? 404 : 400 },
+    return fail(
+      notFound ? 404 : 400,
+      error?.message ?? String(error),
+      notFound ? 404 : 400,
     );
   }
 }
