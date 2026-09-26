@@ -62,8 +62,10 @@ async function drain(runtime, id, timeout = 5000) {
 
 async function startCounterServer() {
   const counts = new Map();
+  const requests = [];
   const server = createServer((req, res) => {
     const key = req.url ?? "/";
+    requests.push(key);
     counts.set(key, (counts.get(key) ?? 0) + 1);
     if (key === "/retry" && counts.get(key) < 3) {
       res.writeHead(503, { "content-type": "application/json" });
@@ -79,6 +81,7 @@ async function startCounterServer() {
   return {
     server,
     counts,
+    requests,
     baseUrl: `http://127.0.0.1:${address.port}`,
   };
 }
@@ -436,4 +439,79 @@ test("allSettled, any, and race accept concurrent durable step promises", async 
   ]);
   assert.ok(["first", "second"].includes(status.output.any));
   assert.ok(["first", "second"].includes(status.output.race));
+});
+
+
+test("rollback runs in reverse order and resumes after SIGKILL without rerunning completed handlers", async (t) => {
+  const counter = await startCounterServer();
+  t.after(() => counter.server.close());
+  const paths = tempRuntimePaths("workflows-mbt-rollback-");
+
+  const runtime = await openRuntime(e2eConfig, paths);
+  const instance = await runtime.trigger("rollback", {
+    id: "rollback-1",
+    params: { baseUrl: counter.baseUrl },
+  });
+  assert.equal(runtime.instanceStatus(instance.id).status, "waiting");
+  assert.deepEqual(
+    runtime.storage.listRollbackRegistrations(instance.id).map(({ step_name, state }) => ({
+      step_name, state,
+    })),
+    [
+      { step_name: "rollback-second", state: "registered" },
+      { step_name: "rollback-first", state: "registered" },
+    ],
+  );
+  await instance.terminate({ rollback: true });
+  assert.equal(runtime.requireInstance(instance.id).status, "rollingBack");
+  assert.equal((await instance.status()).status, "running");
+  runtime.close();
+
+  const first = spawnDev(e2eConfig, paths);
+  t.after(() => stopChild(first, "SIGKILL"));
+  await poll(() => {
+    const rows = dbSnapshot(
+      paths.storagePath,
+      `SELECT step_name, state, attempt
+       FROM rollback_registrations
+       WHERE instance_id=?
+       ORDER BY ordinal DESC`,
+      instance.id,
+    );
+    return rows[0]?.step_name === "rollback-second" &&
+      rows[0]?.state === "completed" &&
+      rows[1]?.step_name === "rollback-first" &&
+      rows[1]?.state === "waiting_retry"
+      ? rows
+      : null;
+  });
+  await stopChild(first, "SIGKILL");
+
+  assert.equal(counter.counts.get("/rollback-B"), 1);
+  assert.equal(counter.counts.get("/retry"), 1);
+  assert.deepEqual(counter.requests.slice(0, 2), ["/rollback-B", "/retry"]);
+
+  const second = spawnDev(e2eConfig, paths);
+  t.after(() => stopChild(second, "SIGKILL"));
+  const terminal = await poll(() => {
+    const [row] = dbSnapshot(
+      paths.storagePath,
+      "SELECT status, rollback_outcome, rollback_error FROM instances WHERE id=?",
+      instance.id,
+    );
+    return row?.status === "terminated" ? row : null;
+  }, { timeout: 5000 });
+  await stopChild(second, "SIGTERM");
+
+  assert.equal(terminal.rollback_outcome, "complete");
+  assert.equal(terminal.rollback_error, null);
+  assert.equal(counter.counts.get("/rollback-B"), 1);
+  assert.equal(counter.counts.get("/retry"), 3);
+
+  const verify = await openRuntime(e2eConfig, paths);
+  t.after(() => verify.close());
+  assert.deepEqual(verify.instanceStatus(instance.id).rollback, {
+    outcome: "complete",
+    error: undefined,
+  });
 });
