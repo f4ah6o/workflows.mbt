@@ -490,10 +490,19 @@ export class SQLiteStorage extends Storage {
       this.updateStep(identity, {
         state: "completed", output, error: null, completed_at: Date.now(),
       });
+      const step = this.getStep(identity);
+      let sensitiveOutput = false;
+      try {
+        sensitiveOutput = JSON.parse(step?.config ?? "{}")?.sensitive === "output";
+      } catch {}
       this.log(
         identity.instanceId,
         "step.completed",
-        JSON.stringify({ name: identity.name, output }),
+        JSON.stringify({
+          name: identity.name,
+          output: sensitiveOutput ? null : output,
+          redacted: sensitiveOutput,
+        }),
       );
       if (rollback) {
         this.registerRollback(
