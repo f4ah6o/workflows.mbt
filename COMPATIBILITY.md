@@ -283,6 +283,43 @@ the Workers binding and CLI.
 - [x] restart
 - [x] terminate
 
+## Automated verification oracle
+
+The compatibility date above is backed by `compat/oracle/manifest.json`, which
+currently pins Wrangler **4.141.0**, `@cloudflare/workers-types`
+**5.20260925.2**, and workerd **1.20260925.2**.
+
+Normal PR/push CI runs `npm run compat:pinned`. It checks the pinned public
+API/config contract and then executes unchanged TypeScript probe source under
+both Cloudflare `wrangler dev` and `workflows.mbt`. The comparator uses only
+observable behavior: terminal status/output/error, lifecycle events,
+step/attempt behavior, sleep/wait behavior, and rollback order/outcome.
+Runtime-specific instance IDs, event IDs, timestamps, temporary paths, and
+wall-clock timing are excluded.
+
+The initial differential probes are:
+
+- `basic` — `step.do` result and lifecycle
+- `retry` — retry/attempt behavior
+- `sleep` — durable sleep behavior
+- `wait-for-event` — event delivery through `waitForEvent`
+- `rollback` — rollback ordering and terminal error behavior
+
+`npm run compat:latest` is intentionally outside required PR CI. The scheduled
+`compatibility-latest` workflow resolves current upstream packages, classifies
+meaningful surface drift as `added`, `removed`, or `changed`, and runs the same
+differential probes against the latest local Wrangler runtime. Reports and raw
+traces are retained as Actions artifacts even when a check fails.
+
+`npm run compat:report` renders the current verification summary into
+`compat-results/report.md` without replacing the human-maintained compatibility
+explanation in this file.
+
+Production Cloudflare is reserved as an optional, credential-gated oracle. The
+credential-free local oracle does not claim that local Wrangler/workerd and the
+hosted Cloudflare service are identical in every account- or plan-dependent
+behavior.
+
 ## Known differences
 
 These are intentionally not hidden behind compatibility claims:
@@ -313,6 +350,15 @@ These are intentionally not hidden behind compatibility claims:
    but the Cloudflare REST subscription stream transport is not.
 8. **Cloudflare service bindings** — no built-in D1/KV/R2/Queues/AI/Durable
    Objects/Service Binding emulators are bundled.
+9. **Workflow placement / concurrency controls** — current Cloudflare
+   surfaces expose instance `locationHint` plus Workflow `limits` and
+   `concurrency`. The local single-machine runtime does not emulate
+   Cloudflare geographic placement or account-level concurrency/limit
+   enforcement.
+10. **Cross-script Workflow bindings** — Wrangler
+    `workflows[].script_name` can reference a Workflow defined by another
+    Worker. The local host currently resolves Workflow classes from the
+    configured local module only.
 
 ## Compatibility claim
 
