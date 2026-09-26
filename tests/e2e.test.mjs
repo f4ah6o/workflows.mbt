@@ -1253,3 +1253,37 @@ test("step context exposes Cloudflare default retry and 10 minute timeout config
     timeout: "10 minutes",
   });
 });
+
+
+test("allSettled cannot swallow a durable event suspension", async (t) => {
+  const counter = await startCounterServer();
+  t.after(() => counter.server.close());
+  const paths = tempRuntimePaths("workflows-mbt-parallel-wait-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const instance = await runtime.trigger("parallel-wait", {
+    id: "parallel-wait-1",
+    params: { baseUrl: counter.baseUrl },
+  });
+  assert.equal(runtime.instanceStatus(instance.id, "parallel-wait").status, "waiting");
+  assert.equal(counter.counts.get("/parallel-before-event"), 1);
+
+  await instance.sendEvent({
+    type: "approved",
+    payload: { approved: true },
+  });
+  await runtime.runPending();
+  const status = runtime.instanceStatus(instance.id, "parallel-wait");
+  assert.equal(status.status, "complete");
+  assert.equal(counter.counts.get("/parallel-before-event"), 1);
+  assert.deepEqual(status.output.fulfilled, [
+    "ready",
+    {
+      type: "approved",
+      payload: { approved: true },
+      timestamp: status.output.fulfilled[1].timestamp,
+    },
+  ]);
+  assert.ok(status.output.fulfilled[1].timestamp instanceof Date);
+});
