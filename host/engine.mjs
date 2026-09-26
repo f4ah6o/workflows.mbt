@@ -555,6 +555,7 @@ class ExecutionContext {
     this.counts = new Map();
     this.ordinal = 0;
     this.pendingOperations = new Set();
+    this.suspensions = [];
     this.stepFacade = {
       do: (name, first, second, third) =>
         this.trackOperation(this.compatStepDo(name, first, second, third)),
@@ -613,7 +614,10 @@ class ExecutionContext {
     this.pendingOperations.add(promise);
     promise.then(
       () => this.pendingOperations.delete(promise),
-      () => this.pendingOperations.delete(promise),
+      (error) => {
+        if (error instanceof SuspendExecution) this.suspensions.push(error);
+        this.pendingOperations.delete(promise);
+      },
     );
     return promise;
   }
@@ -624,6 +628,9 @@ class ExecutionContext {
       const batch = [...this.pendingOperations];
       settled.push(...await Promise.allSettled(batch));
     }
+    settled.push(
+      ...this.suspensions.map((reason) => ({ status: "rejected", reason })),
+    );
     return settled;
   }
 
