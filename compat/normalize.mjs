@@ -1,4 +1,13 @@
-const STABLE_LIFECYCLE = new Set([\n  "workflow_queued",\n  "workflow_started",\n  "workflow_paused",\n  "workflow_waiting_for_pause",\n  "workflow_completed",\n  "workflow_errored",\n  "workflow_terminated",\n]);\n\nfunction errorShape(error) {
+const STABLE_LIFECYCLE = new Set([
+  "workflow_queued",
+  "workflow_started",
+  "workflow_paused",
+  "workflow_waiting_for_pause",
+  "workflow_completed",
+  "workflow_errored",
+  "workflow_terminated",
+]);
+function errorShape(error) {
   if (!error) return undefined;
   return { name: error.name ?? "Error", message: error.message ?? String(error) };
 }
