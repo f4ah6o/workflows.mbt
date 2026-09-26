@@ -37,6 +37,11 @@
       "name": "promise-combinators",
       "binding": "PROMISE_COMBINATORS",
       "class_name": "PromiseCombinatorsWorkflow"
+    },
+    {
+      "name": "rollback",
+      "binding": "ROLLBACK",
+      "class_name": "RollbackWorkflow"
     }
   ]
 }
