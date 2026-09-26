@@ -21,6 +21,7 @@ export type WorkflowStepConfig = {
     backoff?: "constant" | "linear" | "exponential";
   };
   timeout?: string | number;
+  sensitive?: "output";
 };
 
 export type WorkflowStepContext = {
