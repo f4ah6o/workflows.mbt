@@ -376,3 +376,20 @@ export class ParallelWaitWorkflow extends WorkflowEntrypoint<{}, BaseParams> {
     return { fulfilled };
   }
 }
+
+
+export class SelfDeleteWorkflow extends WorkflowEntrypoint<
+  { SELF_DELETE: any },
+  BaseParams
+> {
+  async run(event: WorkflowEvent<BaseParams>, step: WorkflowStep) {
+    const self = await this.env.SELF_DELETE.get(event.instanceId);
+    await self.delete();
+
+    await step.do("after-self-delete", async () => {
+      await fetch(`${event.payload.baseUrl}/after-self-delete`);
+      return "should-not-run";
+    });
+    return "should-not-complete";
+  }
+}
