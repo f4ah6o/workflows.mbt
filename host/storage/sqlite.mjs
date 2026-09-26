@@ -30,6 +30,8 @@ export class SQLiteStorage extends Storage {
         payload TEXT NOT NULL,
         output TEXT,
         error TEXT,
+        rollback_outcome TEXT,
+        rollback_error TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         FOREIGN KEY(workflow_name) REFERENCES workflows(name)
@@ -88,9 +90,16 @@ export class SQLiteStorage extends Storage {
         step_type TEXT NOT NULL,
         step_name TEXT NOT NULL,
         step_count INTEGER NOT NULL,
+        ordinal INTEGER,
         state TEXT NOT NULL,
         config TEXT,
+        output TEXT,
+        step_error TEXT,
+        attempt INTEGER NOT NULL DEFAULT 0,
+        wake_at INTEGER,
+        rollback_error TEXT,
         created_at INTEGER NOT NULL,
+        completed_at INTEGER,
         PRIMARY KEY(instance_id, step_type, step_name, step_count),
         FOREIGN KEY(instance_id) REFERENCES instances(id) ON DELETE CASCADE
       );
@@ -106,7 +115,28 @@ export class SQLiteStorage extends Storage {
       CREATE INDEX IF NOT EXISTS idx_timers_wake ON timers(wake_at);
       CREATE INDEX IF NOT EXISTS idx_events_unconsumed ON events(instance_id, type, consumed_at);
       CREATE INDEX IF NOT EXISTS idx_steps_ordinal ON steps(instance_id, ordinal);
+      CREATE INDEX IF NOT EXISTS idx_rollback_runnable
+        ON rollback_registrations(instance_id, state, wake_at);
     `);
+    this.#migrate();
+  }
+
+  #migrate() {
+    const ensureColumn = (table, name, definition) => {
+      const columns = this.db.prepare(`PRAGMA table_info(${table})`).all();
+      if (!columns.some((column) => column.name === name)) {
+        this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
+      }
+    };
+    ensureColumn("instances", "rollback_outcome", "TEXT");
+    ensureColumn("instances", "rollback_error", "TEXT");
+    ensureColumn("rollback_registrations", "ordinal", "INTEGER");
+    ensureColumn("rollback_registrations", "output", "TEXT");
+    ensureColumn("rollback_registrations", "step_error", "TEXT");
+    ensureColumn("rollback_registrations", "attempt", "INTEGER NOT NULL DEFAULT 0");
+    ensureColumn("rollback_registrations", "wake_at", "INTEGER");
+    ensureColumn("rollback_registrations", "rollback_error", "TEXT");
+    ensureColumn("rollback_registrations", "completed_at", "INTEGER");
   }
 
   registerWorkflow(workflow) {
@@ -166,8 +196,25 @@ export class SQLiteStorage extends Storage {
       LEFT JOIN timers t ON t.instance_id = i.id
       WHERE i.status IN ('queued', 'running')
          OR (i.status = 'waiting' AND t.wake_at <= ?)
+         OR (
+           i.status = 'rollingBack'
+           AND (
+             NOT EXISTS (
+               SELECT 1 FROM rollback_registrations rr0
+               WHERE rr0.instance_id = i.id
+             )
+             OR EXISTS (
+               SELECT 1 FROM rollback_registrations rr
+               WHERE rr.instance_id = i.id
+                 AND (
+                   rr.state IN ('pending', 'running')
+                   OR (rr.state = 'waiting_retry' AND rr.wake_at <= ?)
+                 )
+             )
+           )
+         )
       ORDER BY i.created_at
-    `).all(now);
+    `).all(now, now);
   }
 
   getStep(identity) {
@@ -382,6 +429,134 @@ export class SQLiteStorage extends Storage {
     })();
   }
 
+  registerRollback(identity, ordinal, config, output = null, stepError = null) {
+    this.db.prepare(`
+      INSERT INTO rollback_registrations(
+        instance_id, step_type, step_name, step_count, ordinal, state, config,
+        output, step_error, attempt, created_at
+      ) VALUES(?, ?, ?, ?, ?, 'registered', ?, ?, ?, 0, ?)
+      ON CONFLICT(instance_id, step_type, step_name, step_count)
+      DO UPDATE SET
+        ordinal=excluded.ordinal,
+        config=excluded.config,
+        output=excluded.output,
+        step_error=excluded.step_error
+      WHERE rollback_registrations.state = 'registered'
+    `).run(
+      identity.instanceId, identity.type, identity.name, identity.count,
+      ordinal, config, output, stepError, Date.now(),
+    );
+  }
+
+  listRollbackRegistrations(instanceId) {
+    return this.db.prepare(`
+      SELECT * FROM rollback_registrations
+      WHERE instance_id=?
+      ORDER BY ordinal DESC, created_at DESC
+    `).all(instanceId);
+  }
+
+  getRollbackRegistration(identity) {
+    return this.db.prepare(`
+      SELECT * FROM rollback_registrations
+      WHERE instance_id=? AND step_type=? AND step_name=? AND step_count=?
+    `).get(
+      identity.instanceId, identity.type, identity.name, identity.count,
+    ) ?? null;
+  }
+
+  beginRollback(id) {
+    return this.db.transaction(() => {
+      const instance = this.getInstance(id);
+      if (!instance) throw new Error(`Unknown workflow instance: ${id}`);
+      this.db.prepare(`
+        UPDATE rollback_registrations
+        SET state='pending', attempt=0, wake_at=NULL, rollback_error=NULL, completed_at=NULL
+        WHERE instance_id=? AND state='registered'
+      `).run(id);
+      this.db.prepare(`
+        UPDATE instances
+        SET status='rollingBack', rollback_outcome=NULL, rollback_error=NULL, updated_at=?
+        WHERE id=?
+      `).run(Date.now(), id);
+      this.log(id, "instance.rollback.started", null);
+    })();
+  }
+
+  startRollbackAttempt(identity, attempt) {
+    this.db.prepare(`
+      UPDATE rollback_registrations
+      SET state='running', attempt=?, wake_at=NULL, rollback_error=NULL
+      WHERE instance_id=? AND step_type=? AND step_name=? AND step_count=?
+    `).run(
+      attempt, identity.instanceId, identity.type, identity.name, identity.count,
+    );
+    this.log(
+      identity.instanceId,
+      "rollback.attempt.started",
+      JSON.stringify({ type: identity.type, name: identity.name, count: identity.count, attempt }),
+    );
+  }
+
+  completeRollback(identity) {
+    this.db.prepare(`
+      UPDATE rollback_registrations
+      SET state='completed', wake_at=NULL, rollback_error=NULL, completed_at=?
+      WHERE instance_id=? AND step_type=? AND step_name=? AND step_count=?
+    `).run(
+      Date.now(), identity.instanceId, identity.type, identity.name, identity.count,
+    );
+    this.log(
+      identity.instanceId,
+      "rollback.completed",
+      JSON.stringify({ type: identity.type, name: identity.name, count: identity.count }),
+    );
+  }
+
+  scheduleRollbackRetry(identity, attempt, error, wakeAt) {
+    this.db.prepare(`
+      UPDATE rollback_registrations
+      SET state='waiting_retry', attempt=?, wake_at=?, rollback_error=?, completed_at=NULL
+      WHERE instance_id=? AND step_type=? AND step_name=? AND step_count=?
+    `).run(
+      attempt, Math.trunc(wakeAt), error,
+      identity.instanceId, identity.type, identity.name, identity.count,
+    );
+    this.log(
+      identity.instanceId,
+      "rollback.retry.scheduled",
+      JSON.stringify({
+        type: identity.type, name: identity.name, count: identity.count,
+        attempt, wakeAt: Math.trunc(wakeAt),
+      }),
+    );
+  }
+
+  failRollback(identity, attempt, error) {
+    this.db.prepare(`
+      UPDATE rollback_registrations
+      SET state='failed', attempt=?, wake_at=NULL, rollback_error=?, completed_at=?
+      WHERE instance_id=? AND step_type=? AND step_name=? AND step_count=?
+    `).run(
+      attempt, error, Date.now(),
+      identity.instanceId, identity.type, identity.name, identity.count,
+    );
+    this.log(
+      identity.instanceId,
+      "rollback.failed",
+      JSON.stringify({ type: identity.type, name: identity.name, count: identity.count, attempt }),
+    );
+  }
+
+  finishRollback(id, outcome, error = null) {
+    this.db.prepare(`
+      UPDATE instances
+      SET status='terminated', rollback_outcome=?, rollback_error=?, updated_at=?
+      WHERE id=?
+    `).run(outcome, error, Date.now(), id);
+    this.log(id, `instance.rollback.${outcome}`, error);
+  }
+
   restartInstance(id, from = null) {
     return this.db.transaction(() => {
       const instance = this.getInstance(id);
@@ -421,7 +596,9 @@ export class SQLiteStorage extends Storage {
         `).run(id, step.type, step.name, step.count);
       }
       this.db.prepare(`
-        UPDATE instances SET status='queued', output=NULL, error=NULL, updated_at=?
+        UPDATE instances
+        SET status='queued', output=NULL, error=NULL,
+            rollback_outcome=NULL, rollback_error=NULL, updated_at=?
         WHERE id=?
       `).run(Date.now(), id);
       this.log(id, "instance.restarted", JSON.stringify(from));
