@@ -424,6 +424,33 @@ export class WorkflowRuntime {
     this.storage.finishRollback(id, "complete", null);
   }
 
+  async fetch(request) {
+    const exported = this.workflowModule?.default;
+    const handler =
+      typeof exported === "function"
+        ? exported
+        : exported && typeof exported.fetch === "function"
+          ? exported.fetch.bind(exported)
+          : null;
+    if (!handler) {
+      return new Response("No default Worker fetch handler is exported", { status: 404 });
+    }
+
+    const waitUntil = [];
+    const ctx = {
+      waitUntil(promise) {
+        waitUntil.push(Promise.resolve(promise));
+      },
+      passThroughOnException() {},
+    };
+    const response = await handler(request, this.env(), ctx);
+    if (!(response instanceof Response)) {
+      throw new TypeError("Default Worker fetch handler must return a Response");
+    }
+    if (waitUntil.length) await Promise.allSettled(waitUntil);
+    return response;
+  }
+
   async dev({ pollMs = 100, signal } = {}) {
     while (!signal?.aborted) {
       await this.enqueueSchedules();
