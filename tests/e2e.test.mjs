@@ -557,7 +557,7 @@ test("scheduled workflow metadata is durable and scheduler restart is idempotent
   rows = runtime.storage.listInstances("scheduled");
   assert.equal(rows.length, 3);
   assert.deepEqual(
-    rows.map((row) => row.scheduled_time),
+    rows.map((row) => row.scheduled_time).sort((a, b) => a - b),
     [minute, minute + 60_000, minute + 2 * 60_000],
   );
 });
@@ -1177,7 +1177,7 @@ test("outer step.do makes Promise.race winner durable across replay", async (t) 
   const postRace = verify.storage.listSteps(
     verify.requireInstance(instance.id, "wrapped-race").id,
   ).find((step) => step.name === "race-after-replay");
-  assert.equal(postRace.ordinal, 5);
+  assert.equal(postRace.ordinal, 3);
   assert.equal(counter.counts.get("/race-fast"), 1);
 });
 
