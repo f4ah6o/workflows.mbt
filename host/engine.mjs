@@ -5,6 +5,10 @@ import { WorkflowBinding, WorkflowInstanceHandle } from "./binding.mjs";
 import { loadProjectConfig } from "./config.mjs";
 import { matchesCron } from "./cron.mjs";
 import { parseDuration, parseSleepUntil } from "./duration.mjs";
+import {
+  WorkflowInstanceDeletedExecution,
+  workflowExecutionScope,
+} from "./execution-scope.mjs";
 import { loadKernel } from "./kernel.mjs";
 import { bundleWorkflow, loadWorkflowModule } from "./loader.mjs";
 import {
@@ -78,6 +82,7 @@ export class WorkflowRuntime {
     this.storage = storage;
     this.userEnv = env;
     this.workflowModule = null;
+    this.backgroundTasks = new Set();
     this.workflowByName = new Map(config.workflows.map((w) => [w.name, w]));
   }
 
@@ -116,6 +121,11 @@ export class WorkflowRuntime {
     const row = this.storage.getInstance(storageId);
     if (!row) throw new Error(`Workflow instance not found: ${storageId}`);
     return row;
+  }
+
+  getStoredInstance(storageId) {
+    this.storage.deleteExpired(Date.now());
+    return this.storage.getInstance(storageId);
   }
 
   requireInstance(id, workflowName = null) {
@@ -285,7 +295,8 @@ export class WorkflowRuntime {
   }
 
   async runInstance(id) {
-    let row = this.requireStoredInstance(id);
+    let row = this.getStoredInstance(id);
+    if (!row) return;
     if (row.status === "rollingBack") {
       await this.runRollbackInstance(id);
       return;
@@ -306,13 +317,17 @@ export class WorkflowRuntime {
     this.storage.setInstanceStatus(id, "running", { error: null });
     globalThis.__WORKFLOWS_MBT_CONTEXT__ = execution;
     try {
-      const result = await instance.run(event, execution.stepFacade);
+      const result = await workflowExecutionScope.run(
+        { instanceStorageId: id },
+        () => instance.run(event, execution.stepFacade),
+      );
       const pending = await execution.settleOperations();
       const suspension = pending.find(
         (settled) => settled.status === "rejected" && settled.reason instanceof SuspendExecution,
       );
       if (suspension) throw suspension.reason;
-      row = this.requireStoredInstance(id);
+      row = this.getStoredInstance(id);
+      if (!row) return;
       if (row.status === "waitingForPause") {
         this.storage.setInstanceStatus(id, "paused");
         return;
@@ -324,7 +339,8 @@ export class WorkflowRuntime {
       this.storage.setInstanceStatus(id, "complete", { output: encoded, error: null });
     } catch (error) {
       await execution.settleOperations();
-      row = this.requireStoredInstance(id);
+      row = this.getStoredInstance(id);
+      if (!row || error instanceof WorkflowInstanceDeletedExecution) return;
       if (row.status === "waitingForPause") {
         this.storage.setInstanceStatus(id, "paused");
         return;
@@ -355,8 +371,8 @@ export class WorkflowRuntime {
   }
 
   async runRollbackInstance(id) {
-    const row = this.requireStoredInstance(id);
-    if (row.status !== "rollingBack") return;
+    const row = this.getStoredInstance(id);
+    if (!row || row.status !== "rollingBack") return;
 
     const workflow = this.workflowByName.get(row.workflow_name);
     if (!workflow) throw new Error(`Workflow registration disappeared: ${row.workflow_name}`);
@@ -368,7 +384,10 @@ export class WorkflowRuntime {
     globalThis.__WORKFLOWS_MBT_CONTEXT__ = execution;
     try {
       try {
-        await instance.run(event, execution.stepFacade);
+        await workflowExecutionScope.run(
+          { instanceStorageId: id },
+          () => instance.run(event, execution.stepFacade),
+        );
       } catch {
         // Forward execution is replayed only far enough to reconstruct rollback
         // closures. Its first unfinished/failed boundary is expected here.
@@ -456,12 +475,22 @@ export class WorkflowRuntime {
         const timeoutMs = rollbackConfig.timeout == null
           ? null
           : parseDuration(rollbackConfig.timeout, "rollback timeout");
-        await withTimeout(
-          Promise.resolve().then(() => handler.rollback(rollbackContext)),
-          timeoutMs,
+        await workflowExecutionScope.run(
+          { instanceStorageId: id },
+          () => withTimeout(
+            Promise.resolve().then(() => handler.rollback(rollbackContext)),
+            timeoutMs,
+          ),
         );
+        if (!this.storage.getInstance(id)) return;
         this.storage.completeRollback(identity);
       } catch (error) {
+        if (
+          error instanceof WorkflowInstanceDeletedExecution ||
+          !this.storage.getInstance(id)
+        ) {
+          return;
+        }
         const encodedError = serializeError(error);
         const terminal =
           Boolean(error?.nonRetryable || error?.name === "NonRetryableError") ||
@@ -501,7 +530,18 @@ export class WorkflowRuntime {
       }
     }
 
+    if (!this.storage.getInstance(id)) return;
     this.storage.finishRollback(id, "complete", null);
+  }
+
+  trackBackgroundTask(promise) {
+    const task = Promise.resolve(promise);
+    this.backgroundTasks.add(task);
+    task.then(
+      () => this.backgroundTasks.delete(task),
+      () => this.backgroundTasks.delete(task),
+    );
+    return task;
   }
 
   async fetch(request) {
@@ -516,10 +556,10 @@ export class WorkflowRuntime {
       return new Response("No default Worker fetch handler is exported", { status: 404 });
     }
 
-    const waitUntil = [];
+    const runtime = this;
     const ctx = {
       waitUntil(promise) {
-        waitUntil.push(Promise.resolve(promise));
+        runtime.trackBackgroundTask(promise);
       },
       passThroughOnException() {},
     };
@@ -527,7 +567,6 @@ export class WorkflowRuntime {
     if (!(response instanceof Response)) {
       throw new TypeError("Default Worker fetch handler must return a Response");
     }
-    if (waitUntil.length) await Promise.allSettled(waitUntil);
     return response;
   }
 
@@ -750,6 +789,9 @@ class ExecutionContext {
         Promise.resolve().then(() => callback(stepContext)),
         timeoutMs,
       );
+      if (!this.storage.getInstance(this.instance.id)) {
+        throw new WorkflowInstanceDeletedExecution(this.instance.id);
+      }
       const encoded = encodeDurableValue(result, `step "${name}" output`);
       this.storage.completeDoStep(
         identity,
@@ -761,6 +803,12 @@ class ExecutionContext {
       );
       return result;
     } catch (error) {
+      if (
+        error instanceof WorkflowInstanceDeletedExecution ||
+        !this.storage.getInstance(this.instance.id)
+      ) {
+        throw new WorkflowInstanceDeletedExecution(this.instance.id);
+      }
       const encodedError = serializeError(error);
       const terminal =
         Boolean(error?.nonRetryable || error?.name === "NonRetryableError") ||
