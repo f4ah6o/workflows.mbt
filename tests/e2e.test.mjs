@@ -995,3 +995,39 @@ test("subscribe exposes rollback step and attempt lifecycle in reverse order", a
   );
   assert.equal(events.at(-1).error.message, "automatic failure");
 });
+
+
+test("instance ids are scoped to each workflow binding", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-id-scope-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const duplicate = await runtime.env().DUPLICATE.create({
+    id: "shared-id",
+    params: {},
+  });
+  const error = await runtime.env().ERROR.create({
+    id: "shared-id",
+    params: {},
+  });
+
+  assert.equal(duplicate.id, "shared-id");
+  assert.equal(error.id, "shared-id");
+  assert.equal((await duplicate.status()).workflowName, "duplicate");
+  assert.equal((await error.status()).workflowName, "error");
+
+  const duplicateRow = runtime.storage.getInstanceByPublic("duplicate", "shared-id");
+  const errorRow = runtime.storage.getInstanceByPublic("error", "shared-id");
+  assert.ok(duplicateRow);
+  assert.ok(errorRow);
+  assert.notEqual(duplicateRow.id, errorRow.id);
+
+  assert.throws(
+    () => runtime.instanceStatus("shared-id"),
+    /ambiguous across workflows/,
+  );
+
+  await duplicate.delete();
+  assert.equal((await error.status()).workflowName, "error");
+  assert.equal(runtime.storage.getInstanceByPublic("duplicate", "shared-id"), null);
+});
