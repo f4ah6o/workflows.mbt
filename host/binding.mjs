@@ -78,14 +78,17 @@ export class WorkflowInstanceHandle {
   }
 
   async terminate(options = undefined) {
-    if (options && Object.keys(options).length) {
-      throw new Error(
-        "Rollback-on-terminate is not implemented in workflows.mbt v0.1",
-      );
-    }
     const row = this.runtime.requireInstance(this.id);
     if (["complete", "errored", "terminated"].includes(row.status)) {
       throw new Error(`Cannot terminate instance in state ${row.status}`);
+    }
+    const keys = options == null ? [] : Object.keys(options);
+    if (keys.some((key) => key !== "rollback")) {
+      throw new TypeError("terminate only accepts the rollback option");
+    }
+    if (options?.rollback === true) {
+      this.runtime.storage.beginRollback(this.id);
+      return;
     }
     this.runtime.storage.setInstanceStatus(this.id, "terminated");
   }
