@@ -97,6 +97,20 @@ test("cron matcher uses UTC five-field workflow schedules", () => {
   assert.equal(matchesCron("*/15 5 * * *", date), true);
   assert.equal(matchesCron("31 5 * * *", date), false);
   assert.equal(matchesCron("30 5 * * 6", date), true);
+  assert.equal(matchesCron("30 5 * * SAT", date), true);
+  assert.equal(matchesCron("30 5 * SEP MON-FRI", date), false);
+  assert.equal(
+    matchesCron("0 9 * * MON-FRI", Date.UTC(2026, 8, 25, 9, 0)),
+    true,
+  );
+  assert.equal(
+    matchesCron("0 9 * * MON-FRI", Date.UTC(2026, 8, 26, 9, 0)),
+    false,
+  );
+  assert.equal(
+    matchesCron("0 9 1 JAN,MAR *", Date.UTC(2026, 2, 1, 9, 0)),
+    true,
+  );
 });
 
 
