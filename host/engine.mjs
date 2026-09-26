@@ -281,6 +281,7 @@ export class WorkflowRuntime {
     const instance = new WorkflowClass({}, this.env());
     const event = this.workflowEvent(row);
 
+    this.storage.markInstanceStarted(id, JSON.parse(row.payload));
     this.storage.setInstanceStatus(id, "running", { error: null });
     globalThis.__WORKFLOWS_MBT_CONTEXT__ = execution;
     try {
