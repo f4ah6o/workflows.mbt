@@ -550,3 +550,50 @@ test("scheduled workflow metadata is durable and scheduler restart is idempotent
     [minute, minute + 60_000, minute + 2 * 60_000],
   );
 });
+
+
+test("WorkflowInstance.subscribe replays history, filters, resumes, and streams live completion", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-subscribe-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const completed = await runtime.trigger("duplicate", {
+    id: "subscribe-complete",
+    params: {},
+  });
+  const history = await completed.subscribe({ filter: ["workflow_completed"] });
+  const terminal = await history.next();
+  assert.equal(terminal.done, false);
+  assert.equal(terminal.value.type, "workflow_completed");
+  assert.deepEqual(terminal.value.output, [
+    { i: 0, count: 1 },
+    { i: 1, count: 2 },
+    { i: 2, count: 3 },
+  ]);
+  assert.equal((await history.next()).done, true);
+
+  const terminalEventId = terminal.value.eventId;
+  const resumed = await completed.subscribe({
+    cursor: terminalEventId,
+    filter: ["workflow_completed"],
+  });
+  assert.equal((await resumed.next()).done, true);
+
+  const waiting = await runtime.trigger("approval", {
+    id: "subscribe-live",
+    params: {},
+  });
+  assert.equal(runtime.instanceStatus(waiting.id).status, "waiting");
+  const live = await waiting.subscribe({
+    filter: ["workflow_completed", "workflow_errored", "workflow_terminated"],
+  });
+  const next = live.next();
+  await waiting.sendEvent({ type: "approved", payload: { approved: true } });
+  await runtime.runPending();
+  const liveTerminal = await next;
+  assert.equal(liveTerminal.done, false);
+  assert.equal(liveTerminal.value.type, "workflow_completed");
+  assert.deepEqual(liveTerminal.value.output, { approved: true });
+  assert.equal((await live.next()).done, true);
+  live[Symbol.dispose]();
+});
