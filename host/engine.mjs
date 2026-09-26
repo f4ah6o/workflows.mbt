@@ -108,6 +108,7 @@ export class WorkflowRuntime {
   }
 
   requireInstance(id) {
+    this.storage.deleteExpired(Date.now());
     const row = this.storage.getInstance(id);
     if (!row) throw new Error(`Workflow instance not found: ${id}`);
     return row;
@@ -117,9 +118,36 @@ export class WorkflowRuntime {
     if (!this.workflowByName.has(workflowName)) {
       throw new Error(`Unknown workflow: ${workflowName}`);
     }
+    const workflow = this.workflowByName.get(workflowName);
     const id = options.id ?? randomUUID();
+    if (
+      typeof id !== "string" ||
+      id.length < 1 ||
+      id.length > 100 ||
+      /^cf_[0-9a-f]{64}$/i.test(id)
+    ) {
+      throw new TypeError("Workflow instance id must be 1..100 characters and not use the reserved cf_<sha256> namespace");
+    }
     const payload = serializeJson(options.params ?? {}, "workflow params");
-    this.storage.createInstance({ id, workflowName, payload });
+    const requestedRetention = options.retention ?? {};
+    const defaultRetention = workflow.defaultRetention ?? {};
+    const successRetention =
+      requestedRetention.successRetention ??
+      requestedRetention.success_retention ??
+      defaultRetention.success_retention;
+    const errorRetention =
+      requestedRetention.errorRetention ??
+      requestedRetention.error_retention ??
+      defaultRetention.error_retention;
+    const retention = {
+      successRetentionMs: successRetention == null
+        ? null
+        : parseDuration(successRetention, "success retention"),
+      errorRetentionMs: errorRetention == null
+        ? null
+        : parseDuration(errorRetention, "error retention"),
+    };
+    this.storage.createInstance({ id, workflowName, payload, retention });
     return new WorkflowInstanceHandle(this, id);
   }
 
@@ -219,6 +247,7 @@ export class WorkflowRuntime {
   }
 
   async runPending({ maxRounds = 100 } = {}) {
+    this.storage.deleteExpired(Date.now());
     let ran = 0;
     for (let round = 0; round < maxRounds; round += 1) {
       const runnable = this.storage.listRunnable(Date.now());
