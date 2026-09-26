@@ -842,3 +842,155 @@ test("workflow failure automatically rolls back completed and failed registered 
     ],
   );
 });
+
+
+async function collectSubscriptionEvents(instance, options = {}) {
+  using subscription = await instance.subscribe(options);
+  const events = [];
+  while (true) {
+    const result = await subscription.next();
+    if (result.done) return events;
+    events.push(result.value);
+  }
+}
+
+test("subscribe exposes step and retry attempt event shapes", async (t) => {
+  const counter = await startCounterServer();
+  t.after(() => counter.server.close());
+  const paths = tempRuntimePaths("workflows-mbt-subscribe-retry-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const instance = await runtime.trigger("retry", {
+    id: "subscribe-retry",
+    params: { baseUrl: counter.baseUrl },
+  });
+  const events = await collectSubscriptionEvents(instance, {
+    filter: [
+      "step_started",
+      "attempt_started",
+      "attempt_completed",
+      "attempt_errored",
+      "step_completed",
+      "workflow_completed",
+    ],
+  });
+  assert.deepEqual(events.map((event) => event.type), [
+    "step_started",
+    "attempt_started",
+    "attempt_errored",
+    "attempt_started",
+    "attempt_errored",
+    "attempt_started",
+    "attempt_completed",
+    "step_completed",
+    "workflow_completed",
+  ]);
+  assert.equal(events[0].stepName, "retry-me");
+  assert.deepEqual(
+    events.filter((event) => event.type === "attempt_started").map(
+      ({ stepName, attempt }) => ({ stepName, attempt }),
+    ),
+    [
+      { stepName: "retry-me", attempt: 1 },
+      { stepName: "retry-me", attempt: 2 },
+      { stepName: "retry-me", attempt: 3 },
+    ],
+  );
+  for (const event of events.filter((event) => event.type === "attempt_errored")) {
+    assert.equal(event.stepName, "retry-me");
+    assert.equal(event.error.name, "Error");
+    assert.ok(event.retryDelayMs >= 0 && event.retryDelayMs <= 80);
+  }
+  assert.deepEqual(events.at(-2), {
+    ...events.at(-2),
+    type: "step_completed",
+    stepName: "retry-me",
+    output: { attempt: 3 },
+  });
+});
+
+test("subscribe exposes normalized sleep and wait event metadata", async (t) => {
+  const counter = await startCounterServer();
+  t.after(() => counter.server.close());
+  const paths = tempRuntimePaths("workflows-mbt-subscribe-waits-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const sleeping = await runtime.trigger("durable", {
+    id: "subscribe-sleep",
+    params: { baseUrl: counter.baseUrl, sleepMs: 5 },
+  });
+  const sleepEvents = await collectSubscriptionEvents(sleeping, {
+    filter: ["sleep_started", "sleep_completed", "workflow_completed"],
+  });
+  assert.equal(sleepEvents[0].type, "sleep_started");
+  assert.equal(sleepEvents[0].stepName, "pause");
+  assert.equal(sleepEvents[0].durationMs, 5);
+  assert.equal(sleepEvents[1].type, "sleep_completed");
+
+  const waiting = await runtime.trigger("approval", {
+    id: "subscribe-wait-metadata",
+    params: {},
+  });
+  await waiting.sendEvent({ type: "approved", payload: { approved: true } });
+  await runtime.runPending();
+  const waitEvents = await collectSubscriptionEvents(waiting, {
+    filter: ["wait_started", "wait_completed", "workflow_completed"],
+  });
+  assert.deepEqual(
+    waitEvents.map(({ type, stepName, eventType }) => ({
+      type, stepName, eventType,
+    })),
+    [
+      { type: "wait_started", stepName: "approval", eventType: "approved" },
+      { type: "wait_completed", stepName: "approval", eventType: undefined },
+      { type: "workflow_completed", stepName: undefined, eventType: undefined },
+    ],
+  );
+});
+
+test("subscribe exposes rollback step and attempt lifecycle in reverse order", async (t) => {
+  const counter = await startCounterServer();
+  t.after(() => counter.server.close());
+  const paths = tempRuntimePaths("workflows-mbt-subscribe-rollback-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const instance = await runtime.trigger("automatic-rollback", {
+    id: "subscribe-auto-rollback",
+    params: { baseUrl: counter.baseUrl },
+  });
+  const events = await collectSubscriptionEvents(instance, {
+    filter: [
+      "rollback_started",
+      "rollback_step_started",
+      "rollback_attempt_started",
+      "rollback_attempt_completed",
+      "rollback_step_completed",
+      "rollback_completed",
+      "rollback_errored",
+      "workflow_errored",
+    ],
+  });
+  assert.deepEqual(events.map((event) => event.type), [
+    "rollback_started",
+    "rollback_step_started",
+    "rollback_attempt_started",
+    "rollback_attempt_completed",
+    "rollback_step_completed",
+    "rollback_step_started",
+    "rollback_attempt_started",
+    "rollback_attempt_completed",
+    "rollback_step_completed",
+    "rollback_completed",
+    "workflow_errored",
+  ]);
+  assert.deepEqual(
+    events.filter((event) => event.type === "rollback_step_started").map(
+      (event) => event.stepName,
+    ),
+    ["auto-failing", "auto-first"],
+  );
+  assert.equal(events.at(-1).error.message, "automatic failure");
+});
