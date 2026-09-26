@@ -768,7 +768,7 @@ class ExecutionContext {
     const { step, timer } = this.storage.waitOnTimer(
       identity,
       identity.ordinal,
-      JSON.stringify({ mode: "relative", duration }),
+      JSON.stringify({ mode: "relative", duration, durationMs: waitMs }),
       "sleep",
       initialWakeAt,
     );
@@ -793,7 +793,11 @@ class ExecutionContext {
     const { step, timer } = this.storage.waitOnTimer(
       identity,
       identity.ordinal,
-      JSON.stringify({ mode: "absolute", wakeAt }),
+      JSON.stringify({
+        mode: "absolute",
+        wakeAt,
+        durationMs: Math.max(0, wakeAt - Date.now()),
+      }),
       "sleep",
       wakeAt,
     );
