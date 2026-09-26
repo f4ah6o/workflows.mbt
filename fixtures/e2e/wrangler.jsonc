@@ -22,6 +22,21 @@
       "name": "duplicate",
       "binding": "DUPLICATE",
       "class_name": "DuplicateWorkflow"
+    },
+    {
+      "name": "parallel",
+      "binding": "PARALLEL",
+      "class_name": "ParallelWorkflow"
+    },
+    {
+      "name": "parallel-restart",
+      "binding": "PARALLEL_RESTART",
+      "class_name": "ParallelRestartWorkflow"
+    },
+    {
+      "name": "promise-combinators",
+      "binding": "PROMISE_COMBINATORS",
+      "class_name": "PromiseCombinatorsWorkflow"
     }
   ]
 }
