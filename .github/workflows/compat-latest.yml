@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "17 2 * * *"
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "compat/**"
+      - "package.json"
+      - ".github/workflows/compat-latest.yml"
 
 permissions:
   contents: read
