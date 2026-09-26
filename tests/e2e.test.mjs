@@ -520,7 +520,7 @@ test("rollback runs in reverse order and resumes after SIGKILL without rerunning
 
 test("scheduled workflow metadata is durable and scheduler restart is idempotent", async (t) => {
   const paths = tempRuntimePaths("workflows-mbt-schedule-");
-  const minute = Date.UTC(2026, 8, 26, 5, 0, 0, 0);
+  const minute = Math.floor(Date.now() / 60_000) * 60_000;
 
   let runtime = await openRuntime(e2eConfig, paths);
   assert.equal(await runtime.enqueueSchedules(minute), 1);
