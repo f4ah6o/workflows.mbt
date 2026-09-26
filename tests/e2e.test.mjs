@@ -10,6 +10,8 @@ import { spawn } from "node:child_process";
 import Database from "better-sqlite3";
 import test from "node:test";
 import { WorkflowRuntime } from "../host/engine.mjs";
+import { handleWorkflowRest } from "../host/rest.mjs";
+import { startWorkflowHttpServer } from "../host/server.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const basicConfig = join(root, "fixtures/cloudflare-basic/wrangler.jsonc");
@@ -597,4 +599,117 @@ test("WorkflowInstance.subscribe replays history, filters, resumes, and streams 
   assert.deepEqual(liveTerminal.value.output, { approved: true });
   assert.equal((await live.next()).done, true);
   live[Symbol.dispose]();
+});
+
+
+test("default Worker fetch handler can create a workflow binding instance unchanged", async (t) => {
+  const counter = await startCounterServer();
+  t.after(() => counter.server.close());
+  const paths = tempRuntimePaths("workflows-mbt-worker-fetch-");
+  const runtime = await openRuntime(basicConfig, paths);
+  t.after(() => runtime.close());
+
+  const server = await startWorkflowHttpServer(runtime, {
+    host: "127.0.0.1",
+    port: 0,
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const address = server.address();
+  const response = await fetch(`http://127.0.0.1:${address.port}/trigger`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      id: "worker-fetch-1",
+      name: "Worker",
+      url: `${counter.baseUrl}/worker-data`,
+    }),
+  });
+  assert.equal(response.status, 200);
+  const initial = await response.json();
+  assert.equal(initial.id, "worker-fetch-1");
+  assert.equal(initial.workflowName, "my-workflow");
+  assert.equal(initial.status, "queued");
+
+  const status = await drain(runtime, "worker-fetch-1");
+  assert.equal(status.status, "complete");
+  assert.deepEqual(status.output, {
+    name: "Worker",
+    data: { ok: true, key: "/worker-data" },
+  });
+});
+
+test("REST compatibility facade uses the same lifecycle and event runtime", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-rest-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const request = (path, init = {}) =>
+    handleWorkflowRest(
+      runtime,
+      new Request(`http://local.test${path}`, {
+        headers: { "content-type": "application/json", ...(init.headers ?? {}) },
+        ...init,
+      }),
+    );
+
+  let response = await request("/accounts/local/workflows/approval/instances", {
+    method: "POST",
+    body: JSON.stringify({
+      instance_id: "rest-1",
+      params: JSON.stringify({}),
+    }),
+  });
+  assert.equal(response.status, 201);
+  assert.equal((await response.json()).result.status, "queued");
+
+  await runtime.runPending();
+  response = await request("/accounts/local/workflows/approval/instances/rest-1");
+  assert.equal((await response.json()).result.status, "waiting");
+
+  response = await request(
+    "/accounts/local/workflows/approval/instances/rest-1/events/approved",
+    {
+      method: "POST",
+      body: JSON.stringify({ payload: { approved: true } }),
+    },
+  );
+  assert.equal(response.status, 202);
+  await runtime.runPending();
+
+  response = await request("/accounts/local/workflows/approval/instances/rest-1");
+  let body = await response.json();
+  assert.equal(body.result.status, "complete");
+  assert.deepEqual(body.result.output, { approved: true });
+
+  response = await request(
+    "/accounts/local/workflows/approval/instances/rest-1/status",
+    {
+      method: "PATCH",
+      body: JSON.stringify({ status: "restart" }),
+    },
+  );
+  assert.equal(response.status, 200);
+  await runtime.runPending();
+  assert.equal(runtime.instanceStatus("rest-1").status, "waiting");
+
+  response = await request(
+    "/accounts/local/workflows/approval/instances/rest-1/status",
+    {
+      method: "PATCH",
+      body: JSON.stringify({ status: "terminate" }),
+    },
+  );
+  assert.equal(response.status, 200);
+  assert.equal(runtime.instanceStatus("rest-1").status, "terminated");
+
+  response = await request("/accounts/local/workflows/approval/instances");
+  body = await response.json();
+  assert.equal(body.result.some((item) => item.id === "rest-1"), true);
+
+  response = await request("/accounts/local/workflows/approval/instances/rest-1", {
+    method: "DELETE",
+  });
+  assert.equal(response.status, 204);
+  response = await request("/accounts/local/workflows/approval/instances/rest-1");
+  assert.equal(response.status, 404);
 });
