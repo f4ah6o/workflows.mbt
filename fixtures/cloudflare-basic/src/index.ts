@@ -73,6 +73,14 @@ export default {
       });
     }
 
+    if (request.method === "GET" && url.pathname === "/cookies") {
+      const headers = new Headers();
+      headers.append("Set-Cookie", "first=one; Path=/; HttpOnly");
+      headers.append("Set-Cookie", "second=two; Path=/; SameSite=Lax");
+      headers.set("x-cookie-test", "ok");
+      return new Response("cookies", { headers });
+    }
+
     if (request.method !== "POST") {
       return new Response("Method not allowed", { status: 405 });
     }
