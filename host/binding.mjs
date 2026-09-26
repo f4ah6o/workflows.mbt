@@ -84,10 +84,13 @@ export class WorkflowInstanceHandle {
 
   async pause() {
     const row = this.runtime.requireInstance(this.id);
-    if (["complete", "errored", "terminated"].includes(row.status)) {
+    if (["complete", "errored", "terminated", "paused"].includes(row.status)) {
       throw new Error(`Cannot pause instance in state ${row.status}`);
     }
-    this.runtime.storage.setInstanceStatus(this.id, "paused");
+    this.runtime.storage.setInstanceStatus(
+      this.id,
+      row.status === "running" ? "waitingForPause" : "paused",
+    );
   }
 
   async resume() {
