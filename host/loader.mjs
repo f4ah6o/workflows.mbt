@@ -1,7 +1,9 @@
 import { mkdirSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
+
+const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 export async function bundleWorkflow(config) {
   mkdirSync(config.buildDir, { recursive: true });
