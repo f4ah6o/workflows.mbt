@@ -32,6 +32,8 @@ export class SQLiteStorage extends Storage {
         error TEXT,
         rollback_outcome TEXT,
         rollback_error TEXT,
+        rollback_cause TEXT,
+        rollback_terminal_status TEXT,
         schedule_cron TEXT,
         scheduled_time INTEGER,
         success_retention_ms INTEGER,
@@ -151,6 +153,8 @@ export class SQLiteStorage extends Storage {
     };
     ensureColumn("instances", "rollback_outcome", "TEXT");
     ensureColumn("instances", "rollback_error", "TEXT");
+    ensureColumn("instances", "rollback_cause", "TEXT");
+    ensureColumn("instances", "rollback_terminal_status", "TEXT");
     ensureColumn("instances", "schedule_cron", "TEXT");
     ensureColumn("instances", "scheduled_time", "INTEGER");
     ensureColumn("instances", "success_retention_ms", "INTEGER");
@@ -596,7 +600,7 @@ export class SQLiteStorage extends Storage {
     ) ?? null;
   }
 
-  beginRollback(id) {
+  beginRollback(id, { terminalStatus = "terminated", cause = null } = {}) {
     return this.db.transaction(() => {
       const instance = this.getInstance(id);
       if (!instance) throw new Error(`Unknown workflow instance: ${id}`);
@@ -607,10 +611,15 @@ export class SQLiteStorage extends Storage {
       `).run(id);
       this.db.prepare(`
         UPDATE instances
-        SET status='rollingBack', rollback_outcome=NULL, rollback_error=NULL, updated_at=?
+        SET status='rollingBack', rollback_outcome=NULL, rollback_error=NULL,
+            rollback_cause=?, rollback_terminal_status=?, updated_at=?
         WHERE id=?
-      `).run(Date.now(), id);
-      this.log(id, "instance.rollback.started", null);
+      `).run(cause, terminalStatus, Date.now(), id);
+      this.log(
+        id,
+        "instance.rollback.started",
+        JSON.stringify({ terminalStatus, cause }),
+      );
     })();
   }
 
@@ -681,21 +690,27 @@ export class SQLiteStorage extends Storage {
 
   finishRollback(id, outcome, error = null) {
     const instance = this.getInstance(id);
+    if (!instance) throw new Error(`Unknown workflow instance: ${id}`);
+    const terminalStatus = instance.rollback_terminal_status ?? "terminated";
     const now = Date.now();
-    const expiresAt = instance?.success_retention_ms == null
-      ? null
-      : now + instance.success_retention_ms;
+    const retentionMs = terminalStatus === "errored"
+      ? instance.error_retention_ms
+      : instance.success_retention_ms;
+    const expiresAt = retentionMs == null ? null : now + retentionMs;
     this.db.prepare(`
       UPDATE instances
-      SET status='terminated', rollback_outcome=?, rollback_error=?,
+      SET status=?, rollback_outcome=?, rollback_error=?,
           expires_at=?, updated_at=?
       WHERE id=?
-    `).run(outcome, error, expiresAt, now, id);
+    `).run(terminalStatus, outcome, error, expiresAt, now, id);
     this.log(id, `instance.rollback.${outcome}`, error);
     this.log(
       id,
-      "instance.terminated",
-      JSON.stringify({ rollbackOutcome: outcome }),
+      `instance.${terminalStatus}`,
+      JSON.stringify({
+        rollbackOutcome: outcome,
+        error: terminalStatus === "errored" ? instance.error : null,
+      }),
     );
   }
 
@@ -749,7 +764,8 @@ export class SQLiteStorage extends Storage {
       this.db.prepare(`
         UPDATE instances
         SET status='queued', output=NULL, error=NULL, expires_at=NULL,
-            rollback_outcome=NULL, rollback_error=NULL, updated_at=?
+            rollback_outcome=NULL, rollback_error=NULL, rollback_cause=NULL,
+            rollback_terminal_status=NULL, updated_at=?
         WHERE id=?
       `).run(Date.now(), id);
       this.log(id, "instance.restarted", JSON.stringify(from));
