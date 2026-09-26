@@ -1287,3 +1287,160 @@ test("allSettled cannot swallow a durable event suspension", async (t) => {
   ]);
   assert.ok(status.output.fulfilled[1].timestamp instanceof Date);
 });
+
+
+test("workflow-scoped internal ids cannot collide with user-constructible ids", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-storage-id-collision-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const crafted = "wf:error:shared";
+  const craftedInstance = await runtime.env().DUPLICATE.create({
+    id: crafted,
+    params: {},
+  });
+  const firstShared = await runtime.env().DUPLICATE.create({
+    id: "shared",
+    params: {},
+  });
+  const secondShared = await runtime.env().ERROR.create({
+    id: "shared",
+    params: {},
+  });
+
+  const craftedRow = runtime.storage.getInstanceByPublic("duplicate", crafted);
+  const firstRow = runtime.storage.getInstanceByPublic("duplicate", "shared");
+  const secondRow = runtime.storage.getInstanceByPublic("error", "shared");
+
+  assert.ok(craftedRow);
+  assert.ok(firstRow);
+  assert.ok(secondRow);
+  assert.equal(craftedInstance.id, crafted);
+  assert.equal(firstShared.id, "shared");
+  assert.equal(secondShared.id, "shared");
+  assert.notEqual(secondRow.id, craftedRow.id);
+  assert.notEqual(secondRow.id, firstRow.id);
+  assert.match(secondRow.id, /^wf_[0-9a-f-]{36}$/i);
+});
+
+test("ctx.waitUntil does not block the Worker HTTP response", async (t) => {
+  const counter = await startCounterServer();
+  t.after(() => counter.server.close());
+  const paths = tempRuntimePaths("workflows-mbt-wait-until-");
+  const runtime = await openRuntime(basicConfig, paths);
+  t.after(() => runtime.close());
+
+  const server = await startWorkflowHttpServer(runtime, {
+    host: "127.0.0.1",
+    port: 0,
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const address = server.address();
+  const target = encodeURIComponent(`${counter.baseUrl}/background`);
+
+  const response = await fetch(
+    `http://127.0.0.1:${address.port}/wait-until?target=${target}`,
+  );
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "accepted");
+  assert.equal(counter.counts.get("/background"), undefined);
+  assert.equal(runtime.backgroundTasks.size, 1);
+
+  await poll(() => counter.counts.get("/background") === 1);
+  await poll(() => runtime.backgroundTasks.size === 0);
+});
+
+test("Worker ReadableStream response reaches the client incrementally", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-worker-stream-");
+  const runtime = await openRuntime(basicConfig, paths);
+  t.after(() => runtime.close());
+
+  const server = await startWorkflowHttpServer(runtime, {
+    host: "127.0.0.1",
+    port: 0,
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const address = server.address();
+
+  const response = await fetch(`http://127.0.0.1:${address.port}/stream`);
+  assert.equal(response.status, 200);
+  assert.ok(response.body);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  const first = await reader.read();
+  assert.equal(first.done, false);
+  assert.equal(decoder.decode(first.value), "first\n");
+
+  const secondPromise = reader.read();
+  const beforeDelay = await Promise.race([
+    secondPromise.then(() => "chunk"),
+    wait(50).then(() => "waiting"),
+  ]);
+  assert.equal(beforeDelay, "waiting");
+
+  const second = await secondPromise;
+  assert.equal(second.done, false);
+  assert.equal(decoder.decode(second.value), "second\n");
+  assert.equal((await reader.read()).done, true);
+});
+
+test("deleting a running instance stops execution without crashing the scheduler", async (t) => {
+  const counter = await startCounterServer();
+  t.after(() => counter.server.close());
+  const paths = tempRuntimePaths("workflows-mbt-delete-running-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const instance = await runtime.trigger(
+    "pause",
+    {
+      id: "delete-running-1",
+      params: { baseUrl: counter.baseUrl },
+    },
+    { run: false },
+  );
+  const row = runtime.storage.getInstanceByPublic("pause", instance.id);
+  const running = runtime.runInstance(row.id);
+
+  await poll(() => {
+    const [attempt] = dbSnapshot(
+      paths.storagePath,
+      "SELECT state FROM attempts WHERE instance_id=? ORDER BY started_at DESC LIMIT 1",
+      row.id,
+    );
+    return attempt?.state === "running";
+  });
+
+  await instance.delete();
+  await running;
+  await runtime.runPending();
+
+  assert.equal(runtime.storage.getInstanceByPublic("pause", instance.id), null);
+  assert.equal(counter.counts.get("/slow"), 1);
+  assert.equal(counter.counts.get("/after-pause"), undefined);
+});
+
+test("a workflow deleting itself stops at await instance.delete()", async (t) => {
+  const counter = await startCounterServer();
+  t.after(() => counter.server.close());
+  const paths = tempRuntimePaths("workflows-mbt-self-delete-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const instance = await runtime.trigger(
+    "self-delete",
+    {
+      id: "self-delete-1",
+      params: { baseUrl: counter.baseUrl },
+    },
+    { run: false },
+  );
+  const row = runtime.storage.getInstanceByPublic("self-delete", instance.id);
+
+  await runtime.runInstance(row.id);
+  await runtime.runPending();
+
+  assert.equal(runtime.storage.getInstanceByPublic("self-delete", instance.id), null);
+  assert.equal(counter.counts.get("/after-self-delete"), undefined);
+});
