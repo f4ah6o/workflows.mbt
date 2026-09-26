@@ -1235,3 +1235,21 @@ test("resume is an idempotent no-op when the workflow is not paused", async (t) 
   await waiting.resume();
   assert.equal(runtime.instanceStatus(waiting.id, "approval").status, "waiting");
 });
+
+
+test("step context exposes Cloudflare default retry and 10 minute timeout config", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-default-config-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const instance = await runtime.trigger("default-config", {
+    id: "default-config-1",
+    params: {},
+  });
+  const status = runtime.instanceStatus(instance.id, "default-config");
+  assert.equal(status.status, "complete");
+  assert.deepEqual(status.output, {
+    retries: { limit: 5, delay: 10000, backoff: "exponential" },
+    timeout: "10 minutes",
+  });
+});
