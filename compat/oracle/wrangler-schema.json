@@ -16,6 +16,6 @@
     "name": "string",
     "class_name": "string",
     "script_name": "string",
-    "schedules": "array"
+    "schedules": "array|string"
   }
 }
