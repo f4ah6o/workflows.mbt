@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { WorkflowRuntime } from "./engine.mjs";
+import { startWorkflowHttpServer } from "./server.mjs";
 
 function parse(argv) {
   const positionals = [];
@@ -23,7 +24,7 @@ function parse(argv) {
 
 function usage() {
   console.error(`Usage:
-  workflows dev --config wrangler.jsonc
+  workflows dev --config wrangler.jsonc [--host 127.0.0.1] [--port 8787] [--no-http]
   workflows trigger <workflow> --params '{"name":"Alice"}' [--id <id>]
   workflows status <workflow> <instance-id>
   workflows event <workflow> <instance-id> <type> --payload '{"approved":true}'
@@ -49,10 +50,20 @@ if (!command) {
       const stop = () => controller.abort();
       process.once("SIGINT", stop);
       process.once("SIGTERM", stop);
-      await runtime.dev({
-        pollMs: Number(flags["poll-ms"] ?? 100),
-        signal: controller.signal,
-      });
+      const server = flags["no-http"] === true
+        ? null
+        : await startWorkflowHttpServer(runtime, {
+            host: flags.host === true ? "127.0.0.1" : (flags.host ?? "127.0.0.1"),
+            port: Number(flags.port === true ? 8787 : (flags.port ?? 8787)),
+          });
+      try {
+        await runtime.dev({
+          pollMs: Number(flags["poll-ms"] ?? 100),
+          signal: controller.signal,
+        });
+      } finally {
+        if (server) await new Promise((resolve) => server.close(resolve));
+      }
     } else if (command === "trigger") {
       if (!workflowName) throw new Error("trigger requires a workflow name");
       const instance = await runtime.trigger(
