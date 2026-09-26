@@ -1,3 +1,7 @@
+import {
+  WorkflowInstanceDeletedExecution,
+  workflowExecutionScope,
+} from "./execution-scope.mjs";
 import { WorkflowSubscription } from "./subscription.mjs";
 export class WorkflowBinding {
   constructor(runtime, workflow) {
@@ -132,6 +136,9 @@ export class WorkflowInstanceHandle {
     const row = this.row();
     if (!this.runtime.storage.deleteInstance(row.id)) {
       throw new Error(`Workflow instance not found: ${this.id}`);
+    }
+    if (workflowExecutionScope.getStore()?.instanceStorageId === row.id) {
+      throw new WorkflowInstanceDeletedExecution(row.id);
     }
   }
 
