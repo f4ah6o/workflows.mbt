@@ -110,6 +110,7 @@ external side effects are not claimed.
 - [x] `createBatch`
 - [x] `deleteBatch`
 - [x] instance IDs are unique per Workflow, not process-global
+- [x] internal SQLite storage IDs are opaque and collision-checked against user IDs
 - [x] idempotent batch create behavior for existing IDs
 - [x] repeated batch-delete IDs repeat their result
 - [x] per-instance success/error retention options
@@ -132,6 +133,8 @@ retention setting is supplied; see Known differences.
 - [x] `terminate()`
 - [x] `terminate({ rollback: true })`
 - [x] `delete()`
+- [x] deleting a running instance prevents post-delete durable commits
+- [x] self-delete stops execution at `await instance.delete()`
 - [x] `sendEvent()`
 - [x] `subscribe()`
 
@@ -196,6 +199,8 @@ completion.
 - [x] separate `workflows.mbt.json` SQLite path override
 - [x] native Node Web APIs including `fetch`, `Request`, `Response`, URL
 - [x] default Worker `fetch(request, env, ctx)` host
+- [x] `ctx.waitUntil()` returns the HTTP response without awaiting background work
+- [x] streamed Worker `Response.body` is forwarded incrementally with backpressure
 - [ ] Wrangler named environments / `--env` overlay semantics
 - [ ] full Wrangler clone
 
@@ -281,9 +286,11 @@ the Workers binding and CLI.
 
 These are intentionally not hidden behind compatibility claims:
 
-1. **ReadableStream persistence** — Cloudflare JavaScript Workflows support fresh
-   unlocked `ReadableStream<Uint8Array>` step outputs. The SQLite adapter rejects
-   streams explicitly until a bounded persisted streaming contract is added.
+1. **ReadableStream step-output persistence** — Cloudflare JavaScript Workflows
+   support fresh unlocked `ReadableStream<Uint8Array>` step outputs. The SQLite
+   adapter rejects persisted step-result streams until a bounded persisted
+   streaming contract is added. This does **not** apply to default Worker HTTP
+   responses, which are streamed incrementally by the local HTTP host.
 2. **Full RpcSerializable** — the practical structured-value subset above is
    covered, but `workflows.mbt` does not yet claim the complete Workers RPC
    serialization surface.
