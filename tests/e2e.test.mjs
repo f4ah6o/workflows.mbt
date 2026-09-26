@@ -1142,8 +1142,12 @@ test("outer step.do makes Promise.race winner durable across replay", async (t) 
   t.after(() => verify.close());
   assert.deepEqual(
     verify.instanceStatus(instance.id, "wrapped-race").output,
-    { winner: "fast" },
+    { winner: "fast", count: 1 },
   );
+  const postRace = verify.storage.listSteps(
+    verify.requireInstance(instance.id, "wrapped-race").id,
+  ).find((step) => step.name === "race-after-replay");
+  assert.equal(postRace.ordinal, 5);
   assert.equal(counter.counts.get("/race-fast"), 1);
   assert.equal(counter.counts.get("/race-slow"), 1);
 });
