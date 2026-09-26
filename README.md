@@ -192,6 +192,33 @@ instances, subscriptions, Worker HTTP bindings, retention, and the REST facade.
 
 See [COMPATIBILITY.md](./COMPATIBILITY.md) for the exact implemented surface.
 
+## Continuous Cloudflare compatibility oracle
+
+Compatibility is verified against Cloudflare upstream rather than only
+repository-owned expectations.
+
+```bash
+npm run compat:pinned
+npm run compat:latest
+npm run compat:report
+```
+
+`compat:pinned` is credential-free and runs in normal PR/push CI. It validates
+the pinned Wrangler / Workers types / workerd contract, then executes the same
+TypeScript probe source under both Cloudflare `wrangler dev` and `workflows.mbt`.
+The resulting observable traces are normalized before comparison.
+
+`compat:latest` is intentionally separated into the scheduled/manual
+`compatibility-latest` workflow. It resolves current upstream packages and
+classifies contract drift as `added`, `removed`, or `changed` before running the
+same local differential probes. A new upstream release therefore does not block
+unrelated pull requests just because a version number changed.
+
+The pinned versions live in `compat/oracle/manifest.json`. Machine-readable
+results and `compat-results/report.md` are uploaded as GitHub Actions artifacts.
+Production Cloudflare probing is a separate optional extension point and is not
+required for credential-free CI.
+
 ## Scope
 
 The current runtime is deliberately single-machine. It does not require Redis,
