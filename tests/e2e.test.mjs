@@ -807,3 +807,38 @@ test("pause requested during a running step stops at the next durable boundary",
   assert.equal(counter.counts.get("/slow"), 1);
   assert.equal(counter.counts.get("/after-pause"), 1);
 });
+
+
+test("workflow failure automatically rolls back completed and failed registered steps", async (t) => {
+  const counter = await startCounterServer();
+  t.after(() => counter.server.close());
+  const paths = tempRuntimePaths("workflows-mbt-auto-rollback-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const instance = await runtime.trigger("automatic-rollback", {
+    id: "auto-rollback-1",
+    params: { baseUrl: counter.baseUrl },
+  });
+  const status = await drain(runtime, instance.id);
+  assert.equal(status.status, "errored");
+  assert.equal(status.error.name, "Error");
+  assert.equal(status.error.message, "automatic failure");
+  assert.deepEqual(status.rollback, {
+    outcome: "complete",
+    error: undefined,
+  });
+  assert.deepEqual(
+    counter.requests.filter((path) => path.startsWith("/auto-rollback-")),
+    ["/auto-rollback-failing", "/auto-rollback-first"],
+  );
+  assert.deepEqual(
+    runtime.storage.listRollbackRegistrations(instance.id).map(
+      ({ step_name, state }) => ({ step_name, state }),
+    ),
+    [
+      { step_name: "auto-failing", state: "completed" },
+      { step_name: "auto-first", state: "completed" },
+    ],
+  );
+});
