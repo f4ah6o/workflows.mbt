@@ -336,3 +336,104 @@ test("restart from a step reuses earlier output and reruns target onward", async
     [1, 2, 2],
   );
 });
+
+
+test("Promise.all keeps completed concurrent branches durable while another retries", async (t) => {
+  const counter = await startCounterServer();
+  t.after(() => counter.server.close());
+  const paths = tempRuntimePaths("workflows-mbt-parallel-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const instance = await runtime.trigger("parallel", {
+    id: "parallel-1",
+    params: { baseUrl: counter.baseUrl },
+  });
+  const status = await drain(runtime, instance.id);
+  assert.equal(status.status, "complete");
+  assert.deepEqual(status.output, {
+    retried: { branch: "retry", attempt: 3, count: 1 },
+    stable: { branch: "stable", count: 2 },
+  });
+  assert.equal(counter.counts.get("/retry"), 3);
+  assert.equal(counter.counts.get("/parallel-stable"), 1);
+  assert.deepEqual(
+    runtime.storage.listSteps(instance.id).map(({ name, count, state }) => ({
+      name, count, state,
+    })),
+    [
+      { name: "parallel", count: 1, state: "completed" },
+      { name: "parallel", count: 2, state: "completed" },
+    ],
+  );
+});
+
+test("restart during Promise.all replays committed branches without rerunning callbacks", async (t) => {
+  const counter = await startCounterServer();
+  t.after(() => counter.server.close());
+  const paths = tempRuntimePaths("workflows-mbt-parallel-restart-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  const instance = await runtime.trigger(
+    "parallel-restart",
+    {
+      id: "parallel-restart-1",
+      params: { baseUrl: counter.baseUrl, sleepMs: 600 },
+    },
+    { run: false },
+  );
+  runtime.close();
+
+  const first = spawnDev(e2eConfig, paths);
+  t.after(() => stopChild(first, "SIGKILL"));
+  await poll(() => {
+    const rows = dbSnapshot(
+      paths.storagePath,
+      "SELECT name, state FROM steps WHERE instance_id=? ORDER BY ordinal",
+      instance.id,
+    );
+    const complete = rows.filter((row) =>
+      row.name === "parallel-A" || row.name === "parallel-B"
+    ).every((row) => row.state === "completed");
+    const waiting = rows.some(
+      (row) => row.name === "parallel-pause" && row.state === "waiting",
+    );
+    return rows.length === 3 && complete && waiting ? rows : null;
+  });
+  await stopChild(first, "SIGKILL");
+
+  assert.equal(counter.counts.get("/parallel-A"), 1);
+  assert.equal(counter.counts.get("/parallel-B"), 1);
+
+  const second = spawnDev(e2eConfig, paths);
+  t.after(() => stopChild(second, "SIGKILL"));
+  await poll(() => {
+    const [row] = dbSnapshot(
+      paths.storagePath,
+      "SELECT status FROM instances WHERE id=?",
+      instance.id,
+    );
+    return row?.status === "complete";
+  }, { timeout: 5000 });
+
+  assert.equal(counter.counts.get("/parallel-A"), 1);
+  assert.equal(counter.counts.get("/parallel-B"), 1);
+});
+
+test("allSettled, any, and race accept concurrent durable step promises", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-combinators-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const instance = await runtime.trigger("promise-combinators", {
+    id: "combinators-1",
+    params: {},
+  });
+  const status = await drain(runtime, instance.id);
+  assert.equal(status.status, "complete");
+  assert.deepEqual(status.output.settled, [
+    { status: "fulfilled", value: "ok" },
+    { status: "rejected", reason: "expected" },
+  ]);
+  assert.ok(["first", "second"].includes(status.output.any));
+  assert.ok(["first", "second"].includes(status.output.race));
+});
