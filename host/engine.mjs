@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";\nimport { fileURLToPath } from "node:url";
 import { WorkflowBinding, WorkflowInstanceHandle } from "./binding.mjs";
 import { loadProjectConfig } from "./config.mjs";
 import { parseDuration, parseSleepUntil } from "./duration.mjs";
@@ -15,7 +15,7 @@ import {
 } from "./serialization.mjs";
 import { SQLiteStorage } from "./storage/sqlite.mjs";
 
-class SuspendExecution extends Error {
+const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");\n\nclass SuspendExecution extends Error {
   constructor(reason) {
     super(reason);
     this.name = "WorkflowsMbtSuspendExecution";
@@ -58,7 +58,7 @@ export class WorkflowRuntime {
     storagePath,
     buildDir,
     env = {},
-    kernelPath = resolve("dist/workflows_core.mjs"),
+    kernelPath = resolve(packageRoot, "dist/workflows_core.mjs"),
   } = {}) {
     const config = loadProjectConfig(configPath, { storagePath, buildDir });
     const kernel = await loadKernel(kernelPath);
@@ -226,12 +226,31 @@ class ExecutionContext {
     this.instance = instance;
     this.counts = new Map();
     this.ordinal = 0;
+    this.operationInFlight = false;
     this.stepFacade = {
-      do: this.stepDo.bind(this),
-      sleep: this.sleep.bind(this),
-      sleepUntil: this.sleepUntil.bind(this),
-      waitForEvent: this.waitForEvent.bind(this),
+      do: (...args) => this.runExclusive("step.do", () => this.stepDo(...args)),
+      sleep: (...args) => this.runExclusive("step.sleep", () => this.sleep(...args)),
+      sleepUntil: (...args) =>
+        this.runExclusive("step.sleepUntil", () => this.sleepUntil(...args)),
+      waitForEvent: (...args) =>
+        this.runExclusive("step.waitForEvent", () => this.waitForEvent(...args)),
     };
+  }
+
+  async runExclusive(label, operation) {
+    if (this.operationInFlight) {
+      const error = new Error(
+        `Concurrent durable step operation ${label} is unsupported in workflows.mbt v0.1`,
+      );
+      error.name = "WorkflowsMbtParallelUnsupportedError";
+      throw error;
+    }
+    this.operationInFlight = true;
+    try {
+      return await operation();
+    } finally {
+      this.operationInFlight = false;
+    }
   }
 
   nextIdentity(type, name) {

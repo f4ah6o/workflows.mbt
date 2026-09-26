@@ -5,7 +5,7 @@ import { build } from "esbuild";
 
 export async function bundleWorkflow(config) {
   mkdirSync(config.buildDir, { recursive: true });
-  const shim = resolve("compat/cloudflare-workers/index.mjs");
+  const shim = join(packageRoot, "compat/cloudflare-workers/index.mjs");
   const outfile = join(
     config.buildDir,
     `${basename(config.main).replace(/\.[^.]+$/, "")}.workflows-mbt.mjs`,
