@@ -99,6 +99,11 @@
       "name": "parallel-wait",
       "binding": "PARALLEL_WAIT",
       "class_name": "ParallelWaitWorkflow"
+    },
+    {
+      "name": "self-delete",
+      "binding": "SELF_DELETE",
+      "class_name": "SelfDeleteWorkflow"
     }
   ]
 }
