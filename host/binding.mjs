@@ -93,7 +93,7 @@ export class WorkflowInstanceHandle {
       throw new Error(`Cannot pause instance in state ${row.status}`);
     }
     this.runtime.storage.setInstanceStatus(
-      this.id,
+      row.id,
       row.status === "running" ? "waitingForPause" : "paused",
     );
   }
