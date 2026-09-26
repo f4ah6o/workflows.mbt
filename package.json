@@ -14,7 +14,7 @@
     "test:e2e": "node --test tests/e2e.test.mjs",
     "test": "npm run check:moon && npm run build:core && npm run test:moon && npm run test:host && npm run test:e2e",
     "compat:pinned": "node compat/oracle/check.mjs --mode pinned && node compat/run-differential.mjs --oracle pinned",
-    "compat:latest": "node compat/oracle/check.mjs --mode latest && node compat/run-differential.mjs --oracle latest",
+    "compat:latest": "node compat/run-latest.mjs",
     "compat:report": "node compat/report.mjs"
   },
   "dependencies": {
