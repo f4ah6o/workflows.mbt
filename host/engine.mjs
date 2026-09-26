@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { dirname, resolve } from "node:path";\nimport { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { WorkflowBinding, WorkflowInstanceHandle } from "./binding.mjs";
 import { loadProjectConfig } from "./config.mjs";
 import { parseDuration, parseSleepUntil } from "./duration.mjs";
@@ -15,7 +16,9 @@ import {
 } from "./serialization.mjs";
 import { SQLiteStorage } from "./storage/sqlite.mjs";
 
-const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");\n\nclass SuspendExecution extends Error {
+const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+class SuspendExecution extends Error {
   constructor(reason) {
     super(reason);
     this.name = "WorkflowsMbtSuspendExecution";
