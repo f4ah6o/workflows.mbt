@@ -15,9 +15,9 @@ function parseDetail(text) {
   }
 }
 
-function mapEvent(row) {
+function mapEvent(row, publicInstanceId) {
   const base = {
-    instanceId: row.instance_id,
+    instanceId: publicInstanceId,
     eventId: row.id,
     timestamp: row.created_at,
   };
@@ -170,7 +170,7 @@ function mapEvent(row) {
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export class WorkflowSubscription {
-  constructor(runtime, instanceId, { cursor = 0, filter } = {}) {
+  constructor(runtime, storageInstanceId, publicInstanceId, { cursor = 0, filter } = {}) {
     if (!Number.isInteger(cursor) || cursor < 0) {
       throw new TypeError("subscribe cursor must be a non-negative integer");
     }
@@ -181,7 +181,8 @@ export class WorkflowSubscription {
       throw new TypeError("subscribe filter must be an array of event type strings");
     }
     this.runtime = runtime;
-    this.instanceId = instanceId;
+    this.storageInstanceId = storageInstanceId;
+    this.instanceId = publicInstanceId;
     this.cursor = cursor;
     this.filter = filter == null ? null : new Set(filter);
     this.disposed = false;
@@ -202,13 +203,13 @@ export class WorkflowSubscription {
     try {
       while (!this.disposed && !this.done) {
         const rows = this.runtime.storage.listExecutionEvents(
-          this.instanceId,
+          this.storageInstanceId,
           this.cursor,
           100,
         );
         for (const row of rows) {
           this.cursor = row.id;
-          const event = mapEvent(row);
+          const event = mapEvent(row, this.instanceId);
           if (!event) continue;
           const terminal = TERMINAL.has(event.type);
           const included = this.filter == null || this.filter.has(event.type);
@@ -217,7 +218,7 @@ export class WorkflowSubscription {
           if (terminal) return { value: undefined, done: true };
         }
 
-        const instance = this.runtime.requireInstance(this.instanceId);
+        const instance = this.runtime.requireStoredInstance(this.storageInstanceId);
         if (["complete", "errored", "terminated"].includes(instance.status)) {
           this.done = true;
           return { value: undefined, done: true };
