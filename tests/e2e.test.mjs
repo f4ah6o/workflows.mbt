@@ -69,6 +69,13 @@ async function startCounterServer() {
     const key = req.url ?? "/";
     requests.push(key);
     counts.set(key, (counts.get(key) ?? 0) + 1);
+    if (key === "/slow") {
+      setTimeout(() => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, key }));
+      }, 120);
+      return;
+    }
     if (key === "/retry" && counts.get(key) < 3) {
       res.writeHead(503, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: false }));
@@ -712,4 +719,91 @@ test("REST compatibility facade uses the same lifecycle and event runtime", asyn
   assert.equal(response.status, 204);
   response = await request("/accounts/local/workflows/approval/instances/rest-1");
   assert.equal(response.status, 404);
+});
+
+
+test("binding batch semantics repeat duplicate delete results and skip duplicate creates", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-batch-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+  const binding = runtime.env().DUPLICATE;
+
+  const created = await binding.createBatch([
+    { id: "batch-a", params: {} },
+    { id: "batch-a", params: {} },
+    { id: "batch-b", params: {} },
+  ]);
+  assert.deepEqual(created.map((instance) => instance.id), ["batch-a", "batch-b"]);
+
+  const result = await binding.deleteBatch(["batch-a", "batch-a", "missing"]);
+  assert.deepEqual(result.deleted, [{ id: "batch-a" }, { id: "batch-a" }]);
+  assert.deepEqual(result.errors, [
+    { id: "missing", code: 404, message: "Workflow instance not found" },
+  ]);
+});
+
+test("instance and default retention expire successful and errored state", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-retention-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const explicit = await runtime.trigger("duplicate", {
+    id: "retention-explicit",
+    params: {},
+    retention: { successRetention: "30 milliseconds" },
+  });
+  assert.equal(runtime.instanceStatus(explicit.id).status, "complete");
+
+  const retained = await runtime.trigger("retained", {
+    id: "retention-default",
+    params: {},
+  });
+  assert.equal(runtime.instanceStatus(retained.id).status, "complete");
+
+  const errored = await runtime.trigger("error", {
+    id: "retention-error",
+    params: {},
+    retention: { errorRetention: "35 milliseconds" },
+  });
+  assert.equal(runtime.instanceStatus(errored.id).status, "errored");
+
+  await wait(75);
+  assert.throws(() => runtime.instanceStatus("retention-explicit"), /not found/);
+  assert.throws(() => runtime.instanceStatus("retention-default"), /not found/);
+  assert.throws(() => runtime.instanceStatus("retention-error"), /not found/);
+});
+
+test("pause requested during a running step stops at the next durable boundary", async (t) => {
+  const counter = await startCounterServer();
+  t.after(() => counter.server.close());
+  const paths = tempRuntimePaths("workflows-mbt-pause-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const instance = await runtime.trigger(
+    "pause",
+    { id: "pause-1", params: { baseUrl: counter.baseUrl } },
+    { run: false },
+  );
+  const running = runtime.runInstance(instance.id);
+  await poll(() => {
+    const [attempt] = dbSnapshot(
+      paths.storagePath,
+      "SELECT state FROM attempts WHERE instance_id=? AND step_name='slow-boundary'",
+      instance.id,
+    );
+    return attempt?.state === "running";
+  });
+  await instance.pause();
+  assert.equal(runtime.requireInstance(instance.id).status, "waitingForPause");
+  await running;
+  assert.equal(runtime.instanceStatus(instance.id).status, "paused");
+  assert.equal(counter.counts.get("/slow"), 1);
+  assert.equal(counter.counts.get("/after-pause"), undefined);
+
+  await instance.resume();
+  await runtime.runPending();
+  assert.equal(runtime.instanceStatus(instance.id).status, "complete");
+  assert.equal(counter.counts.get("/slow"), 1);
+  assert.equal(counter.counts.get("/after-pause"), 1);
 });
