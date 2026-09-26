@@ -31,7 +31,7 @@ compatibility host
 MoonBit durable-execution kernel
   - deterministic step identity
   - replay decisions
-  - retry/backoff decisions
+  - retry/backoff/default decisions
   - timer deadline decisions
   - restart boundary decisions
         |
@@ -39,7 +39,10 @@ MoonBit durable-execution kernel
 host storage/scheduler bridge
   - SQLite adapter (WAL)
   - atomic state transitions
+  - concurrent durable branches
+  - rollback / compensation state
   - durable timers / event queue
+  - cron scheduler / subscriptions
   - single-machine scheduler
 ```
 
@@ -58,8 +61,13 @@ it invokes `run(event, step)` from the beginning.
 
 Completed steps return their persisted output without invoking the callback.
 Sleeping, retrying, and event-waiting steps persist deadlines/state in SQLite and
-suspend the workflow process-free. When the scheduler resumes an instance, the
-workflow replays to the first unfinished operation.
+suspend the workflow process-free. Concurrent durable branches can commit
+independently; replay reuses the committed branch outputs. Rollback registrations,
+retry deadlines, scheduled firings, and subscription history are durable as well.
+
+When the scheduler resumes an instance, the workflow replays from the beginning
+and durable identities select previously committed outputs rather than rerunning
+their callbacks.
 
 Step identity is:
 
@@ -98,9 +106,10 @@ Existing `wrangler.jsonc` remains the primary project config:
 }
 ```
 
-For v0.1 the runtime consumes `main` and the workflow `name`, `binding`, and
-`class_name`. Other Wrangler fields are preserved and ignored unless an adapter
-supports them.
+The local host consumes the workflow `name`, `binding`, `class_name`,
+`schedules`, and `default_retention`, plus top-level `vars`,
+`compatibility_flags`, and local `.dev.vars` / `.env` values. Unknown
+Wrangler fields remain ignored unless an adapter supports them.
 
 Optional local-only settings belong in `workflows.mbt.json`:
 
@@ -144,6 +153,11 @@ node host/cli.mjs event my-workflow <instance-id> approved \
 
 `pause`, `resume`, `restart`, and `terminate` commands are also available.
 
+By default `workflows dev` also listens on `127.0.0.1:8787`. It dispatches
+ordinary requests to an unchanged default Worker `fetch` export and exposes the
+local Workflows REST compatibility facade. Use `--no-http` for scheduler-only
+operation.
+
 ## Source compatibility fixture
 
 `fixtures/cloudflare-basic/src/index.ts` imports:
@@ -170,17 +184,36 @@ npm run test:host
 npm run test:e2e
 ```
 
-The E2E suite includes a real child runtime process that is killed with
-`SIGKILL`, then restarted against the same SQLite database. It verifies durable
-step replay and that sleep deadlines do not restart from zero.
+The E2E suite includes real child runtime processes that are killed with
+`SIGKILL`, then restarted against the same SQLite database. Coverage includes
+sequential and parallel replay, retry/sleep/event durability, structured
+non-JSON values, wrapped race winner persistence, rollback recovery, scheduled
+instances, subscriptions, Worker HTTP bindings, retention, and the REST facade.
 
 See [COMPATIBILITY.md](./COMPATIBILITY.md) for the exact implemented surface.
 
 ## Scope
 
-v0.1 is deliberately single-machine. It does not require Redis, Kafka,
-Kubernetes, distributed consensus, or a multi-node scheduler.
+The current runtime is deliberately single-machine. It does not require Redis,
+Kafka, Kubernetes, distributed consensus, or a multi-node scheduler. Do not point
+multiple executor processes at the same SQLite database until the planned
+instance lease/claim boundary is implemented.
 
 Cloudflare service bindings such as D1, KV, R2, Queues, Workers AI, Durable
 Objects, and Service Bindings are not emulated. User-provided values/adapters can
 be injected into `this.env`; service-specific adapters are future work.
+
+
+## Compatibility status
+
+The tested surface is intended as a **broad Cloudflare Workflows-compatible local
+runtime**, not a full Workers platform clone.
+
+Notable current differences include persisted `ReadableStream<Uint8Array>`
+outputs, the complete Workers RpcSerializable universe, Cloudflare account-plan
+default retention, multi-process executor leases, Cloudflare service-binding
+emulators, and the REST subscription streaming transport.
+
+See [COMPATIBILITY.md](./COMPATIBILITY.md) and
+[compat/cloudflare/VERSION.md](./compat/cloudflare/VERSION.md) for the tested
+surface and oracle.
