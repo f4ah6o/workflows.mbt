@@ -156,3 +156,41 @@ export class PromiseCombinatorsWorkflow extends WorkflowEntrypoint<{}, {}> {
     };
   }
 }
+
+
+export class RollbackWorkflow extends WorkflowEntrypoint<{}, BaseParams> {
+  async run(event: WorkflowEvent<BaseParams>, step: WorkflowStep) {
+    await step.do(
+      "rollback-first",
+      async () => "forward-first",
+      {
+        rollback: async ({ output }) => {
+          if (output !== "forward-first") throw new Error("rollback output mismatch");
+          const response = await fetch(`${event.payload.baseUrl}/retry`);
+          if (!response.ok) throw new Error("rollback retry requested");
+        },
+        rollbackConfig: {
+          retries: { limit: 3, delay: 300, backoff: "constant" },
+        },
+      },
+    );
+
+    await step.do(
+      "rollback-second",
+      async () => "forward-second",
+      {
+        rollback: async ({ output }) => {
+          if (output !== "forward-second") throw new Error("rollback output mismatch");
+          const response = await fetch(`${event.payload.baseUrl}/rollback-B`);
+          if (!response.ok) throw new Error("rollback B failed");
+        },
+      },
+    );
+
+    await step.waitForEvent("hold-for-termination", {
+      type: "finish",
+      timeout: "1 hour",
+    });
+    return "unexpected";
+  }
+}
