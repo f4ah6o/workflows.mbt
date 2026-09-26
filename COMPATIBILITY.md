@@ -292,8 +292,10 @@ currently pins Wrangler **4.141.0**, `@cloudflare/workers-types`
 Normal PR/push CI runs `npm run compat:pinned`. It checks the pinned public
 API/config contract and then executes unchanged TypeScript probe source under
 both Cloudflare `wrangler dev` and `workflows.mbt`. The comparator uses only
-observable behavior: terminal status/output/error, lifecycle events,
-step/attempt behavior, sleep/wait behavior, and rollback order/outcome.
+observable behavior: terminal status/output/error, stable lifecycle events,
+step/attempt behavior, sleep/wait behavior, and rollback order/outcome. Transient
+`workflow_running` / `workflow_waiting` transitions are excluded from exact
+sequence comparison because local Wrangler may coalesce them for short waits;
 Runtime-specific instance IDs, event IDs, timestamps, temporary paths, and
 wall-clock timing are excluded.
 
