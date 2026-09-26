@@ -50,6 +50,12 @@ pub fn default_retry_delay_ms() -> Int {
 }
 
 ///|
+#export_name("wf_default_step_timeout")
+pub fn default_step_timeout() -> String {
+  "10 minutes"
+}
+
+///|
 #export_name("wf_default_wait_timeout_ms")
 pub fn default_wait_timeout_ms() -> Int {
   86400000
