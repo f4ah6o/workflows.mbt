@@ -32,6 +32,8 @@ export class SQLiteStorage extends Storage {
         error TEXT,
         rollback_outcome TEXT,
         rollback_error TEXT,
+        schedule_cron TEXT,
+        scheduled_time INTEGER,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         FOREIGN KEY(workflow_name) REFERENCES workflows(name)
@@ -103,6 +105,22 @@ export class SQLiteStorage extends Storage {
         PRIMARY KEY(instance_id, step_type, step_name, step_count),
         FOREIGN KEY(instance_id) REFERENCES instances(id) ON DELETE CASCADE
       );
+      CREATE TABLE IF NOT EXISTS workflow_schedules (
+        workflow_name TEXT NOT NULL,
+        cron TEXT NOT NULL,
+        last_checked_at INTEGER NOT NULL,
+        PRIMARY KEY(workflow_name, cron),
+        FOREIGN KEY(workflow_name) REFERENCES workflows(name)
+      );
+      CREATE TABLE IF NOT EXISTS scheduled_runs (
+        workflow_name TEXT NOT NULL,
+        cron TEXT NOT NULL,
+        scheduled_time INTEGER NOT NULL,
+        instance_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY(workflow_name, cron, scheduled_time),
+        FOREIGN KEY(instance_id) REFERENCES instances(id) ON DELETE CASCADE
+      );
       CREATE TABLE IF NOT EXISTS execution_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         instance_id TEXT NOT NULL,
@@ -130,6 +148,8 @@ export class SQLiteStorage extends Storage {
     };
     ensureColumn("instances", "rollback_outcome", "TEXT");
     ensureColumn("instances", "rollback_error", "TEXT");
+    ensureColumn("instances", "schedule_cron", "TEXT");
+    ensureColumn("instances", "scheduled_time", "INTEGER");
     ensureColumn("rollback_registrations", "ordinal", "INTEGER");
     ensureColumn("rollback_registrations", "output", "TEXT");
     ensureColumn("rollback_registrations", "step_error", "TEXT");
@@ -149,14 +169,73 @@ export class SQLiteStorage extends Storage {
     `).run({ ...workflow, now: Date.now() });
   }
 
-  createInstance({ id, workflowName, payload }) {
+  createInstance({ id, workflowName, payload, schedule = null }) {
     const now = Date.now();
     this.db.prepare(`
-      INSERT INTO instances(id, workflow_name, status, payload, created_at, updated_at)
-      VALUES(?, ?, 'queued', ?, ?, ?)
-    `).run(id, workflowName, payload, now, now);
+      INSERT INTO instances(
+        id, workflow_name, status, payload, schedule_cron, scheduled_time,
+        created_at, updated_at
+      )
+      VALUES(?, ?, 'queued', ?, ?, ?, ?, ?)
+    `).run(
+      id, workflowName, payload,
+      schedule?.cron ?? null, schedule?.scheduledTime ?? null,
+      now, now,
+    );
     this.log(id, "instance.created", null);
     return this.getInstance(id);
+  }
+
+  claimScheduledInstance({
+    id,
+    workflowName,
+    payload,
+    cron,
+    scheduledTime,
+  }) {
+    return this.db.transaction(() => {
+      const existing = this.db.prepare(`
+        SELECT instance_id FROM scheduled_runs
+        WHERE workflow_name=? AND cron=? AND scheduled_time=?
+      `).get(workflowName, cron, scheduledTime);
+      if (existing) {
+        return { created: false, id: existing.instance_id };
+      }
+
+      this.createInstance({
+        id,
+        workflowName,
+        payload,
+        schedule: { cron, scheduledTime },
+      });
+      this.db.prepare(`
+        INSERT INTO scheduled_runs(
+          workflow_name, cron, scheduled_time, instance_id, created_at
+        ) VALUES(?, ?, ?, ?, ?)
+      `).run(workflowName, cron, scheduledTime, id, Date.now());
+      this.log(
+        id,
+        "instance.scheduled",
+        JSON.stringify({ cron, scheduledTime }),
+      );
+      return { created: true, id };
+    })();
+  }
+
+  getScheduleCursor(workflowName, cron) {
+    return this.db.prepare(`
+      SELECT last_checked_at FROM workflow_schedules
+      WHERE workflow_name=? AND cron=?
+    `).get(workflowName, cron)?.last_checked_at ?? null;
+  }
+
+  setScheduleCursor(workflowName, cron, lastCheckedAt) {
+    this.db.prepare(`
+      INSERT INTO workflow_schedules(workflow_name, cron, last_checked_at)
+      VALUES(?, ?, ?)
+      ON CONFLICT(workflow_name, cron)
+      DO UPDATE SET last_checked_at=excluded.last_checked_at
+    `).run(workflowName, cron, Math.trunc(lastCheckedAt));
   }
 
   getInstance(id) {
