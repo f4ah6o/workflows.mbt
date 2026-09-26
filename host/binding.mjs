@@ -10,11 +10,8 @@ export class WorkflowBinding {
   }
 
   async get(id) {
-    const instance = this.runtime.requireInstance(id);
-    if (!instance || instance.workflow_name !== this.workflow.name) {
-      throw new Error(`Workflow instance not found: ${id}`);
-    }
-    return new WorkflowInstanceHandle(this.runtime, id);
+    this.runtime.requireInstance(id, this.workflow.name);
+    return new WorkflowInstanceHandle(this.runtime, this.workflow.name, id);
   }
 
   async createBatch(batch) {
@@ -29,13 +26,11 @@ export class WorkflowBinding {
     this.runtime.storage.deleteExpired(Date.now());
     const out = [];
     for (const item of batch) {
-      const existing = this.runtime.storage.getInstance(item.id);
-      if (existing) {
-        if (existing.workflow_name === this.workflow.name) continue;
-        throw new Error(
-          `Instance id ${item.id} is already used by another workflow in the SQLite v1 namespace`,
-        );
-      }
+      const existing = this.runtime.storage.getInstanceByPublic(
+        this.workflow.name,
+        item.id,
+      );
+      if (existing) continue;
       out.push(await this.create(item));
     }
     return out;
@@ -55,9 +50,12 @@ export class WorkflowBinding {
     for (const id of ids) {
       let outcome = outcomes.get(id);
       if (!outcome) {
-        const row = this.runtime.storage.getInstance(id);
-        if (row && row.workflow_name === this.workflow.name) {
-          this.runtime.storage.deleteInstance(id);
+        const row = this.runtime.storage.getInstanceByPublic(
+          this.workflow.name,
+          id,
+        );
+        if (row) {
+          this.runtime.storage.deleteInstance(row.id);
           outcome = { ok: true };
         } else {
           outcome = {
@@ -75,17 +73,22 @@ export class WorkflowBinding {
 }
 
 export class WorkflowInstanceHandle {
-  constructor(runtime, id) {
+  constructor(runtime, workflowName, id) {
     this.runtime = runtime;
+    this.workflowName = workflowName;
     this.id = id;
   }
 
+  row() {
+    return this.runtime.requireInstance(this.id, this.workflowName);
+  }
+
   async status() {
-    return this.runtime.instanceStatus(this.id);
+    return this.runtime.instanceStatus(this.id, this.workflowName);
   }
 
   async pause() {
-    const row = this.runtime.requireInstance(this.id);
+    const row = this.row();
     if (["complete", "errored", "terminated", "paused"].includes(row.status)) {
       throw new Error(`Cannot pause instance in state ${row.status}`);
     }
@@ -96,19 +99,20 @@ export class WorkflowInstanceHandle {
   }
 
   async resume() {
-    const row = this.runtime.requireInstance(this.id);
+    const row = this.row();
     if (!["paused", "waitingForPause"].includes(row.status)) {
       throw new Error(`Cannot resume instance in state ${row.status}`);
     }
-    this.runtime.storage.setInstanceStatus(this.id, "queued");
+    this.runtime.storage.setInstanceStatus(row.id, "queued");
   }
 
   async restart(options = undefined) {
-    this.runtime.storage.restartInstance(this.id, options?.from ?? null);
+    const row = this.row();
+    this.runtime.storage.restartInstance(row.id, options?.from ?? null);
   }
 
   async terminate(options = undefined) {
-    const row = this.runtime.requireInstance(this.id);
+    const row = this.row();
     if (["complete", "errored", "terminated"].includes(row.status)) {
       throw new Error(`Cannot terminate instance in state ${row.status}`);
     }
@@ -117,27 +121,33 @@ export class WorkflowInstanceHandle {
       throw new TypeError("terminate only accepts the rollback option");
     }
     if (options?.rollback === true) {
-      this.runtime.storage.beginRollback(this.id, {
+      this.runtime.storage.beginRollback(row.id, {
         terminalStatus: "terminated",
         cause: null,
       });
       return;
     }
-    this.runtime.storage.setInstanceStatus(this.id, "terminated");
+    this.runtime.storage.setInstanceStatus(row.id, "terminated");
   }
 
   async delete() {
-    if (!this.runtime.storage.deleteInstance(this.id)) {
+    const row = this.row();
+    if (!this.runtime.storage.deleteInstance(row.id)) {
       throw new Error(`Workflow instance not found: ${this.id}`);
     }
   }
 
   async sendEvent(event) {
-    return this.runtime.sendEvent(this.id, event);
+    return this.runtime.sendEvent(this.id, event, this.workflowName);
   }
 
   async subscribe(options = {}) {
-    this.runtime.requireInstance(this.id);
-    return new WorkflowSubscription(this.runtime, this.id, options);
+    const row = this.row();
+    return new WorkflowSubscription(
+      this.runtime,
+      row.id,
+      this.id,
+      options,
+    );
   }
 }
