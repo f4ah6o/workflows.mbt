@@ -1212,3 +1212,26 @@ test("sensitive step output stays durable but is redacted from subscriptions", a
     { token: "super-secret", visibleToWorkflow: true },
   );
 });
+
+
+test("resume is an idempotent no-op when the workflow is not paused", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-resume-noop-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const complete = await runtime.trigger("duplicate", {
+    id: "resume-complete",
+    params: {},
+  });
+  assert.equal(runtime.instanceStatus(complete.id, "duplicate").status, "complete");
+  await complete.resume();
+  assert.equal(runtime.instanceStatus(complete.id, "duplicate").status, "complete");
+
+  const waiting = await runtime.trigger("approval", {
+    id: "resume-waiting",
+    params: {},
+  });
+  assert.equal(runtime.instanceStatus(waiting.id, "approval").status, "waiting");
+  await waiting.resume();
+  assert.equal(runtime.instanceStatus(waiting.id, "approval").status, "waiting");
+});
