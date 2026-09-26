@@ -1199,7 +1199,7 @@ test("sensitive step output stays durable but is redacted from subscriptions", a
     filter: ["step_completed", "workflow_completed"],
   });
   assert.equal(events[0].type, "step_completed");
-  assert.equal(events[0].stepName, "sensitive-output");
+  assert.equal(events[0].stepName, "sensitive-output-1");
   assert.equal(events[0].output, "[REDACTED]");
   assert.deepEqual(events[1].output, { preserved: true });
 
