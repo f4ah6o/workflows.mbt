@@ -16,7 +16,13 @@ async function nodeRequest(req, host, port) {
 }
 
 async function writeResponse(res, response) {
-  const headers = Object.fromEntries(response.headers);
+  const headers = Object.create(null);
+  for (const [name, value] of response.headers) {
+    if (name.toLowerCase() === "set-cookie") continue;
+    headers[name] = value;
+  }
+  const setCookies = response.headers.getSetCookie();
+  if (setCookies.length) headers["set-cookie"] = setCookies;
   res.writeHead(response.status, headers);
   if (response.body == null) {
     res.end();
