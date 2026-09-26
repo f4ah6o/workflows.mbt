@@ -69,3 +69,142 @@ export declare class WorkflowStep {
 }
 
 export declare class NonRetryableError extends Error {}
+
+
+export type WorkflowInstanceStatusName =
+  | "queued"
+  | "running"
+  | "waiting"
+  | "paused"
+  | "errored"
+  | "terminated"
+  | "complete";
+
+export type WorkflowInstanceEvent = {
+  instanceId: string;
+  eventId: number;
+  timestamp: number;
+} & (
+  | { type: "workflow_queued" }
+  | { type: "workflow_started"; params?: unknown }
+  | { type: "workflow_running" }
+  | { type: "workflow_paused" }
+  | { type: "workflow_waiting_for_pause" }
+  | { type: "workflow_waiting" }
+  | { type: "workflow_completed"; output?: unknown }
+  | { type: "workflow_errored"; error: { name: string; message: string } }
+  | { type: "workflow_terminated" }
+  | {
+      type: "step_started";
+      stepName: string;
+      config?: {
+        retries: {
+          limit: number;
+          delay: string | number | "[dynamic]";
+          backoff?: "constant" | "linear" | "exponential";
+        };
+        timeout: string | number;
+        sensitive?: "output";
+      };
+    }
+  | { type: "step_completed"; stepName: string; output?: unknown }
+  | { type: "step_errored"; stepName: string }
+  | { type: "attempt_started"; stepName: string; attempt: number }
+  | { type: "attempt_completed"; stepName: string; attempt: number }
+  | {
+      type: "attempt_errored";
+      stepName: string;
+      attempt: number;
+      retryDelayMs?: number;
+      error: { name: string; message: string };
+    }
+  | { type: "sleep_started"; stepName: string; durationMs: number }
+  | { type: "sleep_completed"; stepName: string }
+  | { type: "wait_started"; stepName: string; eventType: string }
+  | { type: "wait_completed"; stepName: string }
+  | { type: "wait_timed_out"; stepName: string }
+  | { type: "rollback_started" }
+  | { type: "rollback_step_started"; stepName: string; config?: WorkflowStepConfig }
+  | { type: "rollback_step_completed"; stepName: string }
+  | {
+      type: "rollback_step_errored";
+      stepName: string;
+      error: { name: string; message: string };
+    }
+  | { type: "rollback_attempt_started"; stepName: string; attempt: number }
+  | { type: "rollback_attempt_completed"; stepName: string; attempt: number }
+  | {
+      type: "rollback_attempt_errored";
+      stepName: string;
+      attempt: number;
+      retryDelayMs?: number;
+      error: { name: string; message: string };
+    }
+  | { type: "rollback_completed" }
+  | { type: "rollback_errored" }
+);
+
+export type WorkflowInstanceSubscribeOptions = {
+  cursor?: number;
+  filter?: WorkflowInstanceEvent["type"][];
+};
+
+export interface WorkflowInstanceSubscription {
+  next(): Promise<
+    | { value: WorkflowInstanceEvent; done: false }
+    | { value: undefined; done: true }
+  >;
+  [Symbol.dispose](): void;
+}
+
+export type WorkflowRetentionOptions = {
+  successRetention?: string | number;
+  errorRetention?: string | number;
+};
+
+export type WorkflowInstanceCreateOptions<Params = unknown> = {
+  id?: string;
+  params?: Params;
+  retention?: WorkflowRetentionOptions;
+};
+
+export type WorkflowInstanceStatus<Output = unknown> = {
+  id: string;
+  workflowName: string;
+  status: WorkflowInstanceStatusName;
+  output?: Output;
+  error?: { name: string; message: string; stack?: string | null };
+  rollback:
+    | { outcome: "complete" | "failed"; error?: { name: string; message: string } }
+    | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export declare class WorkflowInstance<Output = unknown> {
+  readonly id: string;
+  status(): Promise<WorkflowInstanceStatus<Output>>;
+  pause(): Promise<void>;
+  resume(): Promise<void>;
+  restart(options?: {
+    from?: { name: string; count?: number; type?: string };
+  }): Promise<void>;
+  terminate(options?: { rollback?: boolean }): Promise<void>;
+  delete(): Promise<void>;
+  sendEvent(event: { type: string; payload?: unknown }): Promise<void>;
+  subscribe(
+    options?: WorkflowInstanceSubscribeOptions,
+  ): Promise<WorkflowInstanceSubscription>;
+}
+
+export declare class Workflow<Params = unknown, Output = unknown> {
+  create(options?: WorkflowInstanceCreateOptions<Params>): Promise<WorkflowInstance<Output>>;
+  get(id: string): Promise<WorkflowInstance<Output>>;
+  createBatch(
+    batch: Array<WorkflowInstanceCreateOptions<Params> & { id: string; params: Params }>,
+  ): Promise<Array<WorkflowInstance<Output>>>;
+  deleteBatch(ids: string[]): Promise<{
+    deleted: Array<{ id: string }>;
+    errors: Array<{ id: string; code: number; message: string }>;
+  }>;
+}
