@@ -642,6 +642,13 @@ class ExecutionContext {
     };
   }
 
+  adoptPersistedOrdinal(identity, step) {
+    if (!step) return identity;
+    identity.ordinal = step.ordinal;
+    this.ordinal = Math.max(this.ordinal, step.ordinal);
+    return identity;
+  }
+
   normalizedConfig(config = {}) {
     const retries = config.retries ?? {};
     return {
@@ -667,6 +674,7 @@ class ExecutionContext {
     }
 
     let step = this.storage.getStep(identity);
+    this.adoptPersistedOrdinal(identity, step);
     if (step && this.kernel.shouldReplayOutput(step.state)) {
       if (rollback && !this.rollbackHydration) {
         this.storage.registerRollback(
@@ -779,6 +787,7 @@ class ExecutionContext {
     this.checkLifecycleBoundary();
     const identity = this.nextIdentity("sleep", name);
     const existing = this.storage.getStep(identity);
+    this.adoptPersistedOrdinal(identity, existing);
     if (existing?.state === "completed") return;
     if (this.rollbackHydration) {
       throw new SuspendExecution("rollback-hydration-boundary");
@@ -847,6 +856,7 @@ class ExecutionContext {
 
     const identity = this.nextIdentity("waitForEvent", name);
     const existing = this.storage.getStep(identity);
+    this.adoptPersistedOrdinal(identity, existing);
     if (existing?.state === "completed") return decodeDurableValue(existing.output);
     if (existing?.state === "failed") throw deserializeError(existing.error);
     if (this.rollbackHydration) {
