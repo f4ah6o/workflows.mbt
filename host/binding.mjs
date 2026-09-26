@@ -100,9 +100,7 @@ export class WorkflowInstanceHandle {
 
   async resume() {
     const row = this.row();
-    if (!["paused", "waitingForPause"].includes(row.status)) {
-      throw new Error(`Cannot resume instance in state ${row.status}`);
-    }
+    if (!["paused", "waitingForPause"].includes(row.status)) return;
     this.runtime.storage.setInstanceStatus(row.id, "queued");
   }
 
