@@ -28,11 +28,14 @@ function wranglerCommand() {
 }
 
 function start(command, args, label) {
+  const detached = process.platform !== "win32";
   const child = spawn(command, args, {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, CI: "true" },
+    detached,
   });
+  child.oracleDetached = detached;
   let output = "";
   child.stdout.on("data", (chunk) => { output += chunk.toString(); });
   child.stderr.on("data", (chunk) => { output += chunk.toString(); });
@@ -43,14 +46,31 @@ function start(command, args, label) {
   return child;
 }
 
+function signalTree(child, signal) {
+  if (!child) return;
+  if (child.oracleDetached && child.pid != null) {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch (error) {
+      if (error?.code !== "ESRCH") throw error;
+    }
+  }
+  if (child.exitCode == null) child.kill(signal);
+}
+
 async function stop(child) {
-  if (!child || child.exitCode != null) return;
-  child.kill("SIGTERM");
-  await Promise.race([
-    new Promise((resolveExit) => child.once("exit", resolveExit)),
-    delay(3000),
-  ]);
-  if (child.exitCode == null) child.kill("SIGKILL");
+  if (!child) return;
+  signalTree(child, "SIGTERM");
+  if (child.exitCode == null) {
+    await Promise.race([
+      new Promise((resolveExit) => child.once("exit", resolveExit)),
+      delay(3000),
+    ]);
+  }
+  signalTree(child, "SIGKILL");
+  child.stdout?.destroy();
+  child.stderr?.destroy();
 }
 
 async function waitReady(port, child, label) {
