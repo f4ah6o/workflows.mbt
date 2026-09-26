@@ -4,6 +4,28 @@ Status: open
 Created: 2026-09-26  
 Target: `main`
 
+## Decision
+
+`workflows.mbt` is a **compatibility safety net for Cloudflare Workflows**, not
+a replacement platform.
+
+The invariant this issue protects is:
+
+> A representative Cloudflare Workflow must remain runnable on the independent
+> fallback runtime without editing the workflow source.
+
+For disaster recovery, the default contract is intentionally narrower than
+"transparent migration":
+
+- new invocations may be redirected to `workflows.mbt`
+- in-flight Cloudflare instances remain a separate reconciliation problem
+- state portability is not claimed unless an explicit migration mechanism is
+  implemented and tested
+
+The issue is complete only when this invariant is continuously verified and the
+fallback can be exercised from a prepared artifact, not merely when more API
+surface has been implemented.
+
 ## Purpose
 
 `workflows.mbt` is not intended to compete with Cloudflare Workflows or replace
@@ -85,6 +107,36 @@ Do not collapse these into one checkbox.
 
 A repository-owned test proves regression stability. It does not by itself prove
 Cloudflare compatibility.
+
+The machine-readable evidence vocabulary should be stable and explicit:
+
+| Evidence state | Meaning |
+| --- | --- |
+| `implemented` | runtime/API implementation exists |
+| `repository_tested` | repository regression/E2E coverage exists |
+| `pinned_differential` | same probe verified against pinned Wrangler/workerd |
+| `latest_differential` | same probe verified against latest upstream packages |
+| `hosted_differential` | same probe verified against hosted Cloudflare |
+| `intentionally_unsupported` | difference is documented and accepted |
+
+A capability may have several positive evidence flags at once. Do not encode
+these as a single ordered status that loses provenance.
+
+## Implementation guardrails
+
+- Keep probe workflow source unchanged between Cloudflare and `workflows.mbt`.
+- Normalize only nondeterministic or runtime-specific fields. Every ignored field
+  must have a documented reason; do not normalize away semantic mismatches.
+- A package version bump alone is not a compatibility failure. Contract or
+  observable-behavior drift is.
+- Keep pinned verification required in normal CI. Keep latest-upstream checks
+  isolated so unrelated PRs do not fail only because upstream released.
+- Do not silently broaden scope into D1/KV/R2/Queues/AI/Durable Objects or a full
+  Workers emulator.
+- Do not claim in-flight state migration, exactly-once external side effects, or
+  hosted-service parity without a specific tested mechanism.
+- Prefer small independently mergeable compatibility increments over one large
+  rewrite of the existing oracle.
 
 ## P0 — Expand semantic differential coverage
 
@@ -180,13 +232,18 @@ Prioritize:
 
 ### Acceptance
 
-For each important compatibility row, it should be possible to tell whether it
-is:
+For each important compatibility row:
 
-- only locally tested
-- pinned-upstream differential verified
-- latest-upstream differential verified
-- production-Cloudflare verified
+- assign a stable capability/probe identifier
+- record repository-test evidence separately from upstream-differential evidence
+- make pinned/latest/hosted provenance visible independently
+- retain normalized expected and actual traces on failure
+- make the probe runnable in isolation for debugging
+- ensure the same workflow source is used on both sides of the differential
+
+At minimum, `npm run compat:pinned` must exercise the required pinned catalog.
+`npm run compat:latest` must reuse the same catalog unless a probe is explicitly
+marked unavailable for the latest oracle with a documented reason.
 
 ## P0 — Broaden the API/type drift oracle
 
@@ -212,6 +269,21 @@ For discriminated event unions, track field shape as well as the event type name
 A newly added event field, changed callback shape, or changed option contract must
 not be invisible merely because the top-level member name stayed the same.
 
+### Acceptance
+
+The contract snapshot must detect at least:
+
+- added/removed members
+- changed required/optional status
+- changed parameter and return types
+- changed discriminant values
+- changed nested payload fields
+- changed overload/callback shapes that affect supported source
+
+Snapshot output must be deterministic and reviewable in git. A contract change
+must identify the exact tracked symbol/path that drifted rather than reporting
+only a package-level mismatch.
+
 ## P0 — Treat semantic drift separately from type drift
 
 Cloudflare behavior can change without a useful TypeScript or Wrangler schema
@@ -236,6 +308,12 @@ contract drift
 
 Do not consider a clean type/schema comparison sufficient evidence that the
 fallback remains compatible.
+
+### Acceptance
+
+A compatibility report must be able to show "contract clean, semantic probe
+failed" and "contract changed, semantic probes still pass" as distinct outcomes.
+Neither case may be collapsed into a generic compatibility boolean.
 
 ## P1 — Add a hosted Cloudflare canary oracle
 
@@ -276,6 +354,18 @@ Requirements:
 The purpose is not to certify every Cloudflare service. It is to prevent the
 escape path from silently drifting from the actual hosted Workflows service.
 
+### Acceptance
+
+- credentials are required only for the hosted job, never for normal PR CI
+- the canary deploys into an isolated disposable test target
+- cleanup is attempted on both success and failure
+- the report records account-independent observable behavior only
+- hosted failures are labeled separately from local Wrangler/workerd failures
+- the job can be invoked manually before a compatibility-sensitive release
+
+If hosted probing is intentionally deferred, record the decision, owner, reason,
+and review trigger. "Optional" must not mean silently forgotten.
+
 ## P1 — Make compatibility drift actionable
 
 A red scheduled Action is easy to miss.
@@ -297,6 +387,15 @@ with deduplication so the same drift does not create daily issue spam.
 Do not automatically modify compatibility claims merely because upstream changed.
 Require a verified implementation/test update before claiming support.
 
+### Acceptance
+
+Use a deterministic deduplication key derived from the upstream version tuple and
+the compatibility-drift fingerprint. Repeated scheduled failures for the same
+unresolved drift should update one record rather than create daily duplicates.
+
+The durable record must be sufficient for an implementer to reproduce the
+failure without reverse-engineering an Actions log.
+
 ## P1 — Make compatibility status machine-readable
 
 Keep the human `COMPATIBILITY.md`, but introduce or extend a machine-readable
@@ -316,6 +415,20 @@ Generate the human summary/report from this data where practical.
 
 The matrix must make it impossible to mistake a repository-only test for upstream
 differential verification.
+
+### Acceptance
+
+The matrix is the source of truth for evidence state. Human-facing reports may be
+generated from it, but must not invent stronger claims.
+
+Every compatibility-sensitive row needs:
+
+- stable capability ID
+- category
+- implemented/repository/pinned/latest/hosted evidence flags
+- last verified date
+- relevant upstream version tuple
+- known-difference or unsupported reason when applicable
 
 ## P1 — Define the fallback operational contract
 
@@ -349,6 +462,20 @@ Document:
 
 A clear non-guarantee is better than an untested state-migration claim.
 
+### Acceptance
+
+Produce a short operator runbook that answers, without requiring repository
+archaeology:
+
+1. how to start the prepared fallback runtime
+2. how new workflow invocations are routed to it
+3. what happens to Cloudflare instances already running/sleeping/retrying/waiting
+4. what application-level idempotency is required
+5. how events are replayed or re-delivered
+6. how instance IDs avoid collisions across the transition
+7. how to reconcile and eventually return traffic to Cloudflare
+8. which known differences may affect the application
+
 ## P1 — Add a regular fallback drill
 
 The escape path must be exercised before it is needed.
@@ -370,6 +497,25 @@ The primary success criterion is:
 > A representative Cloudflare Workflow can be moved to the fallback runtime
 > without modifying its workflow source.
 
+The drill fixture should exercise more than a trivial happy path. At minimum it
+should include a durable step plus one suspension/recovery path such as retry,
+sleep, or event wait, and it must verify local restart from persisted state.
+
+### Acceptance
+
+Record for every drill:
+
+- repository commit
+- fallback artifact/version
+- Cloudflare oracle version/date
+- exact workflow source digest
+- result of Cloudflare-side execution
+- result of fallback execution
+- restart/replay result
+- known differences encountered
+
+A source edit between the Cloudflare run and fallback run invalidates the drill.
+
 ## P1 — Ship an immutable emergency artifact
 
 Avoid discovering build/toolchain problems during an outage.
@@ -388,6 +534,15 @@ At minimum:
 
 The emergency path should not require "install whatever is latest today" before
 it can start.
+
+### Acceptance
+
+The prepared artifact must be smoke-tested by the fallback drill itself. Release
+metadata must identify the repository commit, MoonBit/Node dependency basis,
+compatibility-oracle date, upstream version tuple, and known-differences summary.
+
+The emergency startup path must not depend on resolving unpinned package versions
+from the network.
 
 ## P2 — Clarify project positioning in README
 
@@ -431,6 +586,59 @@ Do not add platform emulation merely to reduce the count of known differences.
 Only close a difference when it materially improves the dependency-insurance
 use case.
 
+## Suggested implementation sequence
+
+Keep the existing oracle and extend it incrementally. Recommended order:
+
+1. define stable capability IDs and the machine-readable evidence schema
+2. expand nested API/type snapshot coverage
+3. expand the pinned semantic differential catalog
+4. make latest-upstream drift produce actionable deduplicated records
+5. add hosted canary support or record the explicit defer decision
+6. write the fallback operational contract
+7. add the representative source-unmodified fallback drill
+8. produce and smoke-test the immutable emergency artifact
+9. update README/compatibility reports from the resulting evidence
+
+Each step should leave `main` usable and should be independently reviewable.
+
+## Suggested repository outputs
+
+Exact filenames may follow the existing layout, but responsibilities should stay
+separate. A practical shape is:
+
+- machine-readable capability/evidence matrix under `compat/`
+- semantic probe catalog under the existing differential-oracle tree
+- deterministic API/type snapshots under `compat/oracle/`
+- generated compatibility report under `compat-results/`
+- fallback runbook under `docs/`
+- representative drill fixture under `fixtures/`
+- scheduled/manual latest and hosted jobs under `.github/workflows/`
+- versioned release/OCI packaging definition beside the existing build tooling
+
+Do not put generated trace artifacts into source control unless they are required
+as deterministic fixtures or snapshots.
+
+## Validation gate
+
+Before this issue is considered complete, run and record:
+
+~~~bash
+npm run test
+npm run compat:pinned
+npm run compat:latest
+npm run compat:report
+~~~
+
+Also run the hosted canary when configured and run the fallback drill from the
+prepared emergency artifact.
+
+When a dependency lockfile is introduced, CI and the release/drill path should
+use deterministic installation rather than floating dependency resolution.
+
+A test that was not executed must be reported as not executed, not inferred as
+passing.
+
 ## Definition of done
 
 This issue can be closed when all of the following are true:
@@ -454,6 +662,10 @@ This issue can be closed when all of the following are true:
    Cloudflare instances
 10. compatibility claims remain version/date scoped and known differences remain
     explicit
+11. required validation commands pass, and the fallback drill passes from the
+    prepared emergency artifact
+12. generated/human compatibility reports agree with the machine-readable
+    evidence matrix
 
 ## Non-goal for closure
 
