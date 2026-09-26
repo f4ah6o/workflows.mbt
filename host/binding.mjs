@@ -21,15 +21,21 @@ export class WorkflowBinding {
     if (!Array.isArray(batch) || batch.length < 1 || batch.length > 100) {
       throw new TypeError("createBatch expects 1..100 instance options");
     }
+    for (const item of batch) {
+      if (!item || typeof item.id !== "string" || !("params" in item)) {
+        throw new TypeError("createBatch items require id and params");
+      }
+    }
     const out = [];
     for (const item of batch) {
-      try {
-        const existing = item.id && this.runtime.storage.getInstance(item.id);
-        if (existing) continue;
-        out.push(await this.create(item));
-      } catch (error) {
-        if (!String(error?.message).includes("UNIQUE")) throw error;
+      const existing = this.runtime.storage.getInstance(item.id);
+      if (existing) {
+        if (existing.workflow_name === this.workflow.name) continue;
+        throw new Error(
+          `Instance id ${item.id} is already used by another workflow in the SQLite v1 namespace`,
+        );
       }
+      out.push(await this.create(item));
     }
     return out;
   }
@@ -38,11 +44,29 @@ export class WorkflowBinding {
     if (!Array.isArray(ids) || ids.length < 1 || ids.length > 100) {
       throw new TypeError("deleteBatch expects 1..100 instance IDs");
     }
+    if (ids.some((id) => typeof id !== "string" || id.length < 1 || id.length > 100)) {
+      throw new TypeError("deleteBatch instance IDs must be 1..100 character strings");
+    }
     const deleted = [];
     const errors = [];
+    const outcomes = new Map();
     for (const id of ids) {
-      if (this.runtime.storage.deleteInstance(id)) deleted.push({ id });
-      else errors.push({ id, code: 404, message: "Workflow instance not found" });
+      let outcome = outcomes.get(id);
+      if (!outcome) {
+        const row = this.runtime.storage.getInstance(id);
+        if (row && row.workflow_name === this.workflow.name) {
+          this.runtime.storage.deleteInstance(id);
+          outcome = { ok: true };
+        } else {
+          outcome = {
+            ok: false,
+            error: { id, code: 404, message: "Workflow instance not found" },
+          };
+        }
+        outcomes.set(id, outcome);
+      }
+      if (outcome.ok) deleted.push({ id });
+      else errors.push({ ...outcome.error });
     }
     return { deleted, errors };
   }
