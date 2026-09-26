@@ -69,6 +69,11 @@
       "name": "pause",
       "binding": "PAUSE",
       "class_name": "PauseWorkflow"
+    },
+    {
+      "name": "automatic-rollback",
+      "binding": "AUTOMATIC_ROLLBACK",
+      "class_name": "AutomaticRollbackWorkflow"
     }
   ]
 }
