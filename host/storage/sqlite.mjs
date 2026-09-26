@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
@@ -199,9 +200,12 @@ export class SQLiteStorage extends Storage {
       error.name = "WorkflowInstanceAlreadyExistsError";
       throw error;
     }
-    const storageId = this.getInstance(id)
-      ? `wf:${encodeURIComponent(workflowName)}:${id}`
-      : id;
+    let storageId = id;
+    if (this.getInstance(storageId)) {
+      do {
+        storageId = `wf_${randomUUID()}`;
+      } while (this.getInstance(storageId));
+    }
     const now = Date.now();
     this.db.prepare(`
       INSERT INTO instances(
