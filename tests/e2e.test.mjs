@@ -515,3 +515,38 @@ test("rollback runs in reverse order and resumes after SIGKILL without rerunning
     error: undefined,
   });
 });
+
+
+test("scheduled workflow metadata is durable and scheduler restart is idempotent", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-schedule-");
+  const minute = Date.UTC(2026, 8, 26, 5, 0, 0, 0);
+
+  let runtime = await openRuntime(e2eConfig, paths);
+  assert.equal(await runtime.enqueueSchedules(minute), 1);
+  await runtime.runPending();
+  let rows = runtime.storage.listInstances("scheduled");
+  assert.equal(rows.length, 1);
+  let status = runtime.instanceStatus(rows[0].id);
+  assert.equal(status.status, "complete");
+  assert.ok(status.output.timestamp instanceof Date);
+  assert.deepEqual(status.output.schedule, {
+    cron: "* * * * *",
+    scheduledTime: minute,
+  });
+  assert.ok(status.output.timestamp.getTime() >= minute);
+  runtime.close();
+
+  runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+  assert.equal(await runtime.enqueueSchedules(minute), 0);
+  assert.equal(runtime.storage.listInstances("scheduled").length, 1);
+
+  assert.equal(await runtime.enqueueSchedules(minute + 2 * 60_000), 2);
+  await runtime.runPending();
+  rows = runtime.storage.listInstances("scheduled");
+  assert.equal(rows.length, 3);
+  assert.deepEqual(
+    rows.map((row) => row.scheduled_time),
+    [minute, minute + 60_000, minute + 2 * 60_000],
+  );
+});
