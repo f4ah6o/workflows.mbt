@@ -233,7 +233,10 @@ export class WorkflowRuntime {
   }
 
   async sendEvent(id, event) {
-    this.requireInstance(id);
+    const instance = this.requireInstance(id);
+    if (!["queued", "running", "waiting", "waitingForPause"].includes(instance.status)) {
+      throw new Error(`Cannot send event to instance in state ${instance.status}`);
+    }
     if (!event || typeof event.type !== "string") {
       throw new TypeError("sendEvent requires { type, payload }");
     }
@@ -287,15 +290,28 @@ export class WorkflowRuntime {
         (settled) => settled.status === "rejected" && settled.reason instanceof SuspendExecution,
       );
       if (suspension) throw suspension.reason;
+      row = this.requireInstance(id);
+      if (row.status === "waitingForPause") {
+        this.storage.setInstanceStatus(id, "paused");
+        return;
+      }
+      if (["paused", "terminated", "rollingBack"].includes(row.status)) {
+        return;
+      }
       const encoded = encodeDurableValue(result, "workflow output");
       this.storage.setInstanceStatus(id, "complete", { output: encoded, error: null });
     } catch (error) {
       await execution.settleOperations();
+      row = this.requireInstance(id);
+      if (row.status === "waitingForPause") {
+        this.storage.setInstanceStatus(id, "paused");
+        return;
+      }
+      if (["paused", "terminated", "rollingBack"].includes(row.status)) {
+        return;
+      }
       if (error instanceof SuspendExecution) {
-        row = this.requireInstance(id);
-        if (!["paused", "terminated"].includes(row.status)) {
-          this.storage.setInstanceStatus(id, "waiting");
-        }
+        this.storage.setInstanceStatus(id, "waiting");
       } else {
         this.storage.setInstanceStatus(id, "errored", {
           error: serializeError(error),
@@ -513,7 +529,21 @@ class ExecutionContext {
     };
   }
 
+  checkLifecycleBoundary() {
+    if (this.rollbackHydration) return;
+    const row = this.storage.getInstance(this.instance.id);
+    if (!row) throw new SuspendExecution("instance-deleted");
+    if (row.status === "waitingForPause") {
+      this.storage.setInstanceStatus(this.instance.id, "paused");
+      throw new SuspendExecution("pause-boundary");
+    }
+    if (["paused", "terminated", "rollingBack"].includes(row.status)) {
+      throw new SuspendExecution("lifecycle-boundary");
+    }
+  }
+
   async compatStepDo(name, first, second, third) {
+    this.checkLifecycleBoundary();
     let config = {};
     let callback;
     let rollbackOptions;
@@ -714,6 +744,7 @@ class ExecutionContext {
   }
 
   async sleep(name, duration) {
+    this.checkLifecycleBoundary();
     const identity = this.nextIdentity("sleep", name);
     const existing = this.storage.getStep(identity);
     if (existing?.state === "completed") return;
@@ -739,6 +770,7 @@ class ExecutionContext {
   }
 
   async sleepUntil(name, timestamp) {
+    this.checkLifecycleBoundary();
     const identity = this.nextIdentity("sleep", name);
     const existing = this.storage.getStep(identity);
     if (existing?.state === "completed") return;
@@ -763,6 +795,7 @@ class ExecutionContext {
   }
 
   async waitForEvent(name, options) {
+    this.checkLifecycleBoundary();
     if (!options || typeof options.type !== "string") {
       throw new TypeError("waitForEvent requires { type, timeout? }");
     }
