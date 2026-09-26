@@ -219,6 +219,6 @@ export function deserializeError(text) {
 
 export function observableConfig(config) {
   return JSON.stringify(config, (_key, value) =>
-    typeof value === "function" ? "[WorkflowDelayFunction]" : value,
+    typeof value === "function" ? "[dynamic]" : value,
   );
 }
