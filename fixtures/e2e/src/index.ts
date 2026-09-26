@@ -316,14 +316,10 @@ export class WrappedRaceWorkflow extends WorkflowEntrypoint<
   ) {
     const winner = await step.do("durable-race-winner", async () => {
       return await Promise.race([
-        step.do("race-slow", async () => {
-          await new Promise((resolve) => setTimeout(resolve, 80));
-          const response = await fetch(`${event.payload.baseUrl}/race-slow`);
-          if (!response.ok) throw new Error("race slow failed");
-          return "slow";
+        new Promise<string>((resolve) => {
+          setTimeout(() => resolve("slow"), 80);
         }),
-        step.do("race-fast", async () => {
-          const response = await fetch(`${event.payload.baseUrl}/race-fast`);
+        fetch(`${event.payload.baseUrl}/race-fast`).then((response) => {
           if (!response.ok) throw new Error("race fast failed");
           return "fast";
         }),
