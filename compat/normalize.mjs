@@ -1,4 +1,4 @@
-function errorShape(error) {
+const STABLE_LIFECYCLE = new Set([\n  "workflow_queued",\n  "workflow_started",\n  "workflow_paused",\n  "workflow_waiting_for_pause",\n  "workflow_completed",\n  "workflow_errored",\n  "workflow_terminated",\n]);\n\nfunction errorShape(error) {
   if (!error) return undefined;
   return { name: error.name ?? "Error", message: error.message ?? String(error) };
 }
@@ -24,7 +24,7 @@ export function normalizeTrace(raw) {
 
   for (const event of events) {
     if (typeof event?.type !== "string") continue;
-    if (event.type.startsWith("workflow_")) lifecycle.push(event.type);
+    if (STABLE_LIFECYCLE.has(event.type)) lifecycle.push(event.type);
     if (event.stepName) appendStep(steps, event);
     if (event.type === "rollback_step_started") rollbackOrder.push(event.stepName);
     if (event.type === "rollback_completed" || event.type === "rollback_errored") {
