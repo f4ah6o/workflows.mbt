@@ -355,7 +355,7 @@ export class SQLiteStorage extends Storage {
   }
 
   ensureStep(identity, ordinal, state, config, eventType = null) {
-    this.db.prepare(`
+    const result = this.db.prepare(`
       INSERT OR IGNORE INTO steps(
         instance_id, type, name, count, ordinal, state, config, event_type, created_at
       ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -363,6 +363,32 @@ export class SQLiteStorage extends Storage {
       identity.instanceId, identity.type, identity.name, identity.count,
       ordinal, state, config, eventType, Date.now(),
     );
+    if (result.changes > 0) {
+      if (identity.type === "do") {
+        this.log(
+          identity.instanceId,
+          "step.started",
+          JSON.stringify({ name: identity.name, config }),
+        );
+      } else if (identity.type === "sleep") {
+        let durationMs;
+        try {
+          const parsed = JSON.parse(config ?? "{}");
+          durationMs = parsed.mode === "relative" ? parsed.duration : undefined;
+        } catch {}
+        this.log(
+          identity.instanceId,
+          "sleep.started",
+          JSON.stringify({ name: identity.name, durationMs }),
+        );
+      } else if (identity.type === "waitForEvent") {
+        this.log(
+          identity.instanceId,
+          "wait.started",
+          JSON.stringify({ name: identity.name, eventType }),
+        );
+      }
+    }
     return this.getStep(identity);
   }
 
@@ -386,15 +412,30 @@ export class SQLiteStorage extends Storage {
       identity.instanceId, identity.type, identity.name, identity.count,
       attempt, Date.now(),
     );
+    this.log(
+      identity.instanceId,
+      "attempt.started",
+      JSON.stringify({ name: identity.name, attempt }),
+    );
   }
 
-  finishAttempt(identity, attempt, state, error = null) {
+  finishAttempt(identity, attempt, state, error = null, retryDelayMs = null) {
     this.db.prepare(`
       UPDATE attempts SET state=?, finished_at=?, error=?
       WHERE instance_id=? AND step_type=? AND step_name=? AND step_count=? AND attempt=?
     `).run(
       state, Date.now(), error, identity.instanceId, identity.type,
       identity.name, identity.count, attempt,
+    );
+    this.log(
+      identity.instanceId,
+      state === "completed" ? "attempt.completed" : "attempt.errored",
+      JSON.stringify({
+        name: identity.name,
+        attempt,
+        error,
+        retryDelayMs,
+      }),
     );
   }
 
@@ -419,6 +460,11 @@ export class SQLiteStorage extends Storage {
       this.updateStep(identity, {
         state: "completed", output, error: null, completed_at: Date.now(),
       });
+      this.log(
+        identity.instanceId,
+        "step.completed",
+        JSON.stringify({ name: identity.name, output }),
+      );
       if (rollback) {
         this.registerRollback(
           identity, identity.ordinal, rollback.config, output, null,
@@ -434,6 +480,11 @@ export class SQLiteStorage extends Storage {
       this.updateStep(identity, {
         state: "failed", error, completed_at: Date.now(),
       });
+      this.log(
+        identity.instanceId,
+        "step.errored",
+        JSON.stringify({ name: identity.name, error }),
+      );
       if (rollback) {
         this.registerRollback(
           identity, identity.ordinal, rollback.config, null, error,
@@ -445,7 +496,8 @@ export class SQLiteStorage extends Storage {
 
   scheduleRetry(identity, attempt, error, wakeAt) {
     this.db.transaction(() => {
-      this.finishAttempt(identity, attempt, "failed", error);
+      const retryDelayMs = Math.max(0, Math.trunc(wakeAt - Date.now()));
+      this.finishAttempt(identity, attempt, "failed", error, retryDelayMs);
       this.updateStep(identity, { state: "waiting_retry", error, completed_at: null });
       this.putTimer(identity, "retry", wakeAt);
     })();
@@ -498,6 +550,13 @@ export class SQLiteStorage extends Storage {
         state: "completed", output: null, error: null, completed_at: Date.now(),
       });
       this.deleteTimer(identity, kind);
+      if (kind === "sleep") {
+        this.log(
+          identity.instanceId,
+          "sleep.completed",
+          JSON.stringify({ name: identity.name }),
+        );
+      }
     })();
   }
 
@@ -523,6 +582,11 @@ export class SQLiteStorage extends Storage {
           state: "completed", output, error: null, completed_at: consumedAt,
         });
         this.deleteTimer(identity, "event-timeout");
+        this.log(
+          identity.instanceId,
+          "wait.completed",
+          JSON.stringify({ name: identity.name }),
+        );
         return { step: this.getStep(identity), event, timer: null };
       }
 
@@ -541,6 +605,11 @@ export class SQLiteStorage extends Storage {
         state: "failed", error, completed_at: Date.now(),
       });
       this.deleteTimer(identity, "event-timeout");
+      this.log(
+        identity.instanceId,
+        "wait.timed_out",
+        JSON.stringify({ name: identity.name }),
+      );
     })();
   }
 
@@ -624,6 +693,7 @@ export class SQLiteStorage extends Storage {
   }
 
   startRollbackAttempt(identity, attempt) {
+    const current = this.getRollbackRegistration(identity);
     this.db.prepare(`
       UPDATE rollback_registrations
       SET state='running', attempt=?, wake_at=NULL, rollback_error=NULL
@@ -631,14 +701,22 @@ export class SQLiteStorage extends Storage {
     `).run(
       attempt, identity.instanceId, identity.type, identity.name, identity.count,
     );
+    if ((current?.attempt ?? 0) === 0) {
+      this.log(
+        identity.instanceId,
+        "rollback.step.started",
+        JSON.stringify({ name: identity.name, config: current?.config ?? null }),
+      );
+    }
     this.log(
       identity.instanceId,
       "rollback.attempt.started",
-      JSON.stringify({ type: identity.type, name: identity.name, count: identity.count, attempt }),
+      JSON.stringify({ name: identity.name, attempt }),
     );
   }
 
   completeRollback(identity) {
+    const current = this.getRollbackRegistration(identity);
     this.db.prepare(`
       UPDATE rollback_registrations
       SET state='completed', wake_at=NULL, rollback_error=NULL, completed_at=?
@@ -648,8 +726,13 @@ export class SQLiteStorage extends Storage {
     );
     this.log(
       identity.instanceId,
-      "rollback.completed",
-      JSON.stringify({ type: identity.type, name: identity.name, count: identity.count }),
+      "rollback.attempt.completed",
+      JSON.stringify({ name: identity.name, attempt: current?.attempt ?? 1 }),
+    );
+    this.log(
+      identity.instanceId,
+      "rollback.step.completed",
+      JSON.stringify({ name: identity.name }),
     );
   }
 
@@ -664,10 +747,12 @@ export class SQLiteStorage extends Storage {
     );
     this.log(
       identity.instanceId,
-      "rollback.retry.scheduled",
+      "rollback.attempt.errored",
       JSON.stringify({
-        type: identity.type, name: identity.name, count: identity.count,
-        attempt, wakeAt: Math.trunc(wakeAt),
+        name: identity.name,
+        attempt,
+        error,
+        retryDelayMs: Math.max(0, Math.trunc(wakeAt - Date.now())),
       }),
     );
   }
@@ -683,8 +768,13 @@ export class SQLiteStorage extends Storage {
     );
     this.log(
       identity.instanceId,
-      "rollback.failed",
-      JSON.stringify({ type: identity.type, name: identity.name, count: identity.count, attempt }),
+      "rollback.attempt.errored",
+      JSON.stringify({ name: identity.name, attempt, error }),
+    );
+    this.log(
+      identity.instanceId,
+      "rollback.step.errored",
+      JSON.stringify({ name: identity.name, error }),
     );
   }
 
@@ -712,6 +802,17 @@ export class SQLiteStorage extends Storage {
         error: terminalStatus === "errored" ? instance.error : null,
       }),
     );
+  }
+
+  markInstanceStarted(instanceId, params) {
+    const existing = this.db.prepare(`
+      SELECT 1 FROM execution_events
+      WHERE instance_id=? AND kind='instance.started'
+      LIMIT 1
+    `).get(instanceId);
+    if (!existing) {
+      this.log(instanceId, "instance.started", JSON.stringify({ params }));
+    }
   }
 
   listExecutionEvents(instanceId, afterId = 0, limit = 100) {
