@@ -25,6 +25,12 @@ function mapEvent(row) {
   switch (row.kind) {
     case "instance.created":
       return { ...base, type: "workflow_queued" };
+    case "instance.started":
+      return {
+        ...base,
+        type: "workflow_started",
+        ...(detail.params === undefined ? {} : { params: detail.params }),
+      };
     case "instance.running":
       return { ...base, type: "workflow_running" };
     case "instance.paused":
@@ -52,8 +58,66 @@ function mapEvent(row) {
       };
     case "instance.terminated":
       return { ...base, type: "workflow_terminated" };
+    case "step.started":
+      return {
+        ...base,
+        type: "step_started",
+        stepName: detail.name,
+        ...(detail.config == null ? {} : { config: JSON.parse(detail.config) }),
+      };
+    case "step.completed":
+      return {
+        ...base,
+        type: "step_completed",
+        stepName: detail.name,
+        ...(detail.output == null ? {} : { output: decodeDurableValue(detail.output) }),
+      };
+    case "step.errored":
+      return { ...base, type: "step_errored", stepName: detail.name };
+    case "attempt.started":
+      return { ...base, type: "attempt_started", stepName: detail.name, attempt: detail.attempt };
+    case "attempt.completed":
+      return { ...base, type: "attempt_completed", stepName: detail.name, attempt: detail.attempt };
+    case "attempt.errored": {
+      const error = detail.error == null
+        ? { name: "Error", message: "Step attempt errored" }
+        : (() => {
+            const parsed = JSON.parse(detail.error);
+            return { name: parsed.name, message: parsed.message };
+          })();
+      return {
+        ...base,
+        type: "attempt_errored",
+        stepName: detail.name,
+        attempt: detail.attempt,
+        ...(detail.retryDelayMs == null ? {} : { retryDelayMs: detail.retryDelayMs }),
+        error,
+      };
+    }
+    case "sleep.started":
+      return {
+        ...base,
+        type: "sleep_started",
+        stepName: detail.name,
+        ...(typeof detail.durationMs === "number" ? { durationMs: detail.durationMs } : {}),
+      };
+    case "sleep.completed":
+      return { ...base, type: "sleep_completed", stepName: detail.name };
+    case "wait.started":
+      return { ...base, type: "wait_started", stepName: detail.name, eventType: detail.eventType };
+    case "wait.completed":
+      return { ...base, type: "wait_completed", stepName: detail.name };
+    case "wait.timed_out":
+      return { ...base, type: "wait_timed_out", stepName: detail.name };
     case "instance.rollback.started":
       return { ...base, type: "rollback_started" };
+    case "rollback.step.started":
+      return {
+        ...base,
+        type: "rollback_step_started",
+        stepName: detail.name,
+        ...(detail.config == null ? {} : { config: JSON.parse(detail.config) }),
+      };
     case "rollback.attempt.started":
       return {
         ...base,
@@ -61,18 +125,37 @@ function mapEvent(row) {
         stepName: detail.name,
         attempt: detail.attempt,
       };
-    case "rollback.completed":
+    case "rollback.attempt.completed":
       return {
         ...base,
-        type: "rollback_step_completed",
+        type: "rollback_attempt_completed",
         stepName: detail.name,
+        attempt: detail.attempt,
       };
-    case "rollback.failed": {
+    case "rollback.attempt.errored": {
+      const parsed = detail.error == null ? null : JSON.parse(detail.error);
+      return {
+        ...base,
+        type: "rollback_attempt_errored",
+        stepName: detail.name,
+        attempt: detail.attempt,
+        ...(detail.retryDelayMs == null ? {} : { retryDelayMs: detail.retryDelayMs }),
+        error: parsed == null
+          ? { name: "Error", message: "Rollback attempt errored" }
+          : { name: parsed.name, message: parsed.message },
+      };
+    }
+    case "rollback.step.completed":
+      return { ...base, type: "rollback_step_completed", stepName: detail.name };
+    case "rollback.step.errored": {
+      const parsed = detail.error == null ? null : JSON.parse(detail.error);
       return {
         ...base,
         type: "rollback_step_errored",
         stepName: detail.name,
-        error: { name: "Error", message: "Rollback step failed" },
+        error: parsed == null
+          ? { name: "Error", message: "Rollback step failed" }
+          : { name: parsed.name, message: parsed.message },
       };
     }
     case "instance.rollback.complete":
