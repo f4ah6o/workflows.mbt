@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { loadProjectConfig } from "../host/config.mjs";
+import { matchesCron } from "../host/cron.mjs";
 import { parseDuration, parseSleepUntil } from "../host/duration.mjs";
 import {
   decodeDurableValue,
@@ -87,4 +88,13 @@ test("wrangler jsonc is consumed without rewriting unknown Cloudflare fields", (
   assert.equal(config.workflows[0].binding, "WF");
   assert.deepEqual(config.ignoredWranglerFields, ["r2_buckets"]);
   assert.equal(config.storagePath, join(root, ".workflows/workflows.db"));
+});
+
+
+test("cron matcher uses UTC five-field workflow schedules", () => {
+  const date = Date.UTC(2026, 8, 26, 5, 30);
+  assert.equal(matchesCron("30 5 * * *", date), true);
+  assert.equal(matchesCron("*/15 5 * * *", date), true);
+  assert.equal(matchesCron("31 5 * * *", date), false);
+  assert.equal(matchesCron("30 5 * * 6", date), true);
 });
