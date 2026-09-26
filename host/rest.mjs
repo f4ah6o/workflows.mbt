@@ -2,8 +2,8 @@ function json(value, init = {}) {
   return Response.json(value, init);
 }
 
-function statusBody(runtime, id) {
-  const status = runtime.instanceStatus(id);
+function statusBody(runtime, workflowName, id) {
+  const status = runtime.instanceStatus(id, workflowName);
   return {
     id: status.id,
     workflow_name: status.workflowName,
@@ -49,7 +49,7 @@ export async function handleWorkflowRest(runtime, request) {
     if (parts.length === 5) {
       if (request.method === "GET") {
         const instances = runtime.storage.listInstances(workflowName).map((row) =>
-          statusBody(runtime, row.id)
+          statusBody(runtime, workflowName, row.public_id)
         );
         return json({ result: instances });
       }
@@ -60,7 +60,7 @@ export async function handleWorkflowRest(runtime, request) {
           params: parseParams(body.params),
           retention: body.instance_retention,
         });
-        return json({ result: statusBody(runtime, instance.id) }, { status: 201 });
+        return json({ result: statusBody(runtime, workflowName, instance.id) }, { status: 201 });
       }
       return json({ errors: [{ code: 405, message: "Method not allowed" }] }, { status: 405 });
     }
@@ -71,7 +71,7 @@ export async function handleWorkflowRest(runtime, request) {
 
     if (parts.length === 6) {
       if (request.method === "GET") {
-        return json({ result: statusBody(runtime, instanceId) });
+        return json({ result: statusBody(runtime, workflowName, instanceId) });
       }
       if (request.method === "DELETE") {
         await instance.delete();
@@ -93,7 +93,7 @@ export async function handleWorkflowRest(runtime, request) {
           { status: 400 },
         );
       }
-      return json({ result: statusBody(runtime, instanceId) });
+      return json({ result: statusBody(runtime, workflowName, instanceId) });
     }
 
     if (
