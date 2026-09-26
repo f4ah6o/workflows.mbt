@@ -231,13 +231,44 @@ class ExecutionContext {
     this.ordinal = 0;
     this.operationInFlight = false;
     this.stepFacade = {
-      do: (...args) => this.runExclusive("step.do", () => this.stepDo(...args)),
+      do: (name, first, second, third) =>
+        this.runExclusive("step.do", () =>
+          this.compatStepDo(name, first, second, third),
+        ),
       sleep: (...args) => this.runExclusive("step.sleep", () => this.sleep(...args)),
       sleepUntil: (...args) =>
         this.runExclusive("step.sleepUntil", () => this.sleepUntil(...args)),
       waitForEvent: (...args) =>
         this.runExclusive("step.waitForEvent", () => this.waitForEvent(...args)),
     };
+  }
+
+  async compatStepDo(name, first, second, third) {
+    let config = {};
+    let callback;
+    let rollbackOptions;
+
+    if (typeof first === "function") {
+      callback = first;
+      rollbackOptions = second;
+    } else {
+      config = first ?? {};
+      callback = second;
+      rollbackOptions = third;
+    }
+
+    if (typeof callback !== "function") {
+      throw new TypeError("step.do requires a callback");
+    }
+    if (rollbackOptions?.rollback) {
+      const error = new Error(
+        "Rollback handlers are not implemented in workflows.mbt v0.1",
+      );
+      error.name = "WorkflowsMbtUnsupportedError";
+      throw error;
+    }
+
+    return await this.stepDo(name, config, callback);
   }
 
   async runExclusive(label, operation) {

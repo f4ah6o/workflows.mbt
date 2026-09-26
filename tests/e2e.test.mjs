@@ -160,6 +160,7 @@ test("durable replay and durable sleep survive SIGKILL without rerunning A/B", a
   runtime.close();
 
   const first = spawnDev(e2eConfig, paths);
+  t.after(() => stopChild(first, "SIGKILL"));
   await poll(() => {
     const rows = dbSnapshot(
       paths.storagePath,
@@ -180,7 +181,7 @@ test("durable replay and durable sleep survive SIGKILL without rerunning A/B", a
   await wait(300);
   const restartAt = Date.now();
   const second = spawnDev(e2eConfig, paths);
-  t.after(() => stopChild(second));
+  t.after(() => stopChild(second, "SIGKILL"));
 
   const completed = await poll(() => {
     const rows = dbSnapshot(
@@ -214,6 +215,7 @@ test("retry attempts and retry timer survive runtime process restart", async (t)
   runtime.close();
 
   const first = spawnDev(e2eConfig, paths);
+  t.after(() => stopChild(first, "SIGKILL"));
   await poll(() => {
     const attempts = dbSnapshot(
       paths.storagePath,
