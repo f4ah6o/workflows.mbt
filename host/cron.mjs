@@ -6,6 +6,24 @@ const RANGES = [
   [0, 7],
 ];
 
+const MONTHS = new Map([
+  ["JAN", 1], ["FEB", 2], ["MAR", 3], ["APR", 4],
+  ["MAY", 5], ["JUN", 6], ["JUL", 7], ["AUG", 8],
+  ["SEP", 9], ["OCT", 10], ["NOV", 11], ["DEC", 12],
+]);
+
+const DAYS = new Map([
+  ["SUN", 0], ["MON", 1], ["TUE", 2], ["WED", 3],
+  ["THU", 4], ["FRI", 5], ["SAT", 6],
+]);
+
+function parseValue(text, fieldIndex) {
+  const upper = text.toUpperCase();
+  if (fieldIndex === 3 && MONTHS.has(upper)) return MONTHS.get(upper);
+  if (fieldIndex === 4 && DAYS.has(upper)) return DAYS.get(upper);
+  return Number(text);
+}
+
 function expandPart(part, min, max, fieldIndex) {
   const [base, stepText] = part.split("/");
   const step = stepText == null ? 1 : Number(stepText);
@@ -20,10 +38,10 @@ function expandPart(part, min, max, fieldIndex) {
     end = max;
   } else if (base.includes("-")) {
     const [left, right] = base.split("-");
-    start = Number(left);
-    end = Number(right);
+    start = parseValue(left, fieldIndex);
+    end = parseValue(right, fieldIndex);
   } else {
-    start = Number(base);
+    start = parseValue(base, fieldIndex);
     end = start;
   }
 
