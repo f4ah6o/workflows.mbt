@@ -94,6 +94,11 @@
       "name": "default-config",
       "binding": "DEFAULT_CONFIG",
       "class_name": "DefaultConfigWorkflow"
+    },
+    {
+      "name": "parallel-wait",
+      "binding": "PARALLEL_WAIT",
+      "class_name": "ParallelWaitWorkflow"
     }
   ]
 }
