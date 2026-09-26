@@ -100,6 +100,7 @@ function spawnDev(configPath, paths) {
       paths.buildDir,
       "--poll-ms",
       "10",
+      "--no-http",
     ],
     { cwd: root, stdio: "ignore" },
   );
