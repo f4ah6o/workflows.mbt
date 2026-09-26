@@ -89,6 +89,11 @@
       "name": "sensitive",
       "binding": "SENSITIVE",
       "class_name": "SensitiveWorkflow"
+    },
+    {
+      "name": "default-config",
+      "binding": "DEFAULT_CONFIG",
+      "class_name": "DefaultConfigWorkflow"
     }
   ]
 }
