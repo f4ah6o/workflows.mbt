@@ -29,6 +29,12 @@ not a claim that every Cloudflare Workers feature is emulated.
   https://developers.cloudflare.com/workflows/reference/pricing/
 - Workflows REST API:
   https://developers.cloudflare.com/api/resources/workflows/
+- Workers Context / `ctx.waitUntil()`:
+  https://developers.cloudflare.com/workers/runtime-apis/context/
+- Workers Streams:
+  https://developers.cloudflare.com/workers/runtime-apis/streams/
+- Workers Response:
+  https://developers.cloudflare.com/workers/runtime-apis/response/
 
 ## Contract pinned by tests
 
@@ -78,6 +84,9 @@ documented durable pattern is to wrap the combinator in an outer `step.do`;
 ### Workflow instances
 
 - custom instance IDs must be unique **within the Workflow**
+- deleting a running instance stops its current execution
+- if a Workflow deletes its own instance, execution stops during
+  `await instance.delete()` and code after that call does not continue
 - `createBatch` is idempotent for already-existing IDs
 - per-instance retention overrides Workflow `default_retention`
 - success retention applies to successful and terminated instances
@@ -102,6 +111,12 @@ The September 15, 2026 subscription API is part of this oracle.
 
 The Workers `WorkflowInstance.subscribe()` surface is covered. The REST
 streaming subscribe transport is a separate remaining adapter.
+
+### Default Worker HTTP lifecycle
+
+- `ctx.waitUntil()` extends background work without blocking the HTTP response
+- a Worker `Response` may carry a `ReadableStream` body
+- streamed response bytes are forwarded incrementally rather than fully buffered
 
 ### Serialization
 
