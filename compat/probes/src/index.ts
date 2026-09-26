@@ -13,7 +13,7 @@ export class OracleWorkflow extends WorkflowEntrypoint<{}, Params> {
       case "retry": {
         return await step.do(
           "retry",
-          { retries: { limit: 2, delay: 1, backoff: "constant" } },
+          { retries: { limit: 2, delay: 250, backoff: "constant" } },
           async (ctx) => {
             if (ctx.attempt === 1) throw new Error("retry-me");
             return { attempt: ctx.attempt };
@@ -21,7 +21,7 @@ export class OracleWorkflow extends WorkflowEntrypoint<{}, Params> {
         );
       }
       case "sleep": {
-        await step.sleep("short-sleep", 5);
+        await step.sleep("short-sleep", 250);
         return { slept: true };
       }
       case "wait-for-event": {
