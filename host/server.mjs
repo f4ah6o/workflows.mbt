@@ -1,4 +1,6 @@
 import { createServer } from "node:http";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { handleWorkflowRest } from "./rest.mjs";
 
 async function nodeRequest(req, host, port) {
@@ -20,7 +22,7 @@ async function writeResponse(res, response) {
     res.end();
     return;
   }
-  res.end(Buffer.from(await response.arrayBuffer()));
+  await pipeline(Readable.fromWeb(response.body), res);
 }
 
 export async function startWorkflowHttpServer(
@@ -35,6 +37,10 @@ export async function startWorkflowHttpServer(
         await runtime.fetch(request);
       await writeResponse(res, response);
     } catch (error) {
+      if (res.headersSent) {
+        res.destroy(error);
+        return;
+      }
       await writeResponse(
         res,
         Response.json(
