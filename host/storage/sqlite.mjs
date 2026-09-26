@@ -264,6 +264,7 @@ export class SQLiteStorage extends Storage {
   }
 
   listInstances(workflowName) {
+    this.deleteExpired(Date.now());
     return this.db.prepare(
       "SELECT * FROM instances WHERE workflow_name = ? ORDER BY created_at",
     ).all(workflowName);
