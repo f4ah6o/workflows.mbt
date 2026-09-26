@@ -41,3 +41,22 @@ export class MyWorkflow extends WorkflowEntrypoint<Env, Params> {
     return result;
   }
 }
+
+
+export default {
+  async fetch(request: Request, env: any) {
+    if (request.method !== "POST") {
+      return new Response("Method not allowed", { status: 405 });
+    }
+    const body = await request.json() as {
+      id?: string;
+      name?: string;
+      url: string;
+    };
+    const instance = await env.MY_WORKFLOW.create({
+      id: body.id,
+      params: { name: body.name, url: body.url },
+    });
+    return Response.json(await instance.status());
+  },
+};
