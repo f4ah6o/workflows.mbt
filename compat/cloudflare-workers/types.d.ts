@@ -29,14 +29,36 @@ export type WorkflowStepContext = {
   config: WorkflowStepConfig;
 };
 
+export type WorkflowRollbackContext<T = unknown> = {
+  ctx: WorkflowStepContext;
+  error: Error | undefined;
+  output: T | undefined;
+};
+
+export type WorkflowStepRollbackConfig = Pick<WorkflowStepConfig, "retries" | "timeout">;
+
+export type WorkflowStepRollbackOptions<T = unknown> = {
+  rollback: (input: WorkflowRollbackContext<T>) => Promise<void> | void;
+  rollbackConfig?: WorkflowStepRollbackConfig;
+};
+
 export declare class WorkflowEntrypoint<Env = unknown, Params = unknown> {
   env: Env;
   run(event: WorkflowEvent<Params>, step: WorkflowStep): Promise<unknown>;
 }
 
 export declare class WorkflowStep {
-  do<T>(name: string, callback: (ctx: WorkflowStepContext) => Promise<T> | T): Promise<T>;
-  do<T>(name: string, config: WorkflowStepConfig, callback: (ctx: WorkflowStepContext) => Promise<T> | T): Promise<T>;
+  do<T>(
+    name: string,
+    callback: (ctx: WorkflowStepContext) => Promise<T> | T,
+    options?: WorkflowStepRollbackOptions<T>,
+  ): Promise<T>;
+  do<T>(
+    name: string,
+    config: WorkflowStepConfig,
+    callback: (ctx: WorkflowStepContext) => Promise<T> | T,
+    options?: WorkflowStepRollbackOptions<T>,
+  ): Promise<T>;
   sleep(name: string, duration: string | number): Promise<void>;
   sleepUntil(name: string, timestamp: Date | number): Promise<void>;
   waitForEvent<T = unknown>(
