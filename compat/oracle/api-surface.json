@@ -2,13 +2,13 @@
   "formatVersion": 1,
   "source": "@cloudflare/workers-types",
   "hashes": {
-    "Workflow": "42e60caa",
-    "WorkflowInstance": "d17e9671",
-    "WorkflowInstanceCreateOptions": "f7b7e27a",
-    "InstanceStatus": "9a368b5f",
+    "Workflow": "d4c77dae",
+    "WorkflowInstance": "6df1eaa9",
+    "WorkflowInstanceCreateOptions": "7df1518a",
+    "InstanceStatus": "c0b3a793",
     "WorkflowInstanceSubscribeOptions": "dd5398c9",
-    "WorkflowStep": "9bbabfd7",
-    "WorkflowEntrypoint": "b795e75e"
+    "WorkflowStep": "a4b48249",
+    "WorkflowEntrypoint": "6dbc79a6"
   },
   "members": {
     "Workflow": [
@@ -45,6 +45,8 @@
       "waitForEvent"
     ],
     "WorkflowEntrypoint": [
+      "ctx",
+      "env",
       "run"
     ]
   },
