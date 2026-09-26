@@ -204,3 +204,32 @@ export class ScheduledWorkflow extends WorkflowEntrypoint<{}, {}> {
     };
   }
 }
+
+
+export class ErrorWorkflow extends WorkflowEntrypoint<{}, {}> {
+  async run(_event: WorkflowEvent<{}>, step: WorkflowStep) {
+    return await step.do(
+      "always-error",
+      { retries: { limit: 0, delay: 1, backoff: "constant" } },
+      async () => {
+        throw new Error("expected terminal error");
+      },
+    );
+  }
+}
+
+export class PauseWorkflow extends WorkflowEntrypoint<{}, BaseParams> {
+  async run(event: WorkflowEvent<BaseParams>, step: WorkflowStep) {
+    await step.do("slow-boundary", async () => {
+      const response = await fetch(`${event.payload.baseUrl}/slow`);
+      if (!response.ok) throw new Error("slow failed");
+      return "slow";
+    });
+    await step.do("after-pause", async () => {
+      const response = await fetch(`${event.payload.baseUrl}/after-pause`);
+      if (!response.ok) throw new Error("after pause failed");
+      return "after";
+    });
+    return "done";
+  }
+}
