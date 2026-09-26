@@ -12,12 +12,26 @@ function load(name) {
   return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
 }
 
-const pinned = load("differential-pinned.json");
+const differentialPinned = load("differential-pinned.json");
+const differentialLatest = load("differential-latest.json");
 const driftPinned = load("drift-pinned.json");
 const driftLatest = load("drift-latest.json");
-const latest = driftLatest ?? driftPinned;
+const latestDrift = driftLatest ?? driftPinned;
 const compatibility = readFileSync(join(root, "COMPATIBILITY.md"), "utf8");
 const known = compatibility.split("## Known differences")[1]?.split("## Compatibility claim")[0]?.trim() ?? "See COMPATIBILITY.md";
+
+function differentialSummary(result) {
+  if (!result) return "not run";
+  return result.pass ? "PASS" : "FAIL";
+}
+
+function probeLines(label, result) {
+  if (!result) return ["- " + label + ": not run"];
+  return [
+    "- " + label + ": " + differentialSummary(result),
+    ...result.probes.map((probe) => "  - " + probe + ": " + (result.differences[probe] ? "FAIL" : "PASS")),
+  ];
+}
 
 const lines = [
   "# Compatibility verification report",
@@ -26,23 +40,26 @@ const lines = [
   "",
   "- Oracle date: " + manifest.verifiedAt,
   "- Compatibility date: " + manifest.compatibilityDate,
-  "- Wrangler: " + manifest.wrangler,
-  "- @cloudflare/workers-types: " + manifest.workersTypes,
-  "- workerd: " + manifest.workerd,
+  "- Pinned Wrangler: " + manifest.wrangler,
+  "- Pinned @cloudflare/workers-types: " + manifest.workersTypes,
+  "- Pinned workerd: " + manifest.workerd,
   "- Pinned contract: " + (driftPinned ? (driftPinned.pass ? "PASS" : "DRIFT") : "not run"),
   "- Latest contract drift: " + (driftLatest ? (driftLatest.pass ? "none" : "detected") : "not run"),
-  "- Differential probes: " + (pinned ? (pinned.pass ? "PASS" : "FAIL") : "not run"),
+  "- Pinned differential: " + differentialSummary(differentialPinned),
+  "- Latest differential: " + differentialSummary(differentialLatest),
   "",
   "## Differential probes",
   "",
-  ...(pinned ? pinned.probes.map((probe) => "- " + probe + ": " + (pinned.differences[probe] ? "FAIL" : "PASS")) : ["- not run"]),
+  ...probeLines("pinned", differentialPinned),
+  ...probeLines("latest", differentialLatest),
   "",
   "## Contract drift",
   "",
-  ...(latest ? [
-    "- added: " + (latest.drift.added.length ? latest.drift.added.join(", ") : "none"),
-    "- removed: " + (latest.drift.removed.length ? latest.drift.removed.join(", ") : "none"),
-    "- changed: " + (latest.drift.changed.length ? latest.drift.changed.join(", ") : "none"),
+  ...(latestDrift ? [
+    "- checked versions: " + JSON.stringify(latestDrift.versions),
+    "- added: " + (latestDrift.drift.added.length ? latestDrift.drift.added.join(", ") : "none"),
+    "- removed: " + (latestDrift.drift.removed.length ? latestDrift.drift.removed.join(", ") : "none"),
+    "- changed: " + (latestDrift.drift.changed.length ? latestDrift.drift.changed.join(", ") : "none"),
   ] : ["- not run"]),
   "",
   "## Known differences",
