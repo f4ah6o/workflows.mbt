@@ -251,17 +251,23 @@ export class SQLiteStorage extends Storage {
   setInstanceStatus(id, status, { output = undefined, error = undefined } = {}) {
     const current = this.getInstance(id);
     if (!current) throw new Error(`Unknown workflow instance: ${id}`);
+    const nextOutput = output === undefined ? current.output : output;
+    const nextError = error === undefined ? current.error : error;
     this.db.prepare(`
       UPDATE instances SET status=@status, output=@output, error=@error, updated_at=@now
       WHERE id=@id
     `).run({
       id,
       status,
-      output: output === undefined ? current.output : output,
-      error: error === undefined ? current.error : error,
+      output: nextOutput,
+      error: nextError,
       now: Date.now(),
     });
-    this.log(id, `instance.${status}`, null);
+    this.log(
+      id,
+      `instance.${status}`,
+      JSON.stringify({ output: nextOutput, error: nextError }),
+    );
   }
 
   deleteInstance(id) {
@@ -644,6 +650,20 @@ export class SQLiteStorage extends Storage {
       WHERE id=?
     `).run(outcome, error, Date.now(), id);
     this.log(id, `instance.rollback.${outcome}`, error);
+    this.log(
+      id,
+      "instance.terminated",
+      JSON.stringify({ rollbackOutcome: outcome }),
+    );
+  }
+
+  listExecutionEvents(instanceId, afterId = 0, limit = 100) {
+    return this.db.prepare(`
+      SELECT * FROM execution_events
+      WHERE instance_id=? AND id>?
+      ORDER BY id
+      LIMIT ?
+    `).all(instanceId, afterId, limit);
   }
 
   restartInstance(id, from = null) {
