@@ -551,6 +551,10 @@ Implemented and tested in this milestone:
 - `WorkflowInstance.subscribe()` history/live/cursor/filter behavior
 - per-Workflow instance ID namespace and retention
 - default Worker `fetch` handler compatibility
+- non-blocking `ctx.waitUntil()`
+- streamed Worker HTTP responses with backpressure
+- running-instance delete and self-delete execution stop semantics
+- collision-safe workflow-scoped internal storage IDs
 - Wrangler workflow schedules, vars, local secrets, and retention inputs
 - Cloudflare-style core Workflows REST facade
 - state-model behavior including `waitingForPause` and active rollback
@@ -568,4 +572,8 @@ Final milestone validation before closure:
 - MoonBit tests: PASS
 - compatibility host tests: PASS
 - durable process E2E: PASS
-- GitHub Actions CI run #81 on `cec06933de64cfcbd77fe0a88e43f9a1380a4069`: PASS
+- GitHub Actions CI run #91 on `7c3fd5deb5498639f41ade0754b8e9007495adf0`: PASS
+
+Post-review regression coverage includes the four PR review blockers: internal
+storage-ID collision, non-blocking `waitUntil()`, running/self delete, and
+streaming Worker responses.
