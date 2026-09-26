@@ -1,8 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WorkflowBinding, WorkflowInstanceHandle } from "./binding.mjs";
 import { loadProjectConfig } from "./config.mjs";
+import { matchesCron } from "./cron.mjs";
 import { parseDuration, parseSleepUntil } from "./duration.mjs";
 import { loadKernel } from "./kernel.mjs";
 import { bundleWorkflow, loadWorkflowModule } from "./loader.mjs";
@@ -148,12 +149,59 @@ export class WorkflowRuntime {
   }
 
   workflowEvent(row) {
-    return Object.freeze({
+    const event = {
       payload: Object.freeze(JSON.parse(row.payload)),
       timestamp: new Date(row.created_at),
       instanceId: row.id,
       workflowName: row.workflow_name,
-    });
+    };
+    if (row.schedule_cron != null && row.scheduled_time != null) {
+      event.schedule = Object.freeze({
+        cron: row.schedule_cron,
+        scheduledTime: row.scheduled_time,
+      });
+    }
+    return Object.freeze(event);
+  }
+
+  scheduledInstanceId(workflowName, cron, scheduledTime) {
+    const digest = createHash("sha256")
+      .update(`${workflowName}\u0000${cron}\u0000${scheduledTime}`)
+      .digest("hex");
+    return `cf_${digest}`;
+  }
+
+  async enqueueSchedules(now = Date.now()) {
+    const currentMinute = Math.floor(now / 60_000) * 60_000;
+    const maxCatchup = currentMinute - 7 * 24 * 60 * 60 * 1000;
+    let created = 0;
+
+    for (const workflow of this.config.workflows) {
+      for (const cron of workflow.schedules ?? []) {
+        let cursor = this.storage.getScheduleCursor(workflow.name, cron);
+        if (cursor == null) cursor = currentMinute - 60_000;
+        cursor = Math.max(cursor, maxCatchup);
+
+        for (
+          let scheduledTime = cursor + 60_000;
+          scheduledTime <= currentMinute;
+          scheduledTime += 60_000
+        ) {
+          if (!matchesCron(cron, scheduledTime)) continue;
+          const id = this.scheduledInstanceId(workflow.name, cron, scheduledTime);
+          const result = this.storage.claimScheduledInstance({
+            id,
+            workflowName: workflow.name,
+            payload: serializeJson({}, "scheduled workflow params"),
+            cron,
+            scheduledTime,
+          });
+          if (result.created) created += 1;
+        }
+        this.storage.setScheduleCursor(workflow.name, cron, currentMinute);
+      }
+    }
+    return created;
   }
 
   async sendEvent(id, event) {
@@ -378,6 +426,7 @@ export class WorkflowRuntime {
 
   async dev({ pollMs = 100, signal } = {}) {
     while (!signal?.aborted) {
+      await this.enqueueSchedules();
       await this.runPending();
       await sleep(pollMs);
     }
