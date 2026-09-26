@@ -98,3 +98,37 @@ test("cron matcher uses UTC five-field workflow schedules", () => {
   assert.equal(matchesCron("31 5 * * *", date), false);
   assert.equal(matchesCron("30 5 * * 6", date), true);
 });
+
+
+test("Wrangler vars and .dev.vars secrets are available to workflow env", () => {
+  const root = mkdtempSync(join(tmpdir(), "workflows-mbt-env-"));
+  const path = join(root, "wrangler.jsonc");
+  writeFileSync(
+    path,
+    JSON.stringify({
+      name: "env-test",
+      main: "src/index.ts",
+      vars: {
+        API_HOST: "example.test",
+        STRUCTURED: { enabled: true },
+      },
+      secrets: { required: ["SECRET_KEY"] },
+      workflows: [{
+        name: "wf",
+        binding: "WF",
+        class_name: "Workflow",
+      }],
+    }),
+  );
+  writeFileSync(
+    join(root, ".dev.vars"),
+    'SECRET_KEY="secret-value"\nIGNORED_SECRET="not-loaded"\n',
+  );
+  const config = loadProjectConfig(path);
+  assert.deepEqual(config.vars, {
+    API_HOST: "example.test",
+    STRUCTURED: { enabled: true },
+  });
+  assert.deepEqual(config.localDevEnv, { SECRET_KEY: "secret-value" });
+  assert.deepEqual(config.ignoredWranglerFields, []);
+});
