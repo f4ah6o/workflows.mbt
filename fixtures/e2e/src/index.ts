@@ -194,3 +194,13 @@ export class RollbackWorkflow extends WorkflowEntrypoint<{}, BaseParams> {
     return "unexpected";
   }
 }
+
+
+export class ScheduledWorkflow extends WorkflowEntrypoint<{}, {}> {
+  async run(event: WorkflowEvent<{}>, _step: WorkflowStep) {
+    return {
+      timestamp: event.timestamp,
+      schedule: event.schedule ?? null,
+    };
+  }
+}
