@@ -41,7 +41,7 @@ export function normalizeTrace(raw) {
   return {
     probe: raw.probe,
     status: raw.status?.status,
-    output: raw.status?.output,
+    output: raw.status?.output ?? undefined,
     error: errorShape(raw.status?.error),
     lifecycle,
     steps: [...steps.values()],
