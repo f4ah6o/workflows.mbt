@@ -10,6 +10,7 @@ import { spawn } from "node:child_process";
 import Database from "better-sqlite3";
 import test from "node:test";
 import { WorkflowRuntime } from "../host/engine.mjs";
+import { decodeDurableValue as decodeDurableValueForTest } from "../host/serialization.mjs";
 import { handleWorkflowRest } from "../host/rest.mjs";
 import { startWorkflowHttpServer } from "../host/server.mjs";
 
@@ -1178,4 +1179,36 @@ test("outer step.do makes Promise.race winner durable across replay", async (t) 
   assert.equal(postRace.ordinal, 5);
   assert.equal(counter.counts.get("/race-fast"), 1);
   assert.equal(counter.counts.get("/race-slow"), 1);
+});
+
+
+test("sensitive step output stays durable but is redacted from subscriptions", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-sensitive-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const instance = await runtime.trigger("sensitive", {
+    id: "sensitive-1",
+    params: {},
+  });
+  assert.deepEqual(runtime.instanceStatus(instance.id, "sensitive").output, {
+    preserved: true,
+  });
+
+  const events = await collectSubscriptionEvents(instance, {
+    filter: ["step_completed", "workflow_completed"],
+  });
+  assert.equal(events[0].type, "step_completed");
+  assert.equal(events[0].stepName, "sensitive-output");
+  assert.equal(events[0].output, "[REDACTED]");
+  assert.deepEqual(events[1].output, { preserved: true });
+
+  const row = runtime.storage.getInstanceByPublic("sensitive", instance.id);
+  const step = runtime.storage.listSteps(row.id).find(
+    (candidate) => candidate.name === "sensitive-output",
+  );
+  assert.deepEqual(
+    decodeDurableValueForTest(step.output),
+    { token: "super-secret", visibleToWorkflow: true },
+  );
 });
