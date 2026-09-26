@@ -666,8 +666,14 @@ test("REST compatibility facade uses the same lifecycle and event runtime", asyn
       params: JSON.stringify({}),
     }),
   });
-  assert.equal(response.status, 201);
-  assert.equal((await response.json()).result.status, "queued");
+  assert.equal(response.status, 200);
+  let createBody = await response.json();
+  assert.equal(createBody.success, true);
+  assert.deepEqual(createBody.errors, []);
+  assert.deepEqual(createBody.messages, []);
+  assert.equal(createBody.result.id, "rest-1");
+  assert.equal(createBody.result.status, "queued");
+  assert.equal(createBody.result.trigger_source, "api");
 
   await runtime.runPending();
   response = await request("/accounts/local/workflows/approval/instances/rest-1");
@@ -680,7 +686,11 @@ test("REST compatibility facade uses the same lifecycle and event runtime", asyn
       body: JSON.stringify({ payload: { approved: true } }),
     },
   );
-  assert.equal(response.status, 202);
+  assert.equal(response.status, 200);
+  const eventBody = await response.json();
+  assert.equal(eventBody.success, true);
+  assert.equal(eventBody.result.instanceId, "rest-1");
+  assert.ok(Number.isFinite(Date.parse(eventBody.result.timestamp)));
   await runtime.runPending();
 
   response = await request("/accounts/local/workflows/approval/instances/rest-1");
@@ -711,7 +721,25 @@ test("REST compatibility facade uses the same lifecycle and event runtime", asyn
 
   response = await request("/accounts/local/workflows/approval/instances");
   body = await response.json();
+  assert.equal(body.success, true);
   assert.equal(body.result.some((item) => item.id === "rest-1"), true);
+  assert.equal(body.result_info.total_count, body.result.length);
+
+  response = await request("/accounts/local/workflows/approval/instances/batch", {
+    method: "POST",
+    body: JSON.stringify([
+      { instance_id: "rest-batch-a", params: "{}" },
+      { instance_id: "rest-batch-a", params: "{}" },
+      { instance_id: "rest-batch-b", params: "{}" },
+    ]),
+  });
+  assert.equal(response.status, 200);
+  const batchBody = await response.json();
+  assert.equal(batchBody.success, true);
+  assert.deepEqual(
+    batchBody.result.map((item) => item.id),
+    ["rest-batch-a", "rest-batch-b"],
+  );
 
   response = await request("/accounts/local/workflows/approval/instances/rest-1", {
     method: "DELETE",
