@@ -10,7 +10,7 @@ export class WorkflowBinding {
   }
 
   async get(id) {
-    const instance = this.runtime.storage.getInstance(id);
+    const instance = this.runtime.requireInstance(id);
     if (!instance || instance.workflow_name !== this.workflow.name) {
       throw new Error(`Workflow instance not found: ${id}`);
     }
@@ -26,6 +26,7 @@ export class WorkflowBinding {
         throw new TypeError("createBatch items require id and params");
       }
     }
+    this.runtime.storage.deleteExpired(Date.now());
     const out = [];
     for (const item of batch) {
       const existing = this.runtime.storage.getInstance(item.id);
@@ -47,6 +48,7 @@ export class WorkflowBinding {
     if (ids.some((id) => typeof id !== "string" || id.length < 1 || id.length > 100)) {
       throw new TypeError("deleteBatch instance IDs must be 1..100 character strings");
     }
+    this.runtime.storage.deleteExpired(Date.now());
     const deleted = [];
     const errors = [];
     const outcomes = new Map();
