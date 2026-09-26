@@ -74,6 +74,16 @@
       "name": "automatic-rollback",
       "binding": "AUTOMATIC_ROLLBACK",
       "class_name": "AutomaticRollbackWorkflow"
+    },
+    {
+      "name": "structured-replay",
+      "binding": "STRUCTURED_REPLAY",
+      "class_name": "StructuredReplayWorkflow"
+    },
+    {
+      "name": "wrapped-race",
+      "binding": "WRAPPED_RACE",
+      "class_name": "WrappedRaceWorkflow"
     }
   ]
 }
