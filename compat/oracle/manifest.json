@@ -1,0 +1,12 @@
+{
+  "verifiedAt": "2026-09-26",
+  "compatibilityDate": "2026-09-26",
+  "wrangler": "4.141.0",
+  "workersTypes": "5.20260925.2",
+  "workerd": "1.20260925.2",
+  "oracle": "cloudflare-local-wrangler",
+  "notes": [
+    "Pinned differential probes run credential-free against wrangler dev and workflows.mbt.",
+    "Latest drift checks are isolated from required PR CI."
+  ]
+}
