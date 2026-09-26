@@ -374,7 +374,9 @@ export class SQLiteStorage extends Storage {
         let durationMs;
         try {
           const parsed = JSON.parse(config ?? "{}");
-          durationMs = parsed.mode === "relative" ? parsed.duration : undefined;
+          durationMs = typeof parsed.durationMs === "number"
+            ? parsed.durationMs
+            : undefined;
         } catch {}
         this.log(
           identity.instanceId,
