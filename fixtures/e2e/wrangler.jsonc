@@ -42,6 +42,14 @@
       "name": "rollback",
       "binding": "ROLLBACK",
       "class_name": "RollbackWorkflow"
+    },
+    {
+      "name": "scheduled",
+      "binding": "SCHEDULED",
+      "class_name": "ScheduledWorkflow",
+      "schedules": [
+        "* * * * *"
+      ]
     }
   ]
 }
