@@ -313,9 +313,19 @@ export class WorkflowRuntime {
       if (error instanceof SuspendExecution) {
         this.storage.setInstanceStatus(id, "waiting");
       } else {
-        this.storage.setInstanceStatus(id, "errored", {
-          error: serializeError(error),
-        });
+        const encodedError = serializeError(error);
+        const rollbacks = this.storage.listRollbackRegistrations(id);
+        if (rollbacks.length) {
+          this.storage.setInstanceStatus(id, "running", { error: encodedError });
+          this.storage.beginRollback(id, {
+            terminalStatus: "errored",
+            cause: encodedError,
+          });
+        } else {
+          this.storage.setInstanceStatus(id, "errored", {
+            error: encodedError,
+          });
+        }
       }
     } finally {
       delete globalThis.__WORKFLOWS_MBT_CONTEXT__;
@@ -404,9 +414,9 @@ export class WorkflowRuntime {
           attempt: Math.max(1, this.storage.countAttempts(identity)),
           config: forwardConfig,
         },
-        error: registration.step_error == null
+        error: row.rollback_cause == null
           ? undefined
-          : deserializeError(registration.step_error),
+          : deserializeError(row.rollback_cause),
         output: registration.output == null
           ? undefined
           : decodeDurableValue(registration.output),
