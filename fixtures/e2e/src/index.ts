@@ -79,3 +79,80 @@ export class DuplicateWorkflow extends WorkflowEntrypoint<{}, {}> {
     return output;
   }
 }
+
+
+export class ParallelWorkflow extends WorkflowEntrypoint<{}, BaseParams> {
+  async run(event: WorkflowEvent<BaseParams>, step: WorkflowStep) {
+    const [retried, stable] = await Promise.all([
+      step.do(
+        "parallel",
+        { retries: { limit: 3, delay: 80, backoff: "constant" } },
+        async ({ attempt, step: current }) => {
+          const response = await fetch(`${event.payload.baseUrl}/retry`);
+          if (!response.ok) throw new Error(`parallel attempt ${attempt} failed`);
+          return { branch: "retry", attempt, count: current.count };
+        },
+      ),
+      step.do("parallel", async ({ step: current }) => {
+        const response = await fetch(`${event.payload.baseUrl}/parallel-stable`);
+        if (!response.ok) throw new Error("parallel stable failed");
+        return { branch: "stable", count: current.count };
+      }),
+    ]);
+    return { retried, stable };
+  }
+}
+
+export class ParallelRestartWorkflow extends WorkflowEntrypoint<{}, BaseParams & { sleepMs: number }> {
+  async run(
+    event: WorkflowEvent<BaseParams & { sleepMs: number }>,
+    step: WorkflowStep,
+  ) {
+    const [a, _pause, b] = await Promise.all([
+      step.do("parallel-A", async () => {
+        const response = await fetch(`${event.payload.baseUrl}/parallel-A`);
+        if (!response.ok) throw new Error("parallel A failed");
+        return "a";
+      }),
+      step.sleep("parallel-pause", event.payload.sleepMs),
+      step.do("parallel-B", async () => {
+        const response = await fetch(`${event.payload.baseUrl}/parallel-B`);
+        if (!response.ok) throw new Error("parallel B failed");
+        return "b";
+      }),
+    ]);
+    return { a, b };
+  }
+}
+
+export class PromiseCombinatorsWorkflow extends WorkflowEntrypoint<{}, {}> {
+  async run(_event: WorkflowEvent<{}>, step: WorkflowStep) {
+    const settled = await Promise.allSettled([
+      step.do("settled-ok", async () => "ok"),
+      step.do(
+        "settled-error",
+        { retries: { limit: 0, delay: 1, backoff: "constant" } },
+        async () => {
+          throw new Error("expected");
+        },
+      ),
+    ]);
+    const any = await Promise.any([
+      step.do("any-first", async () => "first"),
+      step.do("any-second", async () => "second"),
+    ]);
+    const race = await Promise.race([
+      step.do("race-first", async () => "first"),
+      step.do("race-second", async () => "second"),
+    ]);
+    return {
+      settled: settled.map((entry) =>
+        entry.status === "fulfilled"
+          ? { status: entry.status, value: entry.value }
+          : { status: entry.status, reason: entry.reason.message }
+      ),
+      any,
+      race,
+    };
+  }
+}
