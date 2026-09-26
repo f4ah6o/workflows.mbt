@@ -267,3 +267,69 @@ export class AutomaticRollbackWorkflow extends WorkflowEntrypoint<{}, BaseParams
     );
   }
 }
+
+
+export class StructuredReplayWorkflow extends WorkflowEntrypoint<
+  {},
+  BaseParams & { sleepMs: number }
+> {
+  async run(
+    event: WorkflowEvent<BaseParams & { sleepMs: number }>,
+    step: WorkflowStep,
+  ) {
+    const value = await step.do("structured-value", async () => {
+      const response = await fetch(`${event.payload.baseUrl}/structured`);
+      if (!response.ok) throw new Error("structured side effect failed");
+      return {
+        date: new Date("2026-09-26T00:00:00.000Z"),
+        map: new Map([["answer", 42]]),
+        set: new Set(["a", "b"]),
+        bytes: new Uint8Array([1, 2, 255]),
+        bigint: 9007199254740993n,
+      };
+    });
+
+    await step.sleep("structured-pause", event.payload.sleepMs);
+
+    return await step.do("verify-structured-replay", async () => ({
+      date: value.date,
+      dateIsDate: value.date instanceof Date,
+      map: value.map,
+      mapIsMap: value.map instanceof Map,
+      set: value.set,
+      setIsSet: value.set instanceof Set,
+      bytes: value.bytes,
+      bytesIsUint8Array: value.bytes instanceof Uint8Array,
+      bigint: value.bigint,
+      bigintIsBigInt: typeof value.bigint === "bigint",
+    }));
+  }
+}
+
+export class WrappedRaceWorkflow extends WorkflowEntrypoint<
+  {},
+  BaseParams & { sleepMs: number }
+> {
+  async run(
+    event: WorkflowEvent<BaseParams & { sleepMs: number }>,
+    step: WorkflowStep,
+  ) {
+    const winner = await step.do("durable-race-winner", async () => {
+      return await Promise.race([
+        step.do("race-slow", async () => {
+          await new Promise((resolve) => setTimeout(resolve, 80));
+          const response = await fetch(`${event.payload.baseUrl}/race-slow`);
+          if (!response.ok) throw new Error("race slow failed");
+          return "slow";
+        }),
+        step.do("race-fast", async () => {
+          const response = await fetch(`${event.payload.baseUrl}/race-fast`);
+          if (!response.ok) throw new Error("race fast failed");
+          return "fast";
+        }),
+      ]);
+    });
+    await step.sleep("race-pause", event.payload.sleepMs);
+    return { winner };
+  }
+}
