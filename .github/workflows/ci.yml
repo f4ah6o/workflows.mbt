@@ -1,0 +1,43 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup MoonBit
+        uses: hustcer/setup-moonbit@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install host dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: MoonBit check
+        run: npm run check:moon
+
+      - name: Build MoonBit JS kernel
+        run: npm run build:core
+
+      - name: MoonBit tests
+        run: npm run test:moon
+
+      - name: Compatibility host tests
+        run: npm run test:host
+
+      - name: Durable process E2E
+        run: npm run test:e2e

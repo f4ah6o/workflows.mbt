@@ -1,0 +1,27 @@
+{
+  "name": "workflows-mbt-e2e",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-26",
+  "workflows": [
+    {
+      "name": "durable",
+      "binding": "DURABLE",
+      "class_name": "DurableWorkflow"
+    },
+    {
+      "name": "retry",
+      "binding": "RETRY",
+      "class_name": "RetryWorkflow"
+    },
+    {
+      "name": "approval",
+      "binding": "APPROVAL",
+      "class_name": "ApprovalWorkflow"
+    },
+    {
+      "name": "duplicate",
+      "binding": "DUPLICATE",
+      "class_name": "DuplicateWorkflow"
+    }
+  ]
+}

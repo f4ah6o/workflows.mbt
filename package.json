@@ -1,0 +1,25 @@
+{
+  "name": "@f4ah6o/workflows-mbt",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "workflows": "./host/cli.mjs"
+  },
+  "scripts": {
+    "check:moon": "moon check --target js",
+    "build:core": "node scripts/build-core.mjs",
+    "test:moon": "moon test --target js",
+    "test:host": "node --test tests/host.test.mjs",
+    "test:e2e": "node --test tests/e2e.test.mjs",
+    "test": "npm run check:moon && npm run build:core && npm run test:moon && npm run test:host && npm run test:e2e"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.4.1",
+    "esbuild": "^0.25.10",
+    "jsonc-parser": "^3.3.1"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
