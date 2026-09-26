@@ -84,6 +84,11 @@
       "name": "wrapped-race",
       "binding": "WRAPPED_RACE",
       "class_name": "WrappedRaceWorkflow"
+    },
+    {
+      "name": "sensitive",
+      "binding": "SENSITIVE",
+      "class_name": "SensitiveWorkflow"
     }
   ]
 }
