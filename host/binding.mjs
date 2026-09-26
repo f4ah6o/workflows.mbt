@@ -117,7 +117,10 @@ export class WorkflowInstanceHandle {
       throw new TypeError("terminate only accepts the rollback option");
     }
     if (options?.rollback === true) {
-      this.runtime.storage.beginRollback(this.id);
+      this.runtime.storage.beginRollback(this.id, {
+        terminalStatus: "terminated",
+        cause: null,
+      });
       return;
     }
     this.runtime.storage.setInstanceStatus(this.id, "terminated");
