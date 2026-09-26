@@ -34,6 +34,9 @@ export class SQLiteStorage extends Storage {
         rollback_error TEXT,
         schedule_cron TEXT,
         scheduled_time INTEGER,
+        success_retention_ms INTEGER,
+        error_retention_ms INTEGER,
+        expires_at INTEGER,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         FOREIGN KEY(workflow_name) REFERENCES workflows(name)
@@ -150,6 +153,9 @@ export class SQLiteStorage extends Storage {
     ensureColumn("instances", "rollback_error", "TEXT");
     ensureColumn("instances", "schedule_cron", "TEXT");
     ensureColumn("instances", "scheduled_time", "INTEGER");
+    ensureColumn("instances", "success_retention_ms", "INTEGER");
+    ensureColumn("instances", "error_retention_ms", "INTEGER");
+    ensureColumn("instances", "expires_at", "INTEGER");
     ensureColumn("rollback_registrations", "ordinal", "INTEGER");
     ensureColumn("rollback_registrations", "output", "TEXT");
     ensureColumn("rollback_registrations", "step_error", "TEXT");
@@ -169,17 +175,26 @@ export class SQLiteStorage extends Storage {
     `).run({ ...workflow, now: Date.now() });
   }
 
-  createInstance({ id, workflowName, payload, schedule = null }) {
+  createInstance({
+    id,
+    workflowName,
+    payload,
+    schedule = null,
+    retention = null,
+  }) {
     const now = Date.now();
     this.db.prepare(`
       INSERT INTO instances(
         id, workflow_name, status, payload, schedule_cron, scheduled_time,
+        success_retention_ms, error_retention_ms, expires_at,
         created_at, updated_at
       )
-      VALUES(?, ?, 'queued', ?, ?, ?, ?, ?)
+      VALUES(?, ?, 'queued', ?, ?, ?, ?, ?, NULL, ?, ?)
     `).run(
       id, workflowName, payload,
       schedule?.cron ?? null, schedule?.scheduledTime ?? null,
+      retention?.successRetentionMs ?? null,
+      retention?.errorRetentionMs ?? null,
       now, now,
     );
     this.log(id, "instance.created", null);
@@ -238,6 +253,12 @@ export class SQLiteStorage extends Storage {
     `).run(workflowName, cron, Math.trunc(lastCheckedAt));
   }
 
+  deleteExpired(now = Date.now()) {
+    return this.db.prepare(
+      "DELETE FROM instances WHERE expires_at IS NOT NULL AND expires_at <= ?",
+    ).run(now).changes;
+  }
+
   getInstance(id) {
     return this.db.prepare("SELECT * FROM instances WHERE id = ?").get(id) ?? null;
   }
@@ -253,15 +274,29 @@ export class SQLiteStorage extends Storage {
     if (!current) throw new Error(`Unknown workflow instance: ${id}`);
     const nextOutput = output === undefined ? current.output : output;
     const nextError = error === undefined ? current.error : error;
+    const now = Date.now();
+    let expiresAt = current.expires_at;
+    if (status === "complete" || status === "terminated") {
+      expiresAt = current.success_retention_ms == null
+        ? null
+        : now + current.success_retention_ms;
+    } else if (status === "errored") {
+      expiresAt = current.error_retention_ms == null
+        ? null
+        : now + current.error_retention_ms;
+    }
     this.db.prepare(`
-      UPDATE instances SET status=@status, output=@output, error=@error, updated_at=@now
+      UPDATE instances
+      SET status=@status, output=@output, error=@error,
+          expires_at=@expiresAt, updated_at=@now
       WHERE id=@id
     `).run({
       id,
       status,
       output: nextOutput,
       error: nextError,
-      now: Date.now(),
+      expiresAt,
+      now,
     });
     this.log(
       id,
@@ -644,11 +679,17 @@ export class SQLiteStorage extends Storage {
   }
 
   finishRollback(id, outcome, error = null) {
+    const instance = this.getInstance(id);
+    const now = Date.now();
+    const expiresAt = instance?.success_retention_ms == null
+      ? null
+      : now + instance.success_retention_ms;
     this.db.prepare(`
       UPDATE instances
-      SET status='terminated', rollback_outcome=?, rollback_error=?, updated_at=?
+      SET status='terminated', rollback_outcome=?, rollback_error=?,
+          expires_at=?, updated_at=?
       WHERE id=?
-    `).run(outcome, error, Date.now(), id);
+    `).run(outcome, error, expiresAt, now, id);
     this.log(id, `instance.rollback.${outcome}`, error);
     this.log(
       id,
@@ -706,7 +747,7 @@ export class SQLiteStorage extends Storage {
       }
       this.db.prepare(`
         UPDATE instances
-        SET status='queued', output=NULL, error=NULL,
+        SET status='queued', output=NULL, error=NULL, expires_at=NULL,
             rollback_outcome=NULL, rollback_error=NULL, updated_at=?
         WHERE id=?
       `).run(Date.now(), id);
