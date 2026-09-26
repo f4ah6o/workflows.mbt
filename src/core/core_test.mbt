@@ -18,7 +18,7 @@ test "compatibility defaults are fixed in the MoonBit kernel" {
   inspect(default_retry_limit(), content="5")
   inspect(default_retry_delay_ms(), content="10000")
   inspect(default_wait_timeout_ms(), content="86400000")
-  inspect(default_backoff(), content="\"exponential\"")
+  inspect(default_backoff(), content="exponential")
 }
 
 ///|
