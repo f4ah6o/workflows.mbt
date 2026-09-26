@@ -117,6 +117,7 @@ streaming subscribe transport is a separate remaining adapter.
 - `ctx.waitUntil()` extends background work without blocking the HTTP response
 - a Worker `Response` may carry a `ReadableStream` body
 - streamed response bytes are forwarded incrementally rather than fully buffered
+- multiple `Set-Cookie` headers must remain separate rather than being folded
 
 ### Serialization
 
