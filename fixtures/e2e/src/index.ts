@@ -233,3 +233,37 @@ export class PauseWorkflow extends WorkflowEntrypoint<{}, BaseParams> {
     return "done";
   }
 }
+
+
+export class AutomaticRollbackWorkflow extends WorkflowEntrypoint<{}, BaseParams> {
+  async run(event: WorkflowEvent<BaseParams>, step: WorkflowStep) {
+    await step.do(
+      "auto-first",
+      async () => ({ value: "first" }),
+      {
+        rollback: async ({ output, error }) => {
+          if (output?.value !== "first") throw new Error("auto-first output mismatch");
+          if (error?.message !== "automatic failure") throw new Error("auto-first cause mismatch");
+          const response = await fetch(`${event.payload.baseUrl}/auto-rollback-first`);
+          if (!response.ok) throw new Error("auto-first rollback failed");
+        },
+      },
+    );
+
+    await step.do(
+      "auto-failing",
+      { retries: { limit: 0, delay: 1, backoff: "constant" } },
+      async () => {
+        throw new Error("automatic failure");
+      },
+      {
+        rollback: async ({ output, error }) => {
+          if (output !== undefined) throw new Error("failed step rollback output must be undefined");
+          if (error?.message !== "automatic failure") throw new Error("auto-failing cause mismatch");
+          const response = await fetch(`${event.payload.baseUrl}/auto-rollback-failing`);
+          if (!response.ok) throw new Error("auto-failing rollback failed");
+        },
+      },
+    );
+  }
+}
