@@ -290,9 +290,13 @@ Implemented on 2026-09-27:
   The `entrypoint-ctx` differential probe reports the full surface —
   including `exports` loopback fetch behavior (Request and string+init
   inputs), span-across-await, and span end semantics — and matches upstream
-  exactly under `wrangler dev` (upstream does not expose WorkflowEntrypoint
-  class exports on `ctx.exports` there at runtime, so none are fabricated
-  locally; the type surface still resolves them for source compat). The
+  exactly under `wrangler dev`. Configured Workflow classes are additionally
+  exposed at runtime as non-enumerable `ctx.exports.<ClassName>` bindings
+  (`WorkflowBinding` — `create`/`get`/`createBatch`/`deleteBatch`), matching
+  the pinned workerd contract (`Server: configured Workflow is exposed
+  through ctx.exports`, server-test.c++); `wrangler dev` does not implement
+  this, so that surface is a documented dev/oracle limitation covered by the
+  `loopback-create` e2e instead of the differential probe. The
   pinned oracle now also verifies the local host/shim classes implement every
   tracked upstream member — `ExecutionContext` included (`localSurface` in
   `compat-results/drift-*.json`), so a tracked member cannot silently lose its
@@ -307,7 +311,7 @@ Implemented on 2026-09-27:
 Validation results (2026-09-27, this checkout):
 
 - `npm run test`: PASS — moon check PASS, moon JS kernel build PASS, moon
-  tests PASS, host tests PASS, durable process E2E PASS (39/39), re-run after
+  tests PASS, host tests PASS, durable process E2E PASS (40/40), re-run after
   the ExecutionContext surface expansion.
 - `npm run compat:pinned`: PASS — `compat:typecheck` (new tsc fixture) PASS,
   contract check `pass: true` with empty drift; differential `pass: true`

@@ -91,6 +91,11 @@
       "class_name": "WaitUntilTeardownWorkflow"
     },
     {
+      "name": "loopback-create",
+      "binding": "LOOPBACK_CREATE",
+      "class_name": "LoopbackCreateWorkflow"
+    },
+    {
       "name": "retained",
       "binding": "RETAINED",
       "class_name": "DuplicateWorkflow",

@@ -541,9 +541,8 @@ export class WorkflowRuntime {
 
   // Loopback-compatible entries for ctx.exports, mirroring workerd's
   // LoopbackForExport surface: `default` is a service stub whose methods are
-  // invoked with (arg, env, ctx) injected. Named WorkflowEntrypoint exports
-  // are not exposed by the pinned upstream runtime (verified against
-  // wrangler dev), so they are not fabricated here.
+  // invoked with env/ctx injected, and configured Workflow classes resolve to
+  // Workflow bindings (see workflowExports).
   loopbackHandler(target) {
     const runtime = this;
     return new Proxy(target, {
@@ -577,6 +576,21 @@ export class WorkflowRuntime {
     const defaultExport = this.workflowModule?.default;
     if (defaultExport != null && ["object", "function"].includes(typeof defaultExport)) {
       exports.default = this.loopbackHandler(defaultExport);
+    }
+    // Configured Workflow classes are exposed as Workflow bindings under their
+    // export names (workerd: "Server: configured Workflow is exposed through
+    // ctx.exports"). Non-enumerable because wrangler dev enumerates only
+    // `default`; the bindings are nevertheless reachable by name.
+    for (const workflow of this.config.workflows ?? []) {
+      if (typeof this.workflowModule?.[workflow.className] !== "function") {
+        continue;
+      }
+      Object.defineProperty(exports, workflow.className, {
+        value: new WorkflowBinding(this, workflow),
+        enumerable: false,
+        writable: false,
+        configurable: true,
+      });
     }
     return exports;
   }

@@ -52,9 +52,11 @@ export class OracleWorkflow extends WorkflowEntrypoint<{}, Params> {
         const exportsDefault = exportsObj?.default as
           | { fetch?: (request: Request) => Promise<Response> }
           | undefined;
-        const exportsWorkflow = exportsObj?.OracleWorkflow as
-          | { create?: (options: unknown) => Promise<unknown> }
-          | undefined;
+        // Note: workerd exposes configured Workflow classes on ctx.exports
+        // (server test "Server: configured Workflow is exposed through
+        // ctx.exports"), but `wrangler dev` does not — a dev/oracle
+        // limitation, so named-export presence is covered by local e2e
+        // rather than this differential.
         const spanProbe = (method: "enterSpan" | "startActiveSpan") =>
           probeAsync(async () => {
             const fn = tracing?.[method] as
@@ -102,8 +104,6 @@ export class OracleWorkflow extends WorkflowEntrypoint<{}, Params> {
                   .filter((key) => !key.startsWith("__INTERNAL_"))
                   .sort(),
           ),
-          exportsWorkflow: typeof exportsWorkflow,
-          exportsWorkflowCreate: probe(() => typeof exportsWorkflow?.create),
           exportsDefaultFetch: await probeAsync(async () => {
             if (typeof exportsDefault?.fetch !== "function") return "not-a-function";
             const response = await exportsDefault.fetch(

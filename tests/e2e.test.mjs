@@ -1620,6 +1620,25 @@ test("WorkflowEntrypoint exposes the ctx contract during run", async (t) => {
 });
 
 
+test("ctx.exports exposes configured Workflow classes as bindings", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-loopback-exports-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const instance = await runtime.trigger("loopback-create", {
+    id: "loopback-1",
+    params: {},
+  });
+  const status = runtime.instanceStatus(instance.id, "loopback-create");
+  assert.equal(status.status, "complete");
+  assert.deepEqual(status.output, {
+    createdId: "via-exports-1",
+    fetchedId: "via-exports-1",
+    exportsKeys: [],
+  });
+});
+
+
 test("ctx.waitUntil tasks drain before runtime close", async (t) => {
   const counter = await startCounterServer();
   t.after(() => counter.server.close());

@@ -428,6 +428,22 @@ export class CtxWorkflow extends WorkflowEntrypoint<{}, {}> {
 }
 
 
+// workerd exposes configured Workflow classes through ctx.exports; wrangler
+// dev does not — exercised here via ctx.exports.CtxWorkflow.create/get.
+export class LoopbackCreateWorkflow extends WorkflowEntrypoint<{}, {}> {
+  async run(_event: WorkflowEvent<{}>, _step: WorkflowStep) {
+    const loopback = (this.ctx.exports as Record<string, any>).CtxWorkflow;
+    const created = await loopback.create({ id: "via-exports-1", params: {} });
+    const fetched = await loopback.get("via-exports-1");
+    return {
+      createdId: created.id,
+      fetchedId: fetched.id,
+      exportsKeys: Object.keys(this.ctx.exports).sort(),
+    };
+  }
+}
+
+
 export class WaitUntilTeardownWorkflow extends WorkflowEntrypoint<
   {},
   BaseParams

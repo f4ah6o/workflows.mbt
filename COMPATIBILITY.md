@@ -22,10 +22,15 @@ loading, Web APIs, callback invocation, and narrow host bridges.
 - [x] `this.ctx` — pinned `ExecutionContext` surface (`waitUntil`,
   `passThroughOnException`, `props`, `exports`, `tracing`, `abort`;
   `cache`/`access` remain undefined), verified against the oracle
-- [x] `ctx.exports.default` is a loopback service stub (`fetch(input, init)`
-  normalizes to `Request`; other methods take public args + injected env/ctx),
-  matching upstream `Fetcher` semantics; typed via a module-aware `Exports`
-  mapped type driven by `Cloudflare.GlobalProps.mainModule` (the
+- [x] `ctx.exports` loopback surface: `default` is a service stub
+  (`fetch(input, init)` normalizes to `Request`; other methods take public
+  args + injected env/ctx) matching upstream `Fetcher` semantics, and every
+  configured Workflow class resolves to a `Workflow` binding under its export
+  name (workerd `Server: configured Workflow is exposed through ctx.exports`)
+  — non-enumerable, matching what `wrangler dev` enumerates; `wrangler dev`
+  itself does not implement named Workflow exports, so that part is a known
+  dev/oracle limitation covered by local e2e. Typed via a module-aware
+  `Exports` mapped type driven by `Cloudflare.GlobalProps.mainModule` (the
   wrangler-generated augmentation point)
 - [x] `ctx.tracing` spans propagate via async context (`getActiveSpan()` holds
   across `await`); `enterSpan` AUTO_ENDs internally while `startActiveSpan` is
