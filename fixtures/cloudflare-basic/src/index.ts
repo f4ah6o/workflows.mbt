@@ -73,6 +73,15 @@ export default {
       });
     }
 
+    if (request.method === "POST" && url.pathname === "/first-chunk") {
+      const reader = request.body.getReader();
+      const first = await reader.read();
+      await reader.cancel();
+      return new Response(first.value ?? new Uint8Array(), {
+        headers: { "content-type": "application/octet-stream" },
+      });
+    }
+
     if (request.method === "GET" && url.pathname === "/cookies") {
       const headers = new Headers();
       headers.append("Set-Cookie", "first=one; Path=/; HttpOnly");

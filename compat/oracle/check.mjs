@@ -155,6 +155,37 @@ function compareSet(label, expected, actual, drift) {
   for (const value of expected) if (!actualSet.has(value)) drift.removed.push(label + "." + value);
 }
 
+// Members of the local host/shim classes that back each tracked upstream
+// class. The oracle must fail when a tracked upstream member loses its local
+// implementation, not only when the upstream declaration itself changes.
+const LOCAL_CLASS_SURFACES = {
+  Workflow: ["host/binding.mjs", "WorkflowBinding"],
+  WorkflowInstance: ["host/binding.mjs", "WorkflowInstanceHandle"],
+  WorkflowStep: ["compat/cloudflare-workers/index.mjs", "WorkflowStep"],
+  WorkflowEntrypoint: ["compat/cloudflare-workers/index.mjs", "WorkflowEntrypoint"],
+};
+
+const LOCAL_MEMBER_NOISE = new Set([
+  "constructor", "if", "for", "while", "switch", "catch", "return",
+  "throw", "else", "new", "typeof", "await", "function", "case",
+]);
+
+function localClassMembers(path, className) {
+  const text = readFileSync(path, "utf8");
+  const block = extractBlock(text, new RegExp("class\\s+" + className + "\\b"));
+  if (!block) throw new Error("Could not locate local class: " + className);
+  const names = new Set();
+  for (const match of block.matchAll(
+    /(?:^|\n)\s*(?:(?:async|static|get|set)\s+)*([A-Za-z_$][\w$]*)\s*\(/g,
+  )) {
+    if (!LOCAL_MEMBER_NOISE.has(match[1])) names.add(match[1]);
+  }
+  for (const match of block.matchAll(/this\.([A-Za-z_$][\w$]*)\s*=/g)) {
+    names.add(match[1]);
+  }
+  return names;
+}
+
 function packageVersion(path) {
   return JSON.parse(readFileSync(path, "utf8")).version;
 }
@@ -228,11 +259,21 @@ try {
     if (actualKind !== expectedKind) drift.changed.push("Wrangler.workflows[]." + key + ": " + expectedKind + " -> " + actualKind);
   }
 
+  const localSurface = {};
+  for (const [surface, [file, className]] of Object.entries(LOCAL_CLASS_SURFACES)) {
+    const members = localClassMembers(join(root, file), className);
+    localSurface[surface] = [...members].sort();
+    for (const member of expectedApi.members[surface] ?? []) {
+      if (!members.has(member)) drift.removed.push("local." + surface + "." + member);
+    }
+  }
+
   const result = {
     mode,
     checkedAt: new Date().toISOString(),
     compatibilityDate: manifest.compatibilityDate,
     versions,
+    localSurface,
     drift,
     pass: drift.added.length === 0 && drift.removed.length === 0 && drift.changed.length === 0,
   };

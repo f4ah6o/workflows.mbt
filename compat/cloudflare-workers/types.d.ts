@@ -43,8 +43,15 @@ export type WorkflowStepRollbackOptions<T = unknown> = {
   rollbackConfig?: WorkflowStepRollbackConfig;
 };
 
+export type WorkflowExecutionContext = {
+  waitUntil(promise: Promise<unknown>): void;
+  passThroughOnException(): void;
+};
+
 export declare class WorkflowEntrypoint<Env = unknown, Params = unknown> {
+  protected ctx: WorkflowExecutionContext;
   env: Env;
+  constructor(ctx: WorkflowExecutionContext, env: Env);
   run(event: WorkflowEvent<Params>, step: WorkflowStep): Promise<unknown>;
 }
 

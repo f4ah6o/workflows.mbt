@@ -4,14 +4,14 @@ import { pipeline } from "node:stream/promises";
 import { handleWorkflowRest } from "./rest.mjs";
 
 async function nodeRequest(req, host, port) {
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const body = chunks.length ? Buffer.concat(chunks) : undefined;
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? `${host}:${port}`}`);
+  const method = req.method ?? "GET";
+  const streaming = !["GET", "HEAD"].includes(method);
   return new Request(url, {
-    method: req.method,
+    method,
     headers: req.headers,
-    body: ["GET", "HEAD"].includes(req.method ?? "GET") ? undefined : body,
+    body: streaming ? Readable.toWeb(req) : undefined,
+    duplex: streaming ? "half" : undefined,
   });
 }
 

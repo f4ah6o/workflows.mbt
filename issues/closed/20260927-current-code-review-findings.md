@@ -1,6 +1,6 @@
 # Current code review follow-ups: retention, REST events, inbound Worker streaming
 
-Status: open  
+Status: closed
 Created: 2026-09-27  
 Target: `main`  
 Triage: correctness follow-up before optional platform hardening
@@ -229,3 +229,65 @@ Also run the focused new E2E cases above. If a new differential probe is added,
 verify both pinned and latest oracle modes separately.
 
 A test that was not executed must remain reported as not executed.
+
+## Resolution
+
+Implemented on 2026-09-27:
+
+- Scheduled `default_retention`: `WorkflowRuntime.enqueueSchedules()` now
+  resolves the Workflow's retention via a shared `resolveRetention()` and
+  `SQLiteStorage.claimScheduledInstance()` forwards it to `createInstance()`.
+  E2E: `scheduled-retained` and `scheduled-error` fixtures
+  (`default_retention` 40ms/60ms) assert completed and errored scheduled
+  instances expire on their retention while the un-retained instance from the
+  same firing remains; per-instance retention precedence is unchanged;
+  `scheduled_runs` idempotence is unchanged (re-firing the same minute is a
+  no-op).
+- REST event payload: `handleWorkflowRest()` passes the parsed JSON body as the
+  event payload verbatim. E2E covers `{"approved": true}` and a literal
+  `{"payload": null}` body round-trip; event-type validation is retained.
+- Inbound request streaming: `nodeRequest()` builds the Web `Request` from
+  `Readable.toWeb(req)` with `duplex: "half"` for non-GET/HEAD methods. E2E: the
+  `/first-chunk` fixture returns the first uploaded chunk before the client
+  sends the rest of the body, which a buffering host cannot do. GET/HEAD remain
+  bodiless; response streaming, `waitUntil`, and `Set-Cookie` regressions still
+  pass.
+- `sleepUntil()` ordinals: `sleepUntil()` calls
+  `adoptPersistedOrdinal(identity, step)` like `sleep()`/`waitForEvent()`. E2E:
+  `sleep-until` fixture exercises both `Date` and Unix-ms arguments inside a
+  run whose completed `outer` callback created the nested `nested` step; the
+  persisted ordinal order `outer, nested, until-date, until-ms, after-sleep` is
+  strictly 1..5, and restart-from-step leaves it unchanged.
+- `WorkflowEntrypoint.ctx`: the `cloudflare:workers` shim stores
+  `this.ctx`/`this.env`; the local contract (`WorkflowExecutionContext`) is
+  `waitUntil()` (tracked as a runtime background task) and
+  `passThroughOnException()` (no-op, matching the graceful Workflow surface).
+  `runInstance`, `runRollbackInstance`, and the default Worker `fetch` handler
+  receive it. E2E: `entrypoint-ctx` fixture asserts presence, typeofs, and
+  `waitUntil` delivery from unmodified source. The pinned oracle now also
+  verifies the local host/shim classes implement every tracked upstream member
+  (`localSurface` in `compat-results/drift-*.json`), so a tracked member cannot
+  silently lose its implementation.
+- Cron weekday semantics: `host/cron.mjs` interprets numeric weekdays as
+  Cloudflare's `1=SUN..7=SAT` (converted to JS `getUTCDay()` numbering via
+  `n - 1`); numeric `0` is rejected as an out-of-range value rather than
+  aliased to Sunday. Named weekdays and ranges are unchanged; the host test
+  that encoded the old numbering was corrected, and new tests assert
+  `1==SUN`, `2==MON`, `7==SAT`, `2-6 == MON-FRI`, and that `0`/`0-6` throw.
+
+Validation results (2026-09-27, this checkout):
+
+- `npm run test`: PASS — moon check PASS, moon JS kernel build PASS, moon
+  tests PASS, host tests PASS, durable process E2E PASS (38/38).
+- `npm run compat:pinned`: PASS — contract check `pass: true` with empty drift;
+  differential `pass: true` with zero differences across six probes including
+  the new `entrypoint-ctx`.
+- `npm run compat:latest`: PASS — required because the `entrypoint-ctx` probe
+  was added to the differential catalog; both modes verified separately.
+
+Not executed: upstream differential coverage for cron schedules, the REST
+events endpoint, and the inbound-streaming endpoint — local `wrangler dev` does
+not serve the Cloudflare Workflows REST API or expose inbound-body timing, and
+cron schedules require minute-scale wall-clock waits. Those remain local-E2E
+covered only; tracked by the dependency-insurance roadmap's "when practical"
+upstream-coverage items.

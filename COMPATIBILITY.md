@@ -19,6 +19,7 @@ loading, Web APIs, callback invocation, and narrow host bridges.
 
 - [x] `WorkflowEntrypoint.run(event, step)`
 - [x] `this.env` injection
+- [x] `this.ctx` execution context (`waitUntil`, `passThroughOnException`)
 - [x] `event.payload`
 - [x] `event.timestamp`
 - [x] `event.instanceId`
@@ -46,6 +47,7 @@ UTC cron firing time.
 - [x] `step.sleep(name, humanDuration)`
 - [x] `step.sleepUntil(name, Date)`
 - [x] `step.sleepUntil(name, unixMilliseconds)`
+- [x] `sleepUntil` restores persisted ordinals across replay
 - [x] `step.waitForEvent(name, { type, timeout })`
 - [x] 24-hour default event timeout
 - [x] events buffered before the wait is reached
@@ -114,7 +116,7 @@ external side effects are not claimed.
 - [x] idempotent batch create behavior for existing IDs
 - [x] repeated batch-delete IDs repeat their result
 - [x] per-instance success/error retention options
-- [x] Wrangler `default_retention`
+- [x] Wrangler `default_retention` (including scheduled instances)
 - [x] default Worker HTTP handler can invoke workflow bindings unchanged
 
 Cloudflare account-plan default retention is not emulated locally when no
@@ -190,6 +192,7 @@ completion.
 - [x] `workflows[].class_name`
 - [x] `workflows[].schedules`
 - [x] numeric and named UTC cron fields including `MON-FRI`
+- [x] Cloudflare numeric weekday numbering (`1=SUN` .. `7=SAT`)
 - [x] `workflows[].default_retention`
 - [x] top-level `vars`
 - [x] local `.dev.vars` / `.env`
@@ -201,6 +204,7 @@ completion.
 - [x] default Worker `fetch(request, env, ctx)` host
 - [x] `ctx.waitUntil()` returns the HTTP response without awaiting background work
 - [x] streamed Worker `Response.body` is forwarded incrementally with backpressure
+- [x] inbound `Request.body` is a `ReadableStream` (not pre-buffered) for non-GET/HEAD requests
 - [x] multiple `Set-Cookie` response headers are preserved as separate header values
 - [ ] Wrangler named environments / `--env` overlay semantics
 - [ ] full Wrangler clone
@@ -263,7 +267,7 @@ the Workers binding and CLI.
 - [x] get instance
 - [x] list instances
 - [x] lifecycle status mutation
-- [x] send event
+- [x] send event (the request JSON body is the event payload verbatim)
 - [x] restart
 - [x] terminate
 - [x] delete
@@ -306,6 +310,11 @@ The initial differential probes are:
 - `sleep` — durable sleep behavior
 - `wait-for-event` — event delivery through `waitForEvent`
 - `rollback` — rollback ordering and terminal error behavior
+- `entrypoint-ctx` — `this.ctx` presence and method surface during `run()`
+
+The pinned check also verifies the local host/shim classes still implement
+every member the upstream types track (`localSurface` in the drift report), so
+a tracked member cannot silently lose its local implementation.
 
 `npm run compat:latest` is intentionally outside required PR CI. The scheduled
 `compatibility-latest` workflow resolves current upstream packages, classifies

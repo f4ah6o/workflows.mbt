@@ -92,13 +92,12 @@ test("wrangler jsonc is consumed without rewriting unknown Cloudflare fields", (
 
 
 test("cron matcher uses UTC five-field workflow schedules", () => {
-  const date = Date.UTC(2026, 8, 26, 5, 30);
-  assert.equal(matchesCron("30 5 * * *", date), true);
-  assert.equal(matchesCron("*/15 5 * * *", date), true);
-  assert.equal(matchesCron("31 5 * * *", date), false);
-  assert.equal(matchesCron("30 5 * * 6", date), true);
-  assert.equal(matchesCron("30 5 * * SAT", date), true);
-  assert.equal(matchesCron("30 5 * SEP MON-FRI", date), false);
+  const saturday = Date.UTC(2026, 8, 26, 5, 30);
+  assert.equal(matchesCron("30 5 * * *", saturday), true);
+  assert.equal(matchesCron("*/15 5 * * *", saturday), true);
+  assert.equal(matchesCron("31 5 * * *", saturday), false);
+  assert.equal(matchesCron("30 5 * * SAT", saturday), true);
+  assert.equal(matchesCron("30 5 * SEP MON-FRI", saturday), false);
   assert.equal(
     matchesCron("0 9 * * MON-FRI", Date.UTC(2026, 8, 25, 9, 0)),
     true,
@@ -111,6 +110,37 @@ test("cron matcher uses UTC five-field workflow schedules", () => {
     matchesCron("0 9 1 JAN,MAR *", Date.UTC(2026, 2, 1, 9, 0)),
     true,
   );
+});
+
+test("cron numeric weekdays follow Cloudflare 1=SUN..7=SAT", () => {
+  const sunday = Date.UTC(2026, 8, 27, 5, 30);
+  const monday = Date.UTC(2026, 8, 28, 5, 30);
+  const saturday = Date.UTC(2026, 8, 26, 5, 30);
+  assert.equal(matchesCron("30 5 * * 1", sunday), true);
+  assert.equal(matchesCron("30 5 * * 1", monday), false);
+  assert.equal(matchesCron("30 5 * * 2", monday), true);
+  assert.equal(matchesCron("30 5 * * 7", saturday), true);
+  assert.equal(matchesCron("30 5 * * 6", saturday), false);
+  assert.equal(matchesCron("30 5 * * 6", Date.UTC(2026, 8, 25, 5, 30)), true);
+
+  // Cloudflare's documented MON-FRI range equals numeric 2-6.
+  const weekdayDates = [
+    Date.UTC(2026, 8, 27, 5, 30),
+    Date.UTC(2026, 8, 28, 5, 30),
+    Date.UTC(2026, 8, 29, 5, 30),
+    Date.UTC(2026, 8, 30, 5, 30),
+    Date.UTC(2026, 9, 1, 5, 30),
+    Date.UTC(2026, 9, 2, 5, 30),
+    Date.UTC(2026, 9, 3, 5, 30),
+  ];
+  assert.deepEqual(
+    weekdayDates.map((date) => matchesCron("30 5 * * 2-6", date)),
+    weekdayDates.map((date) => matchesCron("30 5 * * MON-FRI", date)),
+  );
+
+  // Cloudflare's five-field syntax has no numeric Sunday-as-zero alias.
+  assert.throws(() => matchesCron("30 5 * * 0", sunday), /Invalid cron/);
+  assert.throws(() => matchesCron("30 5 * * 0-6", sunday), /Invalid cron/);
 });
 
 

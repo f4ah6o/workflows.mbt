@@ -378,6 +378,42 @@ export class ParallelWaitWorkflow extends WorkflowEntrypoint<{}, BaseParams> {
 }
 
 
+export class SleepUntilReplayWorkflow extends WorkflowEntrypoint<
+  {},
+  { wakeAt: number }
+> {
+  async run(event: WorkflowEvent<{ wakeAt: number }>, step: WorkflowStep) {
+    await step.do("outer", async () => {
+      await step.do("nested", async () => "nested");
+      return "outer";
+    });
+    await step.sleepUntil("until-date", new Date(event.payload.wakeAt));
+    await step.sleepUntil("until-ms", event.payload.wakeAt);
+    return await step.do("after-sleep", async () => "after");
+  }
+}
+
+
+export class CtxWorkflow extends WorkflowEntrypoint<{}, {}> {
+  async run(_event: WorkflowEvent<{}>, _step: WorkflowStep) {
+    let waited = false;
+    this.ctx.waitUntil(
+      Promise.resolve().then(() => {
+        waited = true;
+      }),
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    return {
+      hasCtx: this.ctx != null,
+      waitUntil: typeof this.ctx.waitUntil,
+      passThroughOnException: typeof this.ctx.passThroughOnException,
+      waited,
+    };
+  }
+}
+
+
 export class SelfDeleteWorkflow extends WorkflowEntrypoint<
   { SELF_DELETE: any },
   BaseParams

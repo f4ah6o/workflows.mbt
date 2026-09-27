@@ -163,7 +163,7 @@ export async function handleWorkflowRest(runtime, request) {
       const body = await readJson(request);
       await instance.sendEvent({
         type: eventType,
-        payload: body.payload ?? body,
+        payload: body,
       });
       return ok({
         instanceId,

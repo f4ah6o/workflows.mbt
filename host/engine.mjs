@@ -160,7 +160,12 @@ export class WorkflowRuntime {
       throw new TypeError("Workflow instance id must be 1..100 characters and not use the reserved cf_<sha256> namespace");
     }
     const payload = serializeJson(options.params ?? {}, "workflow params");
-    const requestedRetention = options.retention ?? {};
+    const retention = this.resolveRetention(workflow, options.retention ?? {});
+    this.storage.createInstance({ id, workflowName, payload, retention });
+    return new WorkflowInstanceHandle(this, workflowName, id);
+  }
+
+  resolveRetention(workflow, requestedRetention = {}) {
     const defaultRetention = workflow.defaultRetention ?? {};
     const successRetention =
       requestedRetention.successRetention ??
@@ -170,7 +175,7 @@ export class WorkflowRuntime {
       requestedRetention.errorRetention ??
       requestedRetention.error_retention ??
       defaultRetention.error_retention;
-    const retention = {
+    return {
       successRetentionMs: successRetention == null
         ? null
         : parseDuration(successRetention, "success retention"),
@@ -178,8 +183,6 @@ export class WorkflowRuntime {
         ? null
         : parseDuration(errorRetention, "error retention"),
     };
-    this.storage.createInstance({ id, workflowName, payload, retention });
-    return new WorkflowInstanceHandle(this, workflowName, id);
   }
 
   async trigger(workflowName, options = {}, { run = true } = {}) {
@@ -254,6 +257,7 @@ export class WorkflowRuntime {
             payload: serializeJson({}, "scheduled workflow params"),
             cron,
             scheduledTime,
+            retention: this.resolveRetention(workflow),
           });
           if (result.created) created += 1;
         }
@@ -310,7 +314,7 @@ export class WorkflowRuntime {
     if (!workflow) throw new Error(`Workflow registration disappeared: ${row.workflow_name}`);
     const WorkflowClass = this.workflowModule[workflow.className];
     const execution = new ExecutionContext(this, row);
-    const instance = new WorkflowClass({}, this.env());
+    const instance = new WorkflowClass(this.workflowExecutionContext(), this.env());
     const event = this.workflowEvent(row);
 
     this.storage.markInstanceStarted(id, JSON.parse(row.payload));
@@ -378,7 +382,7 @@ export class WorkflowRuntime {
     if (!workflow) throw new Error(`Workflow registration disappeared: ${row.workflow_name}`);
     const WorkflowClass = this.workflowModule[workflow.className];
     const execution = new ExecutionContext(this, row, { rollbackHydration: true });
-    const instance = new WorkflowClass({}, this.env());
+    const instance = new WorkflowClass(this.workflowExecutionContext(), this.env());
     const event = this.workflowEvent(row);
 
     globalThis.__WORKFLOWS_MBT_CONTEXT__ = execution;
@@ -534,6 +538,16 @@ export class WorkflowRuntime {
     this.storage.finishRollback(id, "complete", null);
   }
 
+  workflowExecutionContext() {
+    const runtime = this;
+    return {
+      waitUntil(promise) {
+        runtime.trackBackgroundTask(promise);
+      },
+      passThroughOnException() {},
+    };
+  }
+
   trackBackgroundTask(promise) {
     const task = Promise.resolve(promise);
     this.backgroundTasks.add(task);
@@ -556,14 +570,7 @@ export class WorkflowRuntime {
       return new Response("No default Worker fetch handler is exported", { status: 404 });
     }
 
-    const runtime = this;
-    const ctx = {
-      waitUntil(promise) {
-        runtime.trackBackgroundTask(promise);
-      },
-      passThroughOnException() {},
-    };
-    const response = await handler(request, this.env(), ctx);
+    const response = await handler(request, this.env(), this.workflowExecutionContext());
     if (!(response instanceof Response)) {
       throw new TypeError("Default Worker fetch handler must return a Response");
     }
@@ -877,6 +884,7 @@ class ExecutionContext {
     this.checkLifecycleBoundary();
     const identity = this.nextIdentity("sleep", name);
     const existing = this.storage.getStep(identity);
+    this.adoptPersistedOrdinal(identity, existing);
     if (existing?.state === "completed") return;
     if (this.rollbackHydration) {
       throw new SuspendExecution("rollback-hydration-boundary");

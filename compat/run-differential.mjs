@@ -13,7 +13,14 @@ const oracleIndex = process.argv.indexOf("--oracle");
 const oracle = oracleIndex >= 0 ? process.argv[oracleIndex + 1] : "pinned";
 if (!["pinned", "latest"].includes(oracle)) throw new Error("oracle must be pinned or latest");
 
-const probes = ["basic", "retry", "sleep", "wait-for-event", "rollback"];
+const probes = [
+  "basic",
+  "retry",
+  "sleep",
+  "wait-for-event",
+  "rollback",
+  "entrypoint-ctx",
+];
 const fixture = join(root, "compat/probes/wrangler.jsonc");
 const temp = mkdtempSync(join(tmpdir(), "workflows-mbt-diff-"));
 

@@ -31,6 +31,13 @@ export class OracleWorkflow extends WorkflowEntrypoint<{}, Params> {
         );
         return { type: received.type, payload: received.payload };
       }
+      case "entrypoint-ctx": {
+        return {
+          hasCtx: this.ctx != null,
+          waitUntil: typeof this.ctx?.waitUntil,
+          passThroughOnException: typeof this.ctx?.passThroughOnException,
+        };
+      }
       case "rollback": {
         await step.do(
           "first",

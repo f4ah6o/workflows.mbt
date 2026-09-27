@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { mkdtempSync, readFileSync } from "node:fs";
-import { createServer } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -533,7 +533,7 @@ test("scheduled workflow metadata is durable and scheduler restart is idempotent
   const minute = Math.floor(Date.now() / 60_000) * 60_000;
 
   let runtime = await openRuntime(e2eConfig, paths);
-  assert.equal(await runtime.enqueueSchedules(minute), 1);
+  assert.equal(await runtime.enqueueSchedules(minute), 3);
   await runtime.runPending();
   let rows = runtime.storage.listInstances("scheduled");
   assert.equal(rows.length, 1);
@@ -552,7 +552,7 @@ test("scheduled workflow metadata is durable and scheduler restart is idempotent
   assert.equal(await runtime.enqueueSchedules(minute), 0);
   assert.equal(runtime.storage.listInstances("scheduled").length, 1);
 
-  assert.equal(await runtime.enqueueSchedules(minute + 2 * 60_000), 2);
+  assert.equal(await runtime.enqueueSchedules(minute + 2 * 60_000), 6);
   await runtime.runPending();
   rows = runtime.storage.listInstances("scheduled");
   assert.equal(rows.length, 3);
@@ -684,7 +684,7 @@ test("REST compatibility facade uses the same lifecycle and event runtime", asyn
     "/accounts/local/workflows/approval/instances/rest-1/events/approved",
     {
       method: "POST",
-      body: JSON.stringify({ payload: { approved: true } }),
+      body: JSON.stringify({ approved: true }),
     },
   );
   assert.equal(response.status, 200);
@@ -698,6 +698,28 @@ test("REST compatibility facade uses the same lifecycle and event runtime", asyn
   let body = await response.json();
   assert.equal(body.result.status, "complete");
   assert.deepEqual(body.result.output, { approved: true });
+
+  response = await request("/accounts/local/workflows/approval/instances", {
+    method: "POST",
+    body: JSON.stringify({ instance_id: "rest-payload-key", params: "{}" }),
+  });
+  assert.equal(response.status, 200);
+  await runtime.runPending();
+  response = await request(
+    "/accounts/local/workflows/approval/instances/rest-payload-key/events/approved",
+    {
+      method: "POST",
+      body: JSON.stringify({ payload: null }),
+    },
+  );
+  assert.equal(response.status, 200);
+  await runtime.runPending();
+  response = await request(
+    "/accounts/local/workflows/approval/instances/rest-payload-key",
+  );
+  body = await response.json();
+  assert.equal(body.result.status, "complete");
+  assert.deepEqual(body.result.output, { payload: null });
 
   response = await request(
     "/accounts/local/workflows/approval/instances/rest-1/status",
@@ -1466,4 +1488,155 @@ test("default Worker preserves multiple Set-Cookie response headers", async (t) 
     "second=two; Path=/; SameSite=Lax",
   ]);
   assert.equal(await response.text(), "cookies");
+});
+
+
+test("scheduled instances inherit the Workflow default_retention", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-scheduled-retention-");
+  const minute = Math.floor(Date.now() / 60_000) * 60_000;
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  await runtime.enqueueSchedules(minute);
+  const retainedRow = runtime.storage
+    .listInstances("scheduled-retained")
+    .find((row) => row.scheduled_time === minute);
+  assert.ok(retainedRow);
+  assert.equal(retainedRow.success_retention_ms, 40);
+  assert.equal(retainedRow.error_retention_ms, 60);
+
+  const errorRow = runtime.storage
+    .listInstances("scheduled-error")
+    .find((row) => row.scheduled_time === minute);
+  assert.ok(errorRow);
+  assert.equal(errorRow.success_retention_ms, 40);
+  assert.equal(errorRow.error_retention_ms, 60);
+
+  await runtime.runPending();
+  assert.equal(
+    runtime.instanceStatus(retainedRow.public_id, "scheduled-retained").status,
+    "complete",
+  );
+  assert.equal(
+    runtime.instanceStatus(errorRow.public_id, "scheduled-error").status,
+    "errored",
+  );
+
+  await wait(90);
+  assert.throws(
+    () => runtime.instanceStatus(retainedRow.public_id, "scheduled-retained"),
+    /not found/,
+  );
+  assert.throws(
+    () => runtime.instanceStatus(errorRow.public_id, "scheduled-error"),
+    /not found/,
+  );
+  // The same firing's un-retained scheduled instance is unaffected.
+  assert.equal(runtime.storage.listInstances("scheduled").length, 1);
+});
+
+
+test("sleepUntil restores persisted ordinals across replay", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-sleep-until-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const instance = await runtime.trigger("sleep-until", {
+    id: "sleep-until-1",
+    params: { wakeAt: Date.now() + 120 },
+  });
+  assert.equal(
+    runtime.instanceStatus(instance.id, "sleep-until").status,
+    "waiting",
+  );
+
+  const status = await poll(async () => {
+    await runtime.runPending();
+    const current = runtime.instanceStatus(instance.id, "sleep-until");
+    return current.status === "complete" ? current : null;
+  });
+  assert.equal(status.output, "after");
+
+  const steps = () =>
+    runtime.storage.listSteps(instance.id).map((step) => ({
+      name: step.name,
+      ordinal: step.ordinal,
+    }));
+  assert.deepEqual(steps(), [
+    { name: "outer", ordinal: 1 },
+    { name: "nested", ordinal: 2 },
+    { name: "until-date", ordinal: 3 },
+    { name: "until-ms", ordinal: 4 },
+    { name: "after-sleep", ordinal: 5 },
+  ]);
+
+  await instance.restart({ from: { name: "after-sleep", count: 1, type: "do" } });
+  await poll(async () => {
+    await runtime.runPending();
+    const current = runtime.instanceStatus(instance.id, "sleep-until");
+    return current.status === "complete" ? current : null;
+  });
+  assert.deepEqual(steps(), [
+    { name: "outer", ordinal: 1 },
+    { name: "nested", ordinal: 2 },
+    { name: "until-date", ordinal: 3 },
+    { name: "until-ms", ordinal: 4 },
+    { name: "after-sleep", ordinal: 5 },
+  ]);
+});
+
+
+test("WorkflowEntrypoint exposes the ctx contract during run", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-entrypoint-ctx-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const instance = await runtime.trigger("entrypoint-ctx", {
+    id: "ctx-1",
+    params: {},
+  });
+  const status = runtime.instanceStatus(instance.id, "entrypoint-ctx");
+  assert.equal(status.status, "complete");
+  assert.deepEqual(status.output, {
+    hasCtx: true,
+    waitUntil: "function",
+    passThroughOnException: "function",
+    waited: true,
+  });
+  await poll(() => runtime.backgroundTasks.size === 0);
+});
+
+
+test("inbound default-Worker request bodies stream before upload EOF", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-request-stream-");
+  const runtime = await openRuntime(basicConfig, paths);
+  t.after(() => runtime.close());
+
+  const server = await startWorkflowHttpServer(runtime, {
+    host: "127.0.0.1",
+    port: 0,
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const address = server.address();
+
+  const request = httpRequest({
+    host: "127.0.0.1",
+    port: address.port,
+    path: "/first-chunk",
+    method: "POST",
+    headers: { "content-type": "application/octet-stream" },
+  });
+  request.write("chunk-one");
+
+  // A buffering host cannot answer here: the second chunk has not been sent.
+  const [response] = await Promise.race([
+    once(request, "response"),
+    wait(2000).then(() => {
+      throw new Error("response did not arrive before request EOF");
+    }),
+  ]);
+  const chunks = [];
+  for await (const chunk of response) chunks.push(chunk);
+  assert.equal(Buffer.concat(chunks).toString(), "chunk-one");
+  request.end("chunk-two");
 });
