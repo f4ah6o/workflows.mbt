@@ -290,13 +290,19 @@ Implemented on 2026-09-27:
   The `entrypoint-ctx` differential probe reports the full surface —
   including `exports` loopback fetch behavior (Request and string+init
   inputs), span-across-await, and span end semantics — and matches upstream
-  exactly under `wrangler dev`. Configured Workflow classes are additionally
-  exposed at runtime as non-enumerable `ctx.exports.<ClassName>` bindings
-  (`WorkflowBinding` — `create`/`get`/`createBatch`/`deleteBatch`), matching
-  the pinned workerd contract (`Server: configured Workflow is exposed
-  through ctx.exports`, server-test.c++); `wrangler dev` does not implement
-  this, so that surface is a documented dev/oracle limitation covered by the
-  `loopback-create` e2e instead of the differential probe. The
+  exactly under `wrangler dev`. `ctx.exports` also exposes the supported
+  named-entrypoint loopback surface as ordinary enumerable own properties
+  (workerd installs `ctxExports` via `v8Set`): configured Workflow classes
+  resolve to `WorkflowBinding` (`create`/`get`/`createBatch`/`deleteBatch`)
+  under their export names (pinned workerd `Server: configured Workflow is
+  exposed through ctx.exports`, server-test.c++), and other
+  `ExportedHandler`-shaped exports resolve to loopback service stubs;
+  `WorkerEntrypoint`/`DurableObject` class exports are a documented gap (no
+  local service-binding/actor backing). `wrangler dev` implements none of
+  this, so the named-export surface is a documented dev/oracle limitation
+  covered by the `loopback-create` e2e (which exercises
+  `ctx.exports.CtxWorkflow.create/get` and `ctx.exports.HelperHandler.fetch`
+  plus enumerability) instead of the differential probe. The
   pinned oracle now also verifies the local host/shim classes implement every
   tracked upstream member — `ExecutionContext` included (`localSurface` in
   `compat-results/drift-*.json`), so a tracked member cannot silently lose its

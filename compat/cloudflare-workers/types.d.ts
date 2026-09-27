@@ -99,6 +99,9 @@ export interface CloudflareAccessContext {
 //
 // Entries typed as a `WorkflowEntrypoint` subclass resolve to a `Workflow`
 // binding; an `ExportedHandler`-shaped entry resolves to a `ServiceStub`.
+// Upstream's `LoopbackForExport` additionally covers `WorkerEntrypoint` and
+// `DurableObject` class exports; the local runtime has no service-binding or
+// actor backing for those, so they map to `undefined` — a documented gap.
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Cloudflare {

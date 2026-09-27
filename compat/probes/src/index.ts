@@ -97,12 +97,8 @@ export class OracleWorkflow extends WorkflowEntrypoint<{}, Params> {
           props: typeof ctx?.props,
           propsValue: probe(() => JSON.stringify(ctx?.props ?? null)),
           exports: typeof exportsObj,
-          exportsKeys: probe(() =>
-            exportsObj == null
-              ? null
-              : Object.keys(exportsObj)
-                  .filter((key) => !key.startsWith("__INTERNAL_"))
-                  .sort(),
+          exportsHasDefault: probe(() =>
+            exportsObj == null ? null : "default" in exportsObj,
           ),
           exportsDefaultFetch: await probeAsync(async () => {
             if (typeof exportsDefault?.fetch !== "function") return "not-a-function";

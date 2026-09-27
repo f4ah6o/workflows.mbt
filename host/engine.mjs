@@ -579,18 +579,29 @@ export class WorkflowRuntime {
     }
     // Configured Workflow classes are exposed as Workflow bindings under their
     // export names (workerd: "Server: configured Workflow is exposed through
-    // ctx.exports"). Non-enumerable because wrangler dev enumerates only
-    // `default`; the bindings are nevertheless reachable by name.
+    // ctx.exports"; upstream installs ctxExports via v8Set, i.e. ordinary
+    // enumerable own properties). wrangler dev does not implement this — its
+    // exports enumeration is a dev/oracle limitation documented in
+    // COMPATIBILITY.md, not the target behavior.
     for (const workflow of this.config.workflows ?? []) {
-      if (typeof this.workflowModule?.[workflow.className] !== "function") {
-        continue;
+      if (typeof this.workflowModule?.[workflow.className] === "function") {
+        exports[workflow.className] = new WorkflowBinding(this, workflow);
       }
-      Object.defineProperty(exports, workflow.className, {
-        value: new WorkflowBinding(this, workflow),
-        enumerable: false,
-        writable: false,
-        configurable: true,
-      });
+    }
+    // Non-Workflow named entrypoints: ExportedHandler-shaped exports (objects
+    // exposing handler members like fetch/scheduled/queue) become loopback
+    // service stubs. WorkerEntrypoint/DurableObject class exports remain a
+    // documented gap — the local runtime has no service-binding/actor backing
+    // for them.
+    for (const [name, value] of Object.entries(this.workflowModule ?? {})) {
+      if (name === "default" || name in exports) continue;
+      if (
+        value != null &&
+        typeof value === "object" &&
+        Object.values(value).some((member) => typeof member === "function")
+      ) {
+        exports[name] = this.loopbackHandler(value);
+      }
     }
     return exports;
   }

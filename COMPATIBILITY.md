@@ -22,16 +22,20 @@ loading, Web APIs, callback invocation, and narrow host bridges.
 - [x] `this.ctx` — pinned `ExecutionContext` surface (`waitUntil`,
   `passThroughOnException`, `props`, `exports`, `tracing`, `abort`;
   `cache`/`access` remain undefined), verified against the oracle
-- [x] `ctx.exports` loopback surface: `default` is a service stub
-  (`fetch(input, init)` normalizes to `Request`; other methods take public
-  args + injected env/ctx) matching upstream `Fetcher` semantics, and every
-  configured Workflow class resolves to a `Workflow` binding under its export
-  name (workerd `Server: configured Workflow is exposed through ctx.exports`)
-  — non-enumerable, matching what `wrangler dev` enumerates; `wrangler dev`
-  itself does not implement named Workflow exports, so that part is a known
-  dev/oracle limitation covered by local e2e. Typed via a module-aware
-  `Exports` mapped type driven by `Cloudflare.GlobalProps.mainModule` (the
-  wrangler-generated augmentation point)
+- [x] `ctx.exports` loopback surface: every supported top-level export is an
+  ordinary enumerable own property (workerd installs `ctxExports` via
+  `v8Set`): `default` and other `ExportedHandler`-shaped exports are service
+  stubs (`fetch(input, init)` normalizes to `Request`; other methods take
+  public args + injected env/ctx) matching upstream `Fetcher` semantics, and
+  every configured Workflow class resolves to a `Workflow` binding under its
+  export name (workerd `Server: configured Workflow is exposed through
+  ctx.exports`). `wrangler dev` does not implement any of this — a known
+  dev/oracle limitation covered by local e2e, not matched. Gap:
+  `WorkerEntrypoint`/`DurableObject` class exports are not backed (no
+  service-binding/actor runtime locally); they map to `undefined` in the
+  type surface. Typed via a module-aware `Exports` mapped type driven by
+  `Cloudflare.GlobalProps.mainModule` (the wrangler-generated augmentation
+  point)
 - [x] `ctx.tracing` spans propagate via async context (`getActiveSpan()` holds
   across `await`); `enterSpan` AUTO_ENDs internally while `startActiveSpan` is
   MANUAL_END — neither path calls the public `span.end()`, matching workerd

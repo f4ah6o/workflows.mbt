@@ -428,17 +428,35 @@ export class CtxWorkflow extends WorkflowEntrypoint<{}, {}> {
 }
 
 
+// Named handler-shaped export — upstream exposes it as a loopback service
+// stub; exercised via ctx.exports.HelperHandler.fetch below.
+export const HelperHandler = {
+  async fetch(request: Request) {
+    return new Response(`helper:${request.method}`);
+  },
+};
+
 // workerd exposes configured Workflow classes through ctx.exports; wrangler
 // dev does not — exercised here via ctx.exports.CtxWorkflow.create/get.
 export class LoopbackCreateWorkflow extends WorkflowEntrypoint<{}, {}> {
   async run(_event: WorkflowEvent<{}>, _step: WorkflowStep) {
-    const loopback = (this.ctx.exports as Record<string, any>).CtxWorkflow;
-    const created = await loopback.create({ id: "via-exports-1", params: {} });
-    const fetched = await loopback.get("via-exports-1");
+    const exports = this.ctx.exports as Record<string, any>;
+    const created = await exports.CtxWorkflow.create({
+      id: "via-exports-1",
+      params: {},
+    });
+    const fetched = await exports.CtxWorkflow.get("via-exports-1");
+    const helper = await exports.HelperHandler.fetch(
+      "http://loopback.invalid/",
+      { method: "POST" },
+    );
     return {
       createdId: created.id,
       fetchedId: fetched.id,
-      exportsKeys: Object.keys(this.ctx.exports).sort(),
+      helperBody: await helper.text(),
+      exportsEnumerates: ["CtxWorkflow", "HelperHandler"].every((key) =>
+        Object.keys(this.ctx.exports).includes(key),
+      ),
     };
   }
 }

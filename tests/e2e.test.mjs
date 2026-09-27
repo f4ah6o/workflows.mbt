@@ -1634,7 +1634,8 @@ test("ctx.exports exposes configured Workflow classes as bindings", async (t) =>
   assert.deepEqual(status.output, {
     createdId: "via-exports-1",
     fetchedId: "via-exports-1",
-    exportsKeys: [],
+    helperBody: "helper:POST",
+    exportsEnumerates: true,
   });
 });
 
