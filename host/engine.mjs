@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import v8 from "node:v8";
 import { WorkflowBinding, WorkflowInstanceHandle } from "./binding.mjs";
 import { connectSocket } from "./socket.mjs";
 import { loadProjectConfig } from "./config.mjs";
@@ -37,6 +38,18 @@ class WaitForEventTimeoutError extends Error {
     super(`waitForEvent step "${name}" timed out waiting for event type "${type}"`);
     this.name = "WorkflowWaitForEventTimeoutError";
   }
+}
+
+// `ServiceBindingQueueMessage.serializedBody` (ArrayBuffer | ArrayBufferView)
+// carries the handler argument in the V8/jsg::Serializer structured-clone
+// encoding — decode it with v8.deserialize, not JSON.
+function serializedBodyBuffer(serializedBody) {
+  if (serializedBody instanceof ArrayBuffer) return Buffer.from(serializedBody);
+  return Buffer.from(
+    serializedBody.buffer,
+    serializedBody.byteOffset,
+    serializedBody.byteLength,
+  );
 }
 
 function sleep(ms) {
@@ -612,7 +625,7 @@ export class WorkflowRuntime {
         body:
           message.body !== undefined
             ? message.body
-            : JSON.parse(new TextDecoder().decode(message.serializedBody)),
+            : v8.deserialize(serializedBodyBuffer(message.serializedBody)),
         ack() {
           result.explicitAcks.push(message.id);
         },
@@ -630,7 +643,13 @@ export class WorkflowRuntime {
         this.env(),
         this.workflowExecutionContext(),
       ]),
-    ).then(() => result);
+    ).then(
+      () => result,
+      // QueueCustomEvent::run catches handler failures and reports
+      // EventOutcome::EXCEPTION; Fetcher.queue resolves the QueueResult with
+      // that outcome rather than rejecting.
+      () => ({ ...result, outcome: "exception" }),
+    );
   }
 
   runScheduledLoopback(target, handler, options) {

@@ -436,8 +436,11 @@ export const HelperHandler = {
   },
   async queue(batch: any) {
     for (const message of batch.messages) {
-      if (message.body?.retry) message.retry({ delaySeconds: 7 });
-      else message.ack();
+      const body = message.body;
+      if (body?.throw) throw new Error("queue handler exploded");
+      if (body?.retry) message.retry({ delaySeconds: 7 });
+      else if (body?.ok || body?.cloned === "yes") message.ack();
+      else message.retry({ delaySeconds: 1 });
     }
   },
   async scheduled(controller: any) {
@@ -450,9 +453,12 @@ export const HelperHandler = {
 // the Fetcher surface on a co-exported handler.
 export class LoopbackCreateWorkflow extends WorkflowEntrypoint<
   {},
-  { baseUrl: string }
+  { baseUrl: string; serializedBody: number[] }
 > {
-  async run(event: WorkflowEvent<{ baseUrl: string }>, _step: WorkflowStep) {
+  async run(
+    event: WorkflowEvent<{ baseUrl: string; serializedBody: number[] }>,
+    _step: WorkflowStep,
+  ) {
     const exports = this.ctx.exports as Record<string, any>;
     const created = await exports.CtxWorkflow.create({
       id: "via-exports-1",
@@ -466,6 +472,16 @@ export class LoopbackCreateWorkflow extends WorkflowEntrypoint<
     const queueResult = await exports.HelperHandler.queue("queue-1", [
       { id: "m1", timestamp: new Date(0), attempts: 1, body: { ok: true } },
       { id: "m2", timestamp: new Date(0), attempts: 2, body: { retry: true } },
+      // serializedBody carries the V8/jsg::Serializer structured-clone bytes.
+      {
+        id: "m3",
+        timestamp: new Date(0),
+        attempts: 1,
+        serializedBody: new Uint8Array(event.payload.serializedBody),
+      },
+    ]);
+    const queueThrowResult = await exports.HelperHandler.queue("queue-1", [
+      { id: "m4", timestamp: new Date(0), attempts: 1, body: { throw: true } },
     ]);
     const scheduledResult = await exports.HelperHandler.scheduled({
       cron: "*/5 * * * *",
@@ -494,6 +510,7 @@ export class LoopbackCreateWorkflow extends WorkflowEntrypoint<
       fetchedId: fetched.id,
       helperBody: await helper.text(),
       queueResult,
+      queueThrowResult,
       scheduledResult,
       socketHead,
       exportsEnumerates: ["CtxWorkflow", "HelperHandler"].every((key) =>

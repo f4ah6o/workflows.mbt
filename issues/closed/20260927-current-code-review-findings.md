@@ -268,14 +268,20 @@ Implemented on 2026-09-27:
   `Fetcher` contract: `fetch(input, init?)` normalizes `RequestInfo | URL` +
   `RequestInit` into a `Request`; `queue(queueName, messages, metadata?)`
   adapts `ServiceBindingQueueMessage[]` into a `MessageBatch`
-  (`ack`/`retry`/`ackAll`/`retryAll`) and resolves the `FetcherQueueResult`
-  (`outcome`, `ackAll`, `retryBatch`, `explicitAcks`, `retryMessages`) the
-  handler produced; `scheduled(options?)` delivers a `ScheduledController`
+  (`ack`/`retry`/`ackAll`/`retryAll`; `serializedBody` bytes are decoded as
+  V8 `jsg::Serializer` structured-clone via `v8.deserialize`) and resolves
+  the `FetcherQueueResult` the handler produced (`outcome` — `"exception"`
+  on handler throw, `ackAll`, `retryBatch`, `explicitAcks`,
+  `retryMessages`); `scheduled(options?)` delivers a `ScheduledController`
   and resolves `FetcherScheduledResult` (`outcome`/`noRetry`, with a thrown
   error reported as `outcome: "exception"`); `connect(address, options?)`
   opens an outbound TCP/TLS socket (`Socket` shape: `readable`/`writable`
-  web streams, `opened`/`closed` promises, `startTls()`) at the runtime
-  level and is never delivered to the handler; other members receive their
+  web streams, `opened`/`closed` promises, `upgraded`, `protocol`,
+  `secureTransport` reporting `"off"|"on"|"starttls"`, `startTls(options?)`
+  which requires `"starttls"` and neuters the original socket's streams) at
+  the runtime level and is never delivered to the handler — `opened`
+  resolves on `secureConnect` for TLS sockets so handshake failures reject
+  it; other members receive their
   public args followed by injected env/ctx, matching upstream
   `LoopbackForExport`/`Fetcher` semantics), `tracing`
   (no-op `Span`; `enterSpan`/`startActiveSpan` keep the span active across
@@ -312,8 +318,11 @@ Implemented on 2026-09-27:
   this, so the named-export surface is a documented dev/oracle limitation
   covered by the `loopback-create` e2e (which exercises
   `ctx.exports.CtxWorkflow.create/get`, `ctx.exports.HelperHandler.fetch`,
-  and the `queue`/`scheduled`/`connect` Fetcher methods including a raw HTTP
-  request over the opened socket, plus enumerability) instead of the
+  and the `queue`/`scheduled`/`connect` Fetcher methods — including a raw
+  HTTP request over the opened socket, a `serializedBody` message, and a
+  throwing queue handler resolving `outcome: "exception"` — plus
+  enumerability) and host-level socket regressions (TLS `opened` gated on
+  `secureConnect`, `startTls` precondition + neuter) instead of the
   differential probe. The
   pinned oracle now also verifies the local host/shim classes implement every
   tracked upstream member — `ExecutionContext` included (`localSurface` in

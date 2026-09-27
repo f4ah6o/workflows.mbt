@@ -6,6 +6,7 @@ import { createServer, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import v8 from "node:v8";
 import { spawn } from "node:child_process";
 import Database from "better-sqlite3";
 import test from "node:test";
@@ -1629,7 +1630,10 @@ test("ctx.exports exposes configured Workflow classes as bindings", async (t) =>
 
   const instance = await runtime.trigger("loopback-create", {
     id: "loopback-1",
-    params: { baseUrl: counter.baseUrl },
+    params: {
+      baseUrl: counter.baseUrl,
+      serializedBody: Array.from(v8.serialize({ cloned: "yes" })),
+    },
   });
   const status = runtime.instanceStatus(instance.id, "loopback-create");
   assert.equal(status.status, "complete");
@@ -1641,8 +1645,15 @@ test("ctx.exports exposes configured Workflow classes as bindings", async (t) =>
       outcome: "ok",
       ackAll: false,
       retryBatch: { retry: false },
-      explicitAcks: ["m1"],
+      explicitAcks: ["m1", "m3"],
       retryMessages: [{ msgId: "m2", delaySeconds: 7 }],
+    },
+    queueThrowResult: {
+      outcome: "exception",
+      ackAll: false,
+      retryBatch: { retry: false },
+      explicitAcks: [],
+      retryMessages: [],
     },
     scheduledResult: { outcome: "ok", noRetry: true },
     socketHead: "HTTP/1.1 200 OK",

@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
 import { mkdtempSync, writeFileSync } from "node:fs";
+import { createServer as createTcpServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { loadProjectConfig } from "../host/config.mjs";
+import { connectSocket } from "../host/socket.mjs";
 import { matchesCron } from "../host/cron.mjs";
 import { parseDuration, parseSleepUntil } from "../host/duration.mjs";
 import {
@@ -175,4 +178,56 @@ test("Wrangler vars and .dev.vars secrets are available to workflow env", () => 
   });
   assert.deepEqual(config.localDevEnv, { SECRET_KEY: "secret-value" });
   assert.deepEqual(config.ignoredWranglerFields, []);
+});
+
+
+async function startTcpServer(t, onConnection) {
+  const server = createTcpServer(onConnection);
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  t.after(() => server.close());
+  return server.address().port;
+}
+
+test("connect() secureTransport=on resolves opened only after TLS handshake", async (t) => {
+  // Plain TCP server: the TCP connection succeeds but the TLS handshake can
+  // never complete — `opened` must reject rather than resolving on `connect`.
+  const port = await startTcpServer(t, (socket) => socket.end());
+  const socket = connectSocket(`127.0.0.1:${port}`, {
+    secureTransport: "on",
+    allowHalfOpen: false,
+  });
+  await assert.rejects(socket.opened);
+});
+
+test("connect() startTls requires secureTransport=starttls and neuters the old socket", async (t) => {
+  // Plaintext server that drops the connection once bytes arrive (TLS
+  // ClientHello) — the upgraded socket's `opened` rejects.
+  const port = await startTcpServer(t, (socket) =>
+    socket.on("data", () => socket.destroy()),
+  );
+
+  const plain = connectSocket(`127.0.0.1:${port}`, {
+    secureTransport: "off",
+    allowHalfOpen: false,
+  });
+  await plain.opened;
+  assert.equal(plain.secureTransport, "off");
+  assert.equal(plain.upgraded, false);
+  assert.throws(() => plain.startTls(), TypeError);
+  await plain.close();
+
+  const starttls = connectSocket(`127.0.0.1:${port}`, {
+    secureTransport: "starttls",
+    allowHalfOpen: false,
+  });
+  await starttls.opened;
+  assert.equal(starttls.secureTransport, "starttls");
+  const upgraded = starttls.startTls();
+  assert.equal(upgraded.upgraded, true);
+  // The original socket is neutered by the upgrade: closed resolves and its
+  // streams are detached; close() must not tear down the upgraded transport.
+  await starttls.closed;
+  await assert.rejects(upgraded.opened);
+  await upgraded.close().catch(() => {});
 });

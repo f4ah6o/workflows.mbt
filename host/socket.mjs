@@ -9,19 +9,22 @@ import { Readable, Writable } from "node:stream";
 
 export class LoopbackSocket {
   #socket;
-  #openedResolve;
-  #openedReject;
+  #neutered = false;
+  #closedResolve;
 
-  constructor(socket) {
+  constructor(socket, { secureTransport } = {}) {
     this.#socket = socket;
+    this.secureTransport = socket.encrypted ? "on" : secureTransport ?? "off";
+    this.upgraded = Boolean(socket.encrypted);
+    this.protocol = "tcp";
     this.readable = Readable.toWeb(socket);
     this.writable = Writable.toWeb(socket);
-    this.secureTransport = socket.encrypted ? "on" : "off";
-    this.upgradedToTls = Boolean(socket.encrypted);
     this.opened = new Promise((resolve, reject) => {
-      this.#openedResolve = resolve;
-      this.#openedReject = reject;
-      const onConnect = () => {
+      // `opened` resolves only once the connection attempt represented by the
+      // selected transport succeeds: plain TCP sockets on `connect`, TLS
+      // sockets on `secureConnect` (after certificate/handshake validation).
+      const readyEvent = socket.encrypted ? "secureConnect" : "connect";
+      const onReady = () => {
         socket.off("error", onError);
         resolve({
           remoteAddress: `${socket.remoteAddress}:${socket.remotePort}`,
@@ -29,29 +32,55 @@ export class LoopbackSocket {
         });
       };
       const onError = (error) => {
-        socket.off("connect", onConnect);
+        socket.off(readyEvent, onReady);
         reject(error);
       };
-      socket.once("secureConnect", onConnect);
-      socket.once("connect", onConnect);
+      socket.once(readyEvent, onReady);
       socket.once("error", onError);
     });
     this.closed = new Promise((resolve) => {
+      this.#closedResolve = resolve;
       socket.once("close", () => resolve());
     });
     socket.once("error", () => {});
   }
 
   async close() {
-    this.#socket.destroy();
+    if (!this.#neutered) this.#socket.destroy();
     await this.closed;
   }
 
   // Returns a new Socket wrapping the TLS-upgraded connection, per upstream.
-  startTls() {
+  // Only allowed on sockets opened with `secureTransport: "starttls"`; the
+  // original socket's streams are neutered by the upgrade.
+  startTls(options = {}) {
+    if (this.secureTransport !== "starttls") {
+      throw new TypeError(
+        "startTls() is only allowed when the socket was created with " +
+          `secureTransport "starttls" (got "${this.secureTransport}")`,
+      );
+    }
+    this.#neutered = true;
+    // Neuter the original socket's streams — erroring them (not cancelling)
+    // keeps the underlying transport alive for the TLS upgrade while making
+    // the old Socket observably unusable.
+    const reason = new TypeError("socket was neutered by startTls()");
+    this.readable = new ReadableStream({
+      start(controller) {
+        controller.error(reason);
+      },
+    });
+    this.writable = new WritableStream({
+      start(controller) {
+        controller.error(reason);
+      },
+    });
+    this.#closedResolve();
+    this.#socket.pause();
     const secure = tls.connect({
       socket: this.#socket,
-      servername: this.#socket.servernameHint,
+      servername:
+        options.expectedServerHostname ?? this.#socket.servernameHint,
     });
     return new LoopbackSocket(secure);
   }
@@ -64,12 +93,13 @@ export function connectSocket(address, options = {}) {
   if (options?.allowHalfOpen != null) {
     socketOptions.allowHalfOpen = options.allowHalfOpen;
   }
+  const secureTransport = options?.secureTransport ?? "off";
   const socket =
-    options?.secureTransport === "on"
+    secureTransport === "on"
       ? tls.connect({ ...socketOptions, servername: hostname })
       : net.connect(socketOptions);
   socket.servernameHint = hostname;
-  return new LoopbackSocket(socket);
+  return new LoopbackSocket(socket, { secureTransport });
 }
 
 function parseAddress(address) {

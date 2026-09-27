@@ -27,13 +27,21 @@ loading, Web APIs, callback invocation, and narrow host bridges.
   `v8Set`): `default` and other `ExportedHandler`-shaped exports are service
   stubs implementing the full upstream `Fetcher` contract —
   `fetch(input, init)` normalizes to `Request`; `queue(queueName, messages,
-  metadata?)` delivers a `MessageBatch` (`ack`/`retry`/`ackAll`/`retryAll`)
-  and resolves the `FetcherQueueResult` (`outcome`, `ackAll`, `retryBatch`,
-  `explicitAcks`, `retryMessages`) the handler produced;
-  `scheduled(options?)` delivers a `ScheduledController` and resolves
-  `FetcherScheduledResult`; `connect(address, options)` opens an outbound
-  TCP/TLS socket at the runtime level (never delivered to the handler);
-  other methods take public args + injected env/ctx. Every configured
+  metadata?)` delivers a `MessageBatch` (`ack`/`retry`/`ackAll`/`retryAll`;
+  `serializedBody` is decoded as V8 `jsg::Serializer` structured-clone
+  bytes via `v8.deserialize`, not JSON) and resolves the
+  `FetcherQueueResult` (`outcome` — `"exception"` on handler throw,
+  `ackAll`, `retryBatch`, `explicitAcks`, `retryMessages`) the handler
+  produced; `scheduled(options?)` delivers a `ScheduledController` and
+  resolves `FetcherScheduledResult`; `connect(address, options)` opens an
+  outbound TCP/TLS socket at the runtime level (never delivered to the
+  handler): `opened` resolves on `secureConnect` for TLS sockets (handshake
+  failures reject it), `secureTransport` reports `"off"|"on"|"starttls"`,
+  `upgraded`/`protocol`/`readable`/`writable`/`closed` per the upstream
+  `Socket` surface, and `startTls(options?)` requires
+  `secureTransport: "starttls"` (throws otherwise) and neuters the
+  original socket's streams on upgrade; other methods take public args +
+  injected env/ctx. Every configured
   Workflow class resolves to a `Workflow` binding under its
   export name (workerd `Server: configured Workflow is exposed through
   ctx.exports`). `wrangler dev` does not implement any of this — a known
