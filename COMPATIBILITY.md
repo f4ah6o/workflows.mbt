@@ -19,6 +19,45 @@ loading, Web APIs, callback invocation, and narrow host bridges.
 
 - [x] `WorkflowEntrypoint.run(event, step)`
 - [x] `this.env` injection
+- [x] `this.ctx` — pinned `ExecutionContext` surface (`waitUntil`,
+  `passThroughOnException`, `props`, `exports`, `tracing`, `abort`;
+  `cache`/`access` remain undefined), verified against the oracle
+- [x] `ctx.exports` loopback surface: every supported top-level export is an
+  ordinary enumerable own property (workerd installs `ctxExports` via
+  `v8Set`): `default` and other `ExportedHandler`-shaped exports are service
+  stubs implementing the full upstream `Fetcher` contract —
+  `fetch(input, init)` normalizes to `Request`; `queue(queueName, messages,
+  metadata?)` delivers a `MessageBatch` (`ack`/`retry`/`ackAll`/`retryAll`;
+  `serializedBody` is decoded as V8 `jsg::Serializer` structured-clone
+  bytes via `v8.deserialize`, not JSON) and resolves the
+  `FetcherQueueResult` (`outcome` — `"exception"` on handler throw,
+  `ackAll`, `retryBatch`, `explicitAcks`, `retryMessages`) the handler
+  produced; `scheduled(options?)` delivers a `ScheduledController` and
+  resolves `FetcherScheduledResult`; `connect(address, options)` opens an
+  outbound TCP/TLS socket at the runtime level (never delivered to the
+  handler): `opened` resolves on `secureConnect` for TLS sockets (handshake
+  failures reject it), `secureTransport` reports `"off"|"on"|"starttls"`,
+  `upgraded`/`protocol`/`readable`/`writable`/`closed` per the upstream
+  `Socket` surface, and `startTls(options?)` requires
+  `secureTransport: "starttls"` (throws otherwise — and a second call on
+  the same socket throws `startTls has already been called`): it flips
+  `upgraded` to `true` on the ORIGINAL socket before resolving its
+  `closed` — the returned TLS socket reports `upgraded: false` — flushes
+  pending writes before the handshake, and detaches the original
+  readable/writable objects in place (held references error on use);
+  other methods take public args + injected env/ctx. Every configured
+  Workflow class resolves to a `Workflow` binding under its
+  export name (workerd `Server: configured Workflow is exposed through
+  ctx.exports`). `wrangler dev` does not implement any of this — a known
+  dev/oracle limitation covered by local e2e, not matched. Gap:
+  `WorkerEntrypoint`/`DurableObject` class exports are not backed (no
+  service-binding/actor runtime locally); they map to `undefined` in the
+  type surface. Typed via a module-aware `Exports` mapped type driven by
+  `Cloudflare.GlobalProps.mainModule` (the wrangler-generated augmentation
+  point)
+- [x] `ctx.tracing` spans propagate via async context (`getActiveSpan()` holds
+  across `await`); `enterSpan` AUTO_ENDs internally while `startActiveSpan` is
+  MANUAL_END — neither path calls the public `span.end()`, matching workerd
 - [x] `event.payload`
 - [x] `event.timestamp`
 - [x] `event.instanceId`
@@ -46,6 +85,7 @@ UTC cron firing time.
 - [x] `step.sleep(name, humanDuration)`
 - [x] `step.sleepUntil(name, Date)`
 - [x] `step.sleepUntil(name, unixMilliseconds)`
+- [x] `sleepUntil` restores persisted ordinals across replay
 - [x] `step.waitForEvent(name, { type, timeout })`
 - [x] 24-hour default event timeout
 - [x] events buffered before the wait is reached
@@ -114,7 +154,7 @@ external side effects are not claimed.
 - [x] idempotent batch create behavior for existing IDs
 - [x] repeated batch-delete IDs repeat their result
 - [x] per-instance success/error retention options
-- [x] Wrangler `default_retention`
+- [x] Wrangler `default_retention` (including scheduled instances)
 - [x] default Worker HTTP handler can invoke workflow bindings unchanged
 
 Cloudflare account-plan default retention is not emulated locally when no
@@ -190,6 +230,7 @@ completion.
 - [x] `workflows[].class_name`
 - [x] `workflows[].schedules`
 - [x] numeric and named UTC cron fields including `MON-FRI`
+- [x] Cloudflare numeric weekday numbering (`1=SUN` .. `7=SAT`)
 - [x] `workflows[].default_retention`
 - [x] top-level `vars`
 - [x] local `.dev.vars` / `.env`
@@ -200,7 +241,9 @@ completion.
 - [x] native Node Web APIs including `fetch`, `Request`, `Response`, URL
 - [x] default Worker `fetch(request, env, ctx)` host
 - [x] `ctx.waitUntil()` returns the HTTP response without awaiting background work
+- [x] `waitUntil()` tasks drain before runtime/host teardown
 - [x] streamed Worker `Response.body` is forwarded incrementally with backpressure
+- [x] inbound `Request.body` is a `ReadableStream` (not pre-buffered) for non-GET/HEAD requests
 - [x] multiple `Set-Cookie` response headers are preserved as separate header values
 - [ ] Wrangler named environments / `--env` overlay semantics
 - [ ] full Wrangler clone
@@ -263,7 +306,7 @@ the Workers binding and CLI.
 - [x] get instance
 - [x] list instances
 - [x] lifecycle status mutation
-- [x] send event
+- [x] send event (the request JSON body is the event payload verbatim)
 - [x] restart
 - [x] terminate
 - [x] delete
@@ -306,6 +349,22 @@ The initial differential probes are:
 - `sleep` — durable sleep behavior
 - `wait-for-event` — event delivery through `waitForEvent`
 - `rollback` — rollback ordering and terminal error behavior
+- `entrypoint-ctx` — `this.ctx` presence, method surface, `ctx.exports`
+  loopback behavior, and span async-context/end semantics during `run()`
+
+The pinned check also verifies the local host/shim classes still implement
+every member the upstream types track (`localSurface` in the drift report), so
+a tracked member cannot silently lose its local implementation. The tracked
+surfaces are `Workflow`, `WorkflowInstance`, `WorkflowInstanceCreateOptions`,
+`WorkflowInstanceSubscribeOptions`, `WorkflowStep`, `WorkflowEntrypoint`, and
+`ExecutionContext`.
+
+`compat:pinned` also runs `npm run compat:typecheck` (tsc over
+`compat/typecheck/`): a compile-time fixture that consumes the shim
+`cloudflare:workers` declarations the way source-compatible Worker code does
+— `this.ctx.exports.default.fetch(...)` and typed WorkflowEntrypoint loopback
+exports — without casts, via `Cloudflare.GlobalProps.mainModule`
+augmentation (the wrangler-generated pattern).
 
 `npm run compat:latest` is intentionally outside required PR CI. The scheduled
 `compatibility-latest` workflow resolves current upstream packages, classifies

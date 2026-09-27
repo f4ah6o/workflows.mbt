@@ -3,7 +3,7 @@ const RANGES = [
   [0, 23],
   [1, 31],
   [1, 12],
-  [0, 7],
+  [0, 6],
 ];
 
 const MONTHS = new Map([
@@ -20,7 +20,16 @@ const DAYS = new Map([
 function parseValue(text, fieldIndex) {
   const upper = text.toUpperCase();
   if (fieldIndex === 3 && MONTHS.has(upper)) return MONTHS.get(upper);
-  if (fieldIndex === 4 && DAYS.has(upper)) return DAYS.get(upper);
+  if (fieldIndex === 4) {
+    if (DAYS.has(upper)) return DAYS.get(upper);
+    const numeric = Number(text);
+    // Cloudflare numbers weekdays 1=SUN..7=SAT; the matcher uses JavaScript
+    // getUTCDay() numbering (0=SUN..6=SAT). Numeric 0 is not a Cloudflare
+    // weekday and is rejected by the caller's range check.
+    return Number.isInteger(numeric) && numeric >= 1 && numeric <= 7
+      ? numeric - 1
+      : NaN;
+  }
   return Number(text);
 }
 
@@ -54,7 +63,7 @@ function expandPart(part, min, max, fieldIndex) {
 
   const out = new Set();
   for (let value = start; value <= end; value += step) {
-    out.add(fieldIndex === 4 && value === 7 ? 0 : value);
+    out.add(value);
   }
   return out;
 }

@@ -31,6 +31,103 @@ export class OracleWorkflow extends WorkflowEntrypoint<{}, Params> {
         );
         return { type: received.type, payload: received.payload };
       }
+      case "entrypoint-ctx": {
+        const ctx = this.ctx as unknown as Record<string, unknown> | undefined;
+        const tracing = ctx?.tracing as Record<string, unknown> | undefined;
+        const probe = (fn: () => unknown): unknown => {
+          try {
+            return fn();
+          } catch (error) {
+            return `throws:${(error as Error).name}`;
+          }
+        };
+        const probeAsync = async (fn: () => Promise<unknown>): Promise<unknown> => {
+          try {
+            return await fn();
+          } catch (error) {
+            return `throws:${(error as Error).name}`;
+          }
+        };
+        const exportsObj = ctx?.exports as Record<string, unknown> | undefined;
+        const exportsDefault = exportsObj?.default as
+          | { fetch?: (request: Request) => Promise<Response> }
+          | undefined;
+        // Note: workerd exposes configured Workflow classes on ctx.exports
+        // (server test "Server: configured Workflow is exposed through
+        // ctx.exports"), but `wrangler dev` does not — a dev/oracle
+        // limitation, so named-export presence is covered by local e2e
+        // rather than this differential.
+        const spanProbe = (method: "enterSpan" | "startActiveSpan") =>
+          probeAsync(async () => {
+            const fn = tracing?.[method] as
+              | ((name: string, callback: (span: unknown) => unknown) => unknown)
+              | undefined;
+            if (typeof fn !== "function") return "not-a-function";
+            let endedDuringCallback = false;
+            let ended = false;
+            const result = fn.call(tracing, "probe-span", async (span) => {
+                const end = span.end as (() => void) | undefined;
+                if (typeof end === "function") {
+                  (span as { end: () => void }).end = () => {
+                    ended = true;
+                    return end.call(span);
+                  };
+                }
+                const before = tracing?.getActiveSpan() === span;
+                await new Promise((resolve) => setTimeout(resolve, 5));
+                endedDuringCallback = ended;
+                return {
+                  before,
+                  afterAwait: tracing?.getActiveSpan() === span,
+                };
+              });
+            const awaited = await result;
+            return {
+              ...((awaited ?? {}) as Record<string, unknown>),
+              afterExit: tracing?.getActiveSpan() === undefined,
+              endedDuringCallback,
+              endedAfterSettle: ended,
+            };
+          });
+        return {
+          hasCtx: ctx != null,
+          waitUntil: typeof ctx?.waitUntil,
+          passThroughOnException: typeof ctx?.passThroughOnException,
+          abort: typeof ctx?.abort,
+          props: typeof ctx?.props,
+          propsValue: probe(() => JSON.stringify(ctx?.props ?? null)),
+          exports: typeof exportsObj,
+          exportsHasDefault: probe(() =>
+            exportsObj == null ? null : "default" in exportsObj,
+          ),
+          exportsDefaultFetch: await probeAsync(async () => {
+            if (typeof exportsDefault?.fetch !== "function") return "not-a-function";
+            const response = await exportsDefault.fetch(
+              new Request("http://loopback.invalid/health"),
+            );
+            return { status: response.status, body: await response.json() };
+          }),
+          exportsDefaultFetchStr: await probeAsync(async () => {
+            if (typeof exportsDefault?.fetch !== "function") return "not-a-function";
+            const response = await exportsDefault.fetch(
+              "http://loopback.invalid/health",
+              { method: "GET" },
+            );
+            return { status: response.status, body: await response.json() };
+          }),
+          tracing: typeof tracing,
+          tracingSpan: typeof tracing?.Span,
+          tracingActiveSpan: probe(() =>
+            typeof tracing?.getActiveSpan === "function"
+              ? (tracing.getActiveSpan as () => unknown)() === undefined
+              : "not-a-function",
+          ),
+          tracingEnterSpan: await spanProbe("enterSpan"),
+          tracingStartActiveSpan: await spanProbe("startActiveSpan"),
+          cache: typeof ctx?.cache,
+          access: typeof ctx?.access,
+        };
+      }
       case "rollback": {
         await step.do(
           "first",

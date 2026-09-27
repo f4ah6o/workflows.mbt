@@ -5,7 +5,8 @@ const context = () => {
 };
 
 export class WorkflowEntrypoint {
-  constructor(_ctx, env) {
+  constructor(ctx, env) {
+    this.ctx = ctx;
     this.env = env ?? {};
   }
 

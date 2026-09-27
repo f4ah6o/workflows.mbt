@@ -378,6 +378,164 @@ export class ParallelWaitWorkflow extends WorkflowEntrypoint<{}, BaseParams> {
 }
 
 
+export class SleepUntilReplayWorkflow extends WorkflowEntrypoint<
+  {},
+  { wakeAt: number }
+> {
+  async run(event: WorkflowEvent<{ wakeAt: number }>, step: WorkflowStep) {
+    await step.do("outer", async () => {
+      await step.do("nested", async () => "nested");
+      return "outer";
+    });
+    await step.sleepUntil("until-date", new Date(event.payload.wakeAt));
+    await step.sleepUntil("until-ms", event.payload.wakeAt);
+    return await step.do("after-sleep", async () => "after");
+  }
+}
+
+
+export class CtxWorkflow extends WorkflowEntrypoint<{}, {}> {
+  async run(_event: WorkflowEvent<{}>, _step: WorkflowStep) {
+    let waited = false;
+    this.ctx.waitUntil(
+      Promise.resolve().then(() => {
+        waited = true;
+      }),
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    const spanStaysActive = await this.ctx.tracing.enterSpan(
+      "ctx-check",
+      async (span) => {
+        const before = this.ctx.tracing.getActiveSpan() === span;
+        await Promise.resolve();
+        return before && this.ctx.tracing.getActiveSpan() === span;
+      },
+    );
+    return {
+      hasCtx: this.ctx != null,
+      waitUntil: typeof this.ctx.waitUntil,
+      passThroughOnException: typeof this.ctx.passThroughOnException,
+      abort: typeof this.ctx.abort,
+      props: typeof this.ctx.props,
+      exports: typeof this.ctx.exports,
+      tracing: typeof this.ctx.tracing,
+      spanStaysActive,
+      spanExited: this.ctx.tracing.getActiveSpan() === undefined,
+      waited,
+    };
+  }
+}
+
+
+// Named handler-shaped export — upstream exposes it as a loopback service
+// stub; exercised via ctx.exports.HelperHandler below.
+export const HelperHandler = {
+  async fetch(request: Request) {
+    return new Response(`helper:${request.method}`);
+  },
+  async queue(batch: any) {
+    for (const message of batch.messages) {
+      const body = message.body;
+      if (body?.throw) throw new Error("queue handler exploded");
+      if (body?.retry) message.retry({ delaySeconds: 7 });
+      else if (body?.ok || body?.cloned === "yes") message.ack();
+      else message.retry({ delaySeconds: 1 });
+    }
+  },
+  async scheduled(controller: any) {
+    controller.noRetry();
+  },
+};
+
+// workerd exposes configured Workflow classes through ctx.exports; wrangler
+// dev does not — exercised here via ctx.exports.CtxWorkflow.create/get plus
+// the Fetcher surface on a co-exported handler.
+export class LoopbackCreateWorkflow extends WorkflowEntrypoint<
+  {},
+  { baseUrl: string; serializedBody: number[] }
+> {
+  async run(
+    event: WorkflowEvent<{ baseUrl: string; serializedBody: number[] }>,
+    _step: WorkflowStep,
+  ) {
+    const exports = this.ctx.exports as Record<string, any>;
+    const created = await exports.CtxWorkflow.create({
+      id: "via-exports-1",
+      params: {},
+    });
+    const fetched = await exports.CtxWorkflow.get("via-exports-1");
+    const helper = await exports.HelperHandler.fetch(
+      "http://loopback.invalid/",
+      { method: "POST" },
+    );
+    const queueResult = await exports.HelperHandler.queue("queue-1", [
+      { id: "m1", timestamp: new Date(0), attempts: 1, body: { ok: true } },
+      { id: "m2", timestamp: new Date(0), attempts: 2, body: { retry: true } },
+      // serializedBody carries the V8/jsg::Serializer structured-clone bytes.
+      {
+        id: "m3",
+        timestamp: new Date(0),
+        attempts: 1,
+        serializedBody: new Uint8Array(event.payload.serializedBody),
+      },
+    ]);
+    const queueThrowResult = await exports.HelperHandler.queue("queue-1", [
+      { id: "m4", timestamp: new Date(0), attempts: 1, body: { throw: true } },
+    ]);
+    const scheduledResult = await exports.HelperHandler.scheduled({
+      cron: "*/5 * * * *",
+      scheduledTime: new Date(1000),
+    });
+    // Fetcher.connect opens a real outbound socket (never reaches the
+    // handler): issue a raw HTTP request over the socket to the counter
+    // server.
+    const { hostname, port } = new URL(event.payload.baseUrl);
+    const socket = exports.HelperHandler.connect(`${hostname}:${port}`);
+    await socket.opened;
+    const writer = socket.writable.getWriter();
+    await writer.write(
+      new TextEncoder().encode("GET /via-socket HTTP/1.0\r\nHost: loopback\r\n\r\n"),
+    );
+    await writer.close();
+    const reader = socket.readable.getReader();
+    const first = await reader.read();
+    await reader.cancel();
+    await socket.close();
+    const socketHead = new TextDecoder()
+      .decode(first.value)
+      .split("\r\n")[0];
+    return {
+      createdId: created.id,
+      fetchedId: fetched.id,
+      helperBody: await helper.text(),
+      queueResult,
+      queueThrowResult,
+      scheduledResult,
+      socketHead,
+      exportsEnumerates: ["CtxWorkflow", "HelperHandler"].every((key) =>
+        Object.keys(this.ctx.exports).includes(key),
+      ),
+    };
+  }
+}
+
+
+export class WaitUntilTeardownWorkflow extends WorkflowEntrypoint<
+  {},
+  BaseParams
+> {
+  async run(event: WorkflowEvent<BaseParams>, _step: WorkflowStep) {
+    this.ctx.waitUntil(
+      new Promise((resolve) => setTimeout(resolve, 80)).then(async () => {
+        await fetch(`${event.payload.baseUrl}/wait-until`, { method: "POST" });
+      }),
+    );
+    return "done";
+  }
+}
+
+
 export class SelfDeleteWorkflow extends WorkflowEntrypoint<
   { SELF_DELETE: any },
   BaseParams

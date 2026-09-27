@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
 import { mkdtempSync, writeFileSync } from "node:fs";
+import { createServer as createTcpServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { loadProjectConfig } from "../host/config.mjs";
+import { connectSocket } from "../host/socket.mjs";
 import { matchesCron } from "../host/cron.mjs";
 import { parseDuration, parseSleepUntil } from "../host/duration.mjs";
 import {
@@ -92,13 +95,12 @@ test("wrangler jsonc is consumed without rewriting unknown Cloudflare fields", (
 
 
 test("cron matcher uses UTC five-field workflow schedules", () => {
-  const date = Date.UTC(2026, 8, 26, 5, 30);
-  assert.equal(matchesCron("30 5 * * *", date), true);
-  assert.equal(matchesCron("*/15 5 * * *", date), true);
-  assert.equal(matchesCron("31 5 * * *", date), false);
-  assert.equal(matchesCron("30 5 * * 6", date), true);
-  assert.equal(matchesCron("30 5 * * SAT", date), true);
-  assert.equal(matchesCron("30 5 * SEP MON-FRI", date), false);
+  const saturday = Date.UTC(2026, 8, 26, 5, 30);
+  assert.equal(matchesCron("30 5 * * *", saturday), true);
+  assert.equal(matchesCron("*/15 5 * * *", saturday), true);
+  assert.equal(matchesCron("31 5 * * *", saturday), false);
+  assert.equal(matchesCron("30 5 * * SAT", saturday), true);
+  assert.equal(matchesCron("30 5 * SEP MON-FRI", saturday), false);
   assert.equal(
     matchesCron("0 9 * * MON-FRI", Date.UTC(2026, 8, 25, 9, 0)),
     true,
@@ -111,6 +113,37 @@ test("cron matcher uses UTC five-field workflow schedules", () => {
     matchesCron("0 9 1 JAN,MAR *", Date.UTC(2026, 2, 1, 9, 0)),
     true,
   );
+});
+
+test("cron numeric weekdays follow Cloudflare 1=SUN..7=SAT", () => {
+  const sunday = Date.UTC(2026, 8, 27, 5, 30);
+  const monday = Date.UTC(2026, 8, 28, 5, 30);
+  const saturday = Date.UTC(2026, 8, 26, 5, 30);
+  assert.equal(matchesCron("30 5 * * 1", sunday), true);
+  assert.equal(matchesCron("30 5 * * 1", monday), false);
+  assert.equal(matchesCron("30 5 * * 2", monday), true);
+  assert.equal(matchesCron("30 5 * * 7", saturday), true);
+  assert.equal(matchesCron("30 5 * * 6", saturday), false);
+  assert.equal(matchesCron("30 5 * * 6", Date.UTC(2026, 8, 25, 5, 30)), true);
+
+  // Cloudflare's documented MON-FRI range equals numeric 2-6.
+  const weekdayDates = [
+    Date.UTC(2026, 8, 27, 5, 30),
+    Date.UTC(2026, 8, 28, 5, 30),
+    Date.UTC(2026, 8, 29, 5, 30),
+    Date.UTC(2026, 8, 30, 5, 30),
+    Date.UTC(2026, 9, 1, 5, 30),
+    Date.UTC(2026, 9, 2, 5, 30),
+    Date.UTC(2026, 9, 3, 5, 30),
+  ];
+  assert.deepEqual(
+    weekdayDates.map((date) => matchesCron("30 5 * * 2-6", date)),
+    weekdayDates.map((date) => matchesCron("30 5 * * MON-FRI", date)),
+  );
+
+  // Cloudflare's five-field syntax has no numeric Sunday-as-zero alias.
+  assert.throws(() => matchesCron("30 5 * * 0", sunday), /Invalid cron/);
+  assert.throws(() => matchesCron("30 5 * * 0-6", sunday), /Invalid cron/);
 });
 
 
@@ -145,4 +178,91 @@ test("Wrangler vars and .dev.vars secrets are available to workflow env", () => 
   });
   assert.deepEqual(config.localDevEnv, { SECRET_KEY: "secret-value" });
   assert.deepEqual(config.ignoredWranglerFields, []);
+});
+
+
+async function startTcpServer(t, onConnection) {
+  const server = createTcpServer(onConnection);
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  t.after(() => server.close());
+  return server.address().port;
+}
+
+test("connect() secureTransport=on resolves opened only after TLS handshake", async (t) => {
+  // Plain TCP server: the TCP connection succeeds but the TLS handshake can
+  // never complete — `opened` must reject rather than resolving on `connect`.
+  const port = await startTcpServer(t, (socket) => socket.end());
+  const socket = connectSocket(`127.0.0.1:${port}`, {
+    secureTransport: "on",
+    allowHalfOpen: false,
+  });
+  // A directly-TLS socket was not upgraded — `upgraded` tracks startTls() on
+  // the original socket only (pinned workerd semantics).
+  assert.equal(socket.upgraded, false);
+  assert.equal(socket.secureTransport, "on");
+  await assert.rejects(socket.opened);
+});
+
+test("connect() startTls requires secureTransport=starttls and neuters the old socket", async (t) => {
+  // Plaintext echo-less server: TCP stays open, the TLS handshake never
+  // completes — the upgraded socket's `opened` stays unsettled.
+  const received = [];
+  const port = await startTcpServer(t, (socket) =>
+    socket.on("data", (chunk) => received.push(Buffer.from(chunk))),
+  );
+
+  const plain = connectSocket(`127.0.0.1:${port}`, {
+    secureTransport: "off",
+    allowHalfOpen: false,
+  });
+  await plain.opened;
+  assert.equal(plain.secureTransport, "off");
+  assert.equal(plain.upgraded, false);
+  assert.throws(() => plain.startTls(), TypeError);
+  await plain.close();
+
+  const starttls = connectSocket(`127.0.0.1:${port}`, {
+    secureTransport: "starttls",
+    allowHalfOpen: false,
+  });
+  await starttls.opened;
+  assert.equal(starttls.secureTransport, "starttls");
+  assert.equal(starttls.upgraded, false);
+
+  // Capture the original stream objects — the upgrade must detach THESE
+  // references (in-place takeover), not just replace the properties.
+  const oldReadable = starttls.readable;
+  const oldWritable = starttls.writable;
+  const writer = oldWritable.getWriter();
+  // A write issued before startTls() still flushes before the handshake.
+  const pendingWrite = writer.write(
+    new TextEncoder().encode("plain before upgrade"),
+  );
+
+  const upgraded = starttls.startTls();
+  // Pinned testStartTlsBehaviorOnUpgrade: the ORIGINAL socket flips to
+  // upgraded=true when its closed resolves; the returned secure socket stays
+  // upgraded=false with secureTransport "on".
+  assert.equal(starttls.upgraded, true);
+  assert.equal(upgraded.upgraded, false);
+  assert.equal(upgraded.secureTransport, "on");
+  await starttls.closed;
+  // The write issued before the upgrade flushed; held references are now
+  // unusable.
+  await pendingWrite;
+  await assert.rejects(writer.write(new Uint8Array([0x41])), /detached/);
+  await assert.rejects(oldReadable.getReader().read(), /detached/);
+  assert.throws(() => starttls.startTls(), /already been called/);
+
+  // Upgraded socket: handshake stalls on the plaintext server; opened never
+  // resolves (suppress rejection/pending noise) — closing cleans up.
+  upgraded.opened.catch(() => {});
+  await upgraded.close();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.ok(
+    received.some((chunk) =>
+      chunk.toString("utf8").includes("plain before upgrade"),
+    ),
+  );
 });

@@ -52,6 +52,50 @@
       ]
     },
     {
+      "name": "scheduled-retained",
+      "binding": "SCHEDULED_RETAINED",
+      "class_name": "ScheduledWorkflow",
+      "schedules": [
+        "* * * * *"
+      ],
+      "default_retention": {
+        "success_retention": "40 milliseconds",
+        "error_retention": "60 milliseconds"
+      }
+    },
+    {
+      "name": "scheduled-error",
+      "binding": "SCHEDULED_ERROR",
+      "class_name": "ErrorWorkflow",
+      "schedules": [
+        "* * * * *"
+      ],
+      "default_retention": {
+        "success_retention": "40 milliseconds",
+        "error_retention": "60 milliseconds"
+      }
+    },
+    {
+      "name": "sleep-until",
+      "binding": "SLEEP_UNTIL",
+      "class_name": "SleepUntilReplayWorkflow"
+    },
+    {
+      "name": "entrypoint-ctx",
+      "binding": "ENTRYPOINT_CTX",
+      "class_name": "CtxWorkflow"
+    },
+    {
+      "name": "wait-until-ctx",
+      "binding": "WAIT_UNTIL_CTX",
+      "class_name": "WaitUntilTeardownWorkflow"
+    },
+    {
+      "name": "loopback-create",
+      "binding": "LOOPBACK_CREATE",
+      "class_name": "LoopbackCreateWorkflow"
+    },
+    {
       "name": "retained",
       "binding": "RETAINED",
       "class_name": "DuplicateWorkflow",

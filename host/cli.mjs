@@ -123,6 +123,6 @@ if (!command) {
       }
     }
   } finally {
-    runtime.close();
+    await runtime.close();
   }
 }

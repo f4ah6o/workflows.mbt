@@ -13,7 +13,8 @@
     "test:host": "node --test tests/host.test.mjs",
     "test:e2e": "node --test tests/e2e.test.mjs",
     "test": "npm run check:moon && npm run build:core && npm run test:moon && npm run test:host && npm run test:e2e",
-    "compat:pinned": "node compat/oracle/check.mjs --mode pinned && node compat/run-differential.mjs --oracle pinned",
+    "compat:typecheck": "tsc -p compat/typecheck/tsconfig.json",
+    "compat:pinned": "npm run compat:typecheck && node compat/oracle/check.mjs --mode pinned && node compat/run-differential.mjs --oracle pinned",
     "compat:latest": "node compat/run-latest.mjs",
     "compat:report": "node compat/report.mjs"
   },
@@ -27,6 +28,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260925.2",
+    "typescript": "^5.9.3",
     "workerd": "1.20260925.2",
     "wrangler": "4.141.0"
   }

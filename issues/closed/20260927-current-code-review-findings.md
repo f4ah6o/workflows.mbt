@@ -1,6 +1,6 @@
 # Current code review follow-ups: retention, REST events, inbound Worker streaming
 
-Status: open  
+Status: closed
 Created: 2026-09-27  
 Target: `main`  
 Triage: correctness follow-up before optional platform hardening
@@ -229,3 +229,132 @@ Also run the focused new E2E cases above. If a new differential probe is added,
 verify both pinned and latest oracle modes separately.
 
 A test that was not executed must remain reported as not executed.
+
+## Resolution
+
+Implemented on 2026-09-27:
+
+- Scheduled `default_retention`: `WorkflowRuntime.enqueueSchedules()` now
+  resolves the Workflow's retention via a shared `resolveRetention()` and
+  `SQLiteStorage.claimScheduledInstance()` forwards it to `createInstance()`.
+  E2E: `scheduled-retained` and `scheduled-error` fixtures
+  (`default_retention` 40ms/60ms) assert completed and errored scheduled
+  instances expire on their retention while the un-retained instance from the
+  same firing remains; per-instance retention precedence is unchanged;
+  `scheduled_runs` idempotence is unchanged (re-firing the same minute is a
+  no-op).
+- REST event payload: `handleWorkflowRest()` passes the parsed JSON body as the
+  event payload verbatim. E2E covers `{"approved": true}` and a literal
+  `{"payload": null}` body round-trip; event-type validation is retained.
+- Inbound request streaming: `nodeRequest()` builds the Web `Request` from
+  `Readable.toWeb(req)` with `duplex: "half"` for non-GET/HEAD methods. E2E: the
+  `/first-chunk` fixture returns the first uploaded chunk before the client
+  sends the rest of the body, which a buffering host cannot do. GET/HEAD remain
+  bodiless; response streaming, `waitUntil`, and `Set-Cookie` regressions still
+  pass.
+- `sleepUntil()` ordinals: `sleepUntil()` calls
+  `adoptPersistedOrdinal(identity, step)` like `sleep()`/`waitForEvent()`. E2E:
+  `sleep-until` fixture exercises both `Date` and Unix-ms arguments inside a
+  run whose completed `outer` callback created the nested `nested` step; the
+  persisted ordinal order `outer, nested, until-date, until-ms, after-sleep` is
+  strictly 1..5, and restart-from-step leaves it unchanged.
+- `WorkflowEntrypoint.ctx`: the `cloudflare:workers` shim stores
+  `this.ctx`/`this.env`; the local `WorkerExecutionContext`
+  (`host/execution-context.mjs`) models the pinned `ExecutionContext` surface:
+  `waitUntil()` (registered with the runtime's background-task set and drained
+  by `runtime.close()` before SQLite closes — the returned result never waits
+  on them), `passThroughOnException()` (no-op), `props`/`exports` (objects;
+  `exports.default` is a loopback service stub implementing the full upstream
+  `Fetcher` contract: `fetch(input, init?)` normalizes `RequestInfo | URL` +
+  `RequestInit` into a `Request`; `queue(queueName, messages, metadata?)`
+  adapts `ServiceBindingQueueMessage[]` into a `MessageBatch`
+  (`ack`/`retry`/`ackAll`/`retryAll`; `serializedBody` bytes are decoded as
+  V8 `jsg::Serializer` structured-clone via `v8.deserialize`) and resolves
+  the `FetcherQueueResult` the handler produced (`outcome` — `"exception"`
+  on handler throw, `ackAll`, `retryBatch`, `explicitAcks`,
+  `retryMessages`); `scheduled(options?)` delivers a `ScheduledController`
+  and resolves `FetcherScheduledResult` (`outcome`/`noRetry`, with a thrown
+  error reported as `outcome: "exception"`); `connect(address, options?)`
+  opens an outbound TCP/TLS socket (`Socket` shape: `readable`/`writable`
+  web streams, `opened`/`closed` promises, `upgraded` (flips to `true` on
+  the ORIGINAL socket during `startTls()`, while the returned TLS socket
+  and direct `secureTransport: "on"` sockets report `false` — pinned
+  workerd semantics), `protocol`,
+  `secureTransport` reporting `"off"|"on"|"starttls"`, `startTls(options?)`
+  which requires `"starttls"`, runs once per socket, flushes pending writes
+  before the handshake, and detaches the original readable/writable stream
+  objects in place) at
+  the runtime level and is never delivered to the handler — `opened`
+  resolves on `secureConnect` for TLS sockets so handshake failures reject
+  it; other members receive their
+  public args followed by injected env/ctx, matching upstream
+  `LoopbackForExport`/`Fetcher` semantics), `tracing`
+  (no-op `Span`; `enterSpan`/`startActiveSpan` keep the span active across
+  `await` via `AsyncLocalStorage`; `enterSpan` AUTO_ENDs via internal
+  bookkeeping while `startActiveSpan` is MANUAL_END — neither invokes the
+  public `span.end()`, matching probe-verified workerd behavior), `abort()`
+  (terminates the Workflow invocation's instance and unwinds `run()`), and
+  `cache`/`access` present as `undefined` (optional upstream). `runInstance`,
+  `runRollbackInstance`, and the default Worker `fetch` handler receive it.
+  `ExecutionContext.exports` is typed by a module-aware `Exports` mapped type
+  driven by `Cloudflare.GlobalProps.mainModule` (the wrangler-generated
+  augmentation point): `WorkflowEntrypoint` subclass exports resolve to
+  `Workflow<Params>` bindings and `ExportedHandler`-shaped exports to a
+  `ServiceStub` carrying the full `Fetcher` surface (`fetch`/`connect`/
+  `queue`/`scheduled` against ambient `@cloudflare/workers-types` types), so valid
+  Cloudflare source compiles against the shim without casts — exercised by the
+  `compat:typecheck` fixture. E2E: `entrypoint-ctx` asserts presence/typeofs,
+  `waitUntil` delivery, and span-across-await from unmodified source;
+  `wait-until-ctx` asserts a delayed `waitUntil` continuation still runs to
+  completion before `runtime.close()` resolves; the `/loopback` route verifies
+  `ctx.exports.default.fetch` for both `Request` and string+`init` inputs.
+  The `entrypoint-ctx` differential probe reports the full surface —
+  including `exports` loopback fetch behavior (Request and string+init
+  inputs), span-across-await, and span end semantics — and matches upstream
+  exactly under `wrangler dev`. `ctx.exports` also exposes the supported
+  named-entrypoint loopback surface as ordinary enumerable own properties
+  (workerd installs `ctxExports` via `v8Set`): configured Workflow classes
+  resolve to `WorkflowBinding` (`create`/`get`/`createBatch`/`deleteBatch`)
+  under their export names (pinned workerd `Server: configured Workflow is
+  exposed through ctx.exports`, server-test.c++), and other
+  `ExportedHandler`-shaped exports resolve to loopback service stubs;
+  `WorkerEntrypoint`/`DurableObject` class exports are a documented gap (no
+  local service-binding/actor backing). `wrangler dev` implements none of
+  this, so the named-export surface is a documented dev/oracle limitation
+  covered by the `loopback-create` e2e (which exercises
+  `ctx.exports.CtxWorkflow.create/get`, `ctx.exports.HelperHandler.fetch`,
+  and the `queue`/`scheduled`/`connect` Fetcher methods — including a raw
+  HTTP request over the opened socket, a `serializedBody` message, and a
+  throwing queue handler resolving `outcome: "exception"` — plus
+  enumerability) and host-level socket regressions (TLS `opened` gated on
+  `secureConnect`, `startTls` precondition + neuter) instead of the
+  differential probe. The
+  pinned oracle now also verifies the local host/shim classes implement every
+  tracked upstream member — `ExecutionContext` included (`localSurface` in
+  `compat-results/drift-*.json`), so a tracked member cannot silently lose its
+  implementation.
+- Cron weekday semantics: `host/cron.mjs` interprets numeric weekdays as
+  Cloudflare's `1=SUN..7=SAT` (converted to JS `getUTCDay()` numbering via
+  `n - 1`); numeric `0` is rejected as an out-of-range value rather than
+  aliased to Sunday. Named weekdays and ranges are unchanged; the host test
+  that encoded the old numbering was corrected, and new tests assert
+  `1==SUN`, `2==MON`, `7==SAT`, `2-6 == MON-FRI`, and that `0`/`0-6` throw.
+
+Validation results (2026-09-27, this checkout):
+
+- `npm run test`: PASS — moon check PASS, moon JS kernel build PASS, moon
+  tests PASS, host tests PASS, durable process E2E PASS (40/40), re-run after
+  the ExecutionContext surface expansion.
+- `npm run compat:pinned`: PASS — `compat:typecheck` (new tsc fixture) PASS,
+  contract check `pass: true` with empty drift; differential `pass: true`
+  with zero differences across six probes including the expanded
+  `entrypoint-ctx` (loopback fetch overloads + span end semantics).
+- `npm run compat:latest`: PASS — required because the `entrypoint-ctx` probe
+  was added to the differential catalog; both modes verified separately.
+
+Not executed: upstream differential coverage for cron schedules, the REST
+events endpoint, and the inbound-streaming endpoint — local `wrangler dev` does
+not serve the Cloudflare Workflows REST API or expose inbound-body timing, and
+cron schedules require minute-scale wall-clock waits. Those remain local-E2E
+covered only; tracked by the dependency-insurance roadmap's "when practical"
+upstream-coverage items.

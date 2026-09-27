@@ -8,7 +8,8 @@
     "InstanceStatus": "c0b3a793",
     "WorkflowInstanceSubscribeOptions": "dd5398c9",
     "WorkflowStep": "a4b48249",
-    "WorkflowEntrypoint": "6dbc79a6"
+    "WorkflowEntrypoint": "6dbc79a6",
+    "ExecutionContext": "002e5445"
   },
   "members": {
     "Workflow": [
@@ -48,6 +49,16 @@
       "ctx",
       "env",
       "run"
+    ],
+    "ExecutionContext": [
+      "abort",
+      "access",
+      "cache",
+      "exports",
+      "passThroughOnException",
+      "props",
+      "tracing",
+      "waitUntil"
     ]
   },
   "instanceStatusValues": [

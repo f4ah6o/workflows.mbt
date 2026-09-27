@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import v8 from "node:v8";
 import { WorkflowBinding, WorkflowInstanceHandle } from "./binding.mjs";
+import { connectSocket } from "./socket.mjs";
 import { loadProjectConfig } from "./config.mjs";
 import { matchesCron } from "./cron.mjs";
 import { parseDuration, parseSleepUntil } from "./duration.mjs";
@@ -9,6 +11,7 @@ import {
   WorkflowInstanceDeletedExecution,
   workflowExecutionScope,
 } from "./execution-scope.mjs";
+import { WorkerExecutionContext } from "./execution-context.mjs";
 import { loadKernel } from "./kernel.mjs";
 import { bundleWorkflow, loadWorkflowModule } from "./loader.mjs";
 import {
@@ -35,6 +38,18 @@ class WaitForEventTimeoutError extends Error {
     super(`waitForEvent step "${name}" timed out waiting for event type "${type}"`);
     this.name = "WorkflowWaitForEventTimeoutError";
   }
+}
+
+// `ServiceBindingQueueMessage.serializedBody` (ArrayBuffer | ArrayBufferView)
+// carries the handler argument in the V8/jsg::Serializer structured-clone
+// encoding — decode it with v8.deserialize, not JSON.
+function serializedBodyBuffer(serializedBody) {
+  if (serializedBody instanceof ArrayBuffer) return Buffer.from(serializedBody);
+  return Buffer.from(
+    serializedBody.buffer,
+    serializedBody.byteOffset,
+    serializedBody.byteLength,
+  );
 }
 
 function sleep(ms) {
@@ -160,7 +175,12 @@ export class WorkflowRuntime {
       throw new TypeError("Workflow instance id must be 1..100 characters and not use the reserved cf_<sha256> namespace");
     }
     const payload = serializeJson(options.params ?? {}, "workflow params");
-    const requestedRetention = options.retention ?? {};
+    const retention = this.resolveRetention(workflow, options.retention ?? {});
+    this.storage.createInstance({ id, workflowName, payload, retention });
+    return new WorkflowInstanceHandle(this, workflowName, id);
+  }
+
+  resolveRetention(workflow, requestedRetention = {}) {
     const defaultRetention = workflow.defaultRetention ?? {};
     const successRetention =
       requestedRetention.successRetention ??
@@ -170,7 +190,7 @@ export class WorkflowRuntime {
       requestedRetention.errorRetention ??
       requestedRetention.error_retention ??
       defaultRetention.error_retention;
-    const retention = {
+    return {
       successRetentionMs: successRetention == null
         ? null
         : parseDuration(successRetention, "success retention"),
@@ -178,8 +198,6 @@ export class WorkflowRuntime {
         ? null
         : parseDuration(errorRetention, "error retention"),
     };
-    this.storage.createInstance({ id, workflowName, payload, retention });
-    return new WorkflowInstanceHandle(this, workflowName, id);
   }
 
   async trigger(workflowName, options = {}, { run = true } = {}) {
@@ -254,6 +272,7 @@ export class WorkflowRuntime {
             payload: serializeJson({}, "scheduled workflow params"),
             cron,
             scheduledTime,
+            retention: this.resolveRetention(workflow),
           });
           if (result.created) created += 1;
         }
@@ -310,7 +329,7 @@ export class WorkflowRuntime {
     if (!workflow) throw new Error(`Workflow registration disappeared: ${row.workflow_name}`);
     const WorkflowClass = this.workflowModule[workflow.className];
     const execution = new ExecutionContext(this, row);
-    const instance = new WorkflowClass({}, this.env());
+    const instance = new WorkflowClass(this.workflowExecutionContext(id), this.env());
     const event = this.workflowEvent(row);
 
     this.storage.markInstanceStarted(id, JSON.parse(row.payload));
@@ -378,7 +397,7 @@ export class WorkflowRuntime {
     if (!workflow) throw new Error(`Workflow registration disappeared: ${row.workflow_name}`);
     const WorkflowClass = this.workflowModule[workflow.className];
     const execution = new ExecutionContext(this, row, { rollbackHydration: true });
-    const instance = new WorkflowClass({}, this.env());
+    const instance = new WorkflowClass(this.workflowExecutionContext(id), this.env());
     const event = this.workflowEvent(row);
 
     globalThis.__WORKFLOWS_MBT_CONTEXT__ = execution;
@@ -534,6 +553,179 @@ export class WorkflowRuntime {
     this.storage.finishRollback(id, "complete", null);
   }
 
+  // Loopback-compatible entries for ctx.exports, mirroring workerd's
+  // LoopbackForExport surface: `default` is a service stub whose methods are
+  // invoked with env/ctx injected, and configured Workflow classes resolve to
+  // Workflow bindings (see workflowExports).
+  loopbackHandler(target) {
+    const runtime = this;
+    const handlerEnvAndCtx = () => [
+      runtime.env(),
+      runtime.workflowExecutionContext(),
+    ];
+    return new Proxy(target, {
+      get(obj, prop) {
+        const value = Reflect.get(obj, prop);
+        // Fetcher.connect opens an outbound socket through the runtime; it is
+        // never delivered to the handler object.
+        if (prop === "connect") {
+          return (address, options) => connectSocket(address, options);
+        }
+        // Fetcher.queue/scheduled adapt the public call into the
+        // MessageBatch/ScheduledController event shape and return the
+        // structured Fetcher result. They exist on the stub whether or not
+        // the handler implements them — calling through without a handler
+        // member raises a TypeError, matching upstream dispatch failure.
+        if (prop === "queue") {
+          return (queueName, messages, metadata) =>
+            runtime.runQueueBatch(obj, value, queueName, messages, metadata);
+        }
+        if (prop === "scheduled") {
+          return (options) => runtime.runScheduledLoopback(obj, value, options);
+        }
+        if (typeof value !== "function") return value;
+        if (prop === "fetch") {
+          // Fetcher.fetch(input, init) — workerd normalizes input+init into a
+          // Request before invoking the handler as (request, env, ctx).
+          return (input, init) =>
+            Reflect.apply(value, obj, [
+              new Request(input, init),
+              ...handlerEnvAndCtx(),
+            ]);
+        }
+        // Any other handler member takes its public arguments followed by the
+        // injected (env, ctx) pair.
+        return (...args) =>
+          Reflect.apply(value, obj, [...args, ...handlerEnvAndCtx()]);
+      },
+    });
+  }
+
+  runQueueBatch(target, handler, queueName, messages, metadata) {
+    const result = {
+      outcome: "ok",
+      ackAll: false,
+      retryBatch: { retry: false },
+      explicitAcks: [],
+      retryMessages: [],
+    };
+    const batch = {
+      queue: queueName,
+      metadata,
+      ackAll() {
+        result.ackAll = true;
+      },
+      retryAll(options) {
+        result.retryBatch = { retry: true, delaySeconds: options?.delaySeconds };
+      },
+      messages: (messages ?? []).map((message) => ({
+        id: message.id,
+        timestamp: message.timestamp,
+        attempts: message.attempts,
+        body:
+          message.body !== undefined
+            ? message.body
+            : v8.deserialize(serializedBodyBuffer(message.serializedBody)),
+        ack() {
+          result.explicitAcks.push(message.id);
+        },
+        retry(options) {
+          result.retryMessages.push({
+            msgId: message.id,
+            delaySeconds: options?.delaySeconds,
+          });
+        },
+      })),
+    };
+    return Promise.resolve(
+      Reflect.apply(handler, target, [
+        batch,
+        this.env(),
+        this.workflowExecutionContext(),
+      ]),
+    ).then(
+      () => result,
+      // QueueCustomEvent::run catches handler failures and reports
+      // EventOutcome::EXCEPTION; Fetcher.queue resolves the QueueResult with
+      // that outcome rather than rejecting.
+      () => ({ ...result, outcome: "exception" }),
+    );
+  }
+
+  runScheduledLoopback(target, handler, options) {
+    let noRetry = false;
+    const scheduledTime = options?.scheduledTime ?? new Date();
+    const controller = {
+      scheduledTime:
+        typeof scheduledTime === "number"
+          ? scheduledTime
+          : scheduledTime.getTime(),
+      cron: options?.cron ?? "",
+      noRetry() {
+        noRetry = true;
+      },
+    };
+    return Promise.resolve(
+      Reflect.apply(handler, target, [
+        controller,
+        this.env(),
+        this.workflowExecutionContext(),
+      ]),
+    ).then(
+      () => ({ outcome: "ok", noRetry }),
+      () => ({ outcome: "exception", noRetry }),
+    );
+  }
+
+  workflowExports() {
+    const exports = {};
+    const defaultExport = this.workflowModule?.default;
+    if (defaultExport != null && ["object", "function"].includes(typeof defaultExport)) {
+      exports.default = this.loopbackHandler(defaultExport);
+    }
+    // Configured Workflow classes are exposed as Workflow bindings under their
+    // export names (workerd: "Server: configured Workflow is exposed through
+    // ctx.exports"; upstream installs ctxExports via v8Set, i.e. ordinary
+    // enumerable own properties). wrangler dev does not implement this — its
+    // exports enumeration is a dev/oracle limitation documented in
+    // COMPATIBILITY.md, not the target behavior.
+    for (const workflow of this.config.workflows ?? []) {
+      if (typeof this.workflowModule?.[workflow.className] === "function") {
+        exports[workflow.className] = new WorkflowBinding(this, workflow);
+      }
+    }
+    // Non-Workflow named entrypoints: ExportedHandler-shaped exports (objects
+    // exposing handler members like fetch/scheduled/queue) become loopback
+    // service stubs. WorkerEntrypoint/DurableObject class exports remain a
+    // documented gap — the local runtime has no service-binding/actor backing
+    // for them.
+    for (const [name, value] of Object.entries(this.workflowModule ?? {})) {
+      if (name === "default" || name in exports) continue;
+      if (
+        value != null &&
+        typeof value === "object" &&
+        Object.values(value).some((member) => typeof member === "function")
+      ) {
+        exports[name] = this.loopbackHandler(value);
+      }
+    }
+    return exports;
+  }
+
+  workflowExecutionContext(instanceStorageId = null) {
+    return new WorkerExecutionContext(this, {
+      exports: this.workflowExports(),
+      onAbort: instanceStorageId == null
+        ? undefined
+        : () => {
+            const row = this.storage.getInstance(instanceStorageId);
+            if (row && !["complete", "errored", "terminated"].includes(row.status)) {
+              this.storage.setInstanceStatus(instanceStorageId, "terminated");
+            }
+          },
+    });
+  }
+
   trackBackgroundTask(promise) {
     const task = Promise.resolve(promise);
     this.backgroundTasks.add(task);
@@ -556,14 +748,7 @@ export class WorkflowRuntime {
       return new Response("No default Worker fetch handler is exported", { status: 404 });
     }
 
-    const runtime = this;
-    const ctx = {
-      waitUntil(promise) {
-        runtime.trackBackgroundTask(promise);
-      },
-      passThroughOnException() {},
-    };
-    const response = await handler(request, this.env(), ctx);
+    const response = await handler(request, this.env(), this.workflowExecutionContext());
     if (!(response instanceof Response)) {
       throw new TypeError("Default Worker fetch handler must return a Response");
     }
@@ -578,7 +763,13 @@ export class WorkflowRuntime {
     }
   }
 
-  close() {
+  // Drains pending ctx.waitUntil() tasks before closing storage so delayed
+  // continuations still observe a live runtime. Resolves synchronously when
+  // no tasks are pending, so bare close() callers keep old behavior.
+  async close() {
+    while (this.backgroundTasks.size) {
+      await Promise.allSettled([...this.backgroundTasks]);
+    }
     this.storage.close();
   }
 }
@@ -877,6 +1068,7 @@ class ExecutionContext {
     this.checkLifecycleBoundary();
     const identity = this.nextIdentity("sleep", name);
     const existing = this.storage.getStep(identity);
+    this.adoptPersistedOrdinal(identity, existing);
     if (existing?.state === "completed") return;
     if (this.rollbackHydration) {
       throw new SuspendExecution("rollback-hydration-boundary");

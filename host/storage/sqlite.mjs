@@ -231,6 +231,7 @@ export class SQLiteStorage extends Storage {
     payload,
     cron,
     scheduledTime,
+    retention = null,
   }) {
     return this.db.transaction(() => {
       const existing = this.db.prepare(`
@@ -246,6 +247,7 @@ export class SQLiteStorage extends Storage {
         workflowName,
         payload,
         schedule: { cron, scheduledTime },
+        retention,
       });
       this.db.prepare(`
         INSERT INTO scheduled_runs(

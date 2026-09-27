@@ -73,6 +73,26 @@ export default {
       });
     }
 
+    if (request.method === "POST" && url.pathname === "/first-chunk") {
+      const reader = request.body.getReader();
+      const first = await reader.read();
+      await reader.cancel();
+      return new Response(first.value ?? new Uint8Array(), {
+        headers: { "content-type": "application/octet-stream" },
+      });
+    }
+
+    if (request.method === "GET" && url.pathname === "/loopback") {
+      const target = new URL("/cookies", request.url);
+      const viaRequest = await ctx.exports.default.fetch(new Request(target));
+      const viaStringInit = await ctx.exports.default.fetch(target.href, {
+        method: "GET",
+      });
+      return new Response(
+        `loopback:${viaRequest.status}:${await viaRequest.text()}|str:${viaStringInit.status}:${await viaStringInit.text()}`,
+      );
+    }
+
     if (request.method === "GET" && url.pathname === "/cookies") {
       const headers = new Headers();
       headers.append("Set-Cookie", "first=one; Path=/; HttpOnly");
