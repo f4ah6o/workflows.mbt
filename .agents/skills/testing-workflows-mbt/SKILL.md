@@ -28,7 +28,14 @@ Base: `/accounts/local/workflows/<name>/instances`
 - Non-matching paths fall through to the default-Worker `fetch` handler (fixtures/cloudflare-basic has `/stream`, `/cookies`, `/first-chunk` routes).
 
 ## CLI one-shot commands share the sqlite storage
-`cli.mjs trigger|status|event|pause|resume|restart|terminate <wf> <id> --config <c> --storage <db>`.
+Common options: `--config <c> --storage <db>`; each opens the DB, runs, exits.
+```
+cli.mjs trigger <wf> --params '{"k":"v"}' [--id <id>] [--enqueue-only]
+cli.mjs status|pause|resume|terminate <wf> <id>
+cli.mjs event <wf> <id> <type> --payload '{"approved":true}'
+cli.mjs restart <wf> <id> [--from <name>] [--count 2] [--type do]
+```
+Note: `trigger` does NOT take the instance id positionally — a second positional is silently ignored; pass `--id`.
 listRunnable has no cross-process claim, so running CLI commands against the same DB as a live dev server can double-execute; use a standalone storage path for CLI-only tests.
 
 ## Inspecting internals (no REST route for steps/events/timers)
