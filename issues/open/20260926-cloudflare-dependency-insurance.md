@@ -4,6 +4,29 @@ Status: open
 Created: 2026-09-26  
 Target: `main`
 
+
+
+## Triage — 2026-09-27
+
+This remains the strategic dependency-insurance roadmap. It should not absorb
+small correctness defects simply because they affect compatibility.
+
+The current-main review found three focused follow-ups, tracked in
+`20260927-current-code-review-findings.md`:
+
+- scheduled instances bypass Workflow `default_retention`
+- the REST event endpoint unwraps a top-level `payload` key instead of treating
+  the request body as the payload
+- inbound default-Worker request bodies are fully buffered rather than streamed
+
+The first two are correctness gaps in surfaces already described as implemented;
+fix them before counting those surfaces as stronger compatibility evidence. The
+third is HTTP-fidelity hardening and should gain an explicit streaming
+regression.
+
+Keep this file focused on continuous verification, fallback operations,
+machine-readable evidence, drills, and release preparedness.
+
 ## Decision
 
 `workflows.mbt` is a **compatibility safety net for Cloudflare Workflows**, not
