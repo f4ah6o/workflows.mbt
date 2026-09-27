@@ -183,6 +183,39 @@ References:
 - make the compatibility oracle verify implementation/probe evidence for tracked
   members, not only that the upstream member still exists
 
+
+## P1 — match Cloudflare numeric weekday semantics in Workflow schedules
+
+### Finding
+
+Cloudflare's five-field cron syntax defines numeric weekdays as
+`1 = Sunday ... 7 = Saturday`.
+
+`host/cron.mjs` currently uses the JavaScript `Date#getUTCDay()` numbering
+directly (`0 = Sunday ... 6 = Saturday`) and only aliases parsed numeric `7`
+to `0`. As a result, a Cloudflare schedule such as `0 17 * * 1` is Sunday
+upstream but Monday locally.
+
+The existing host test currently encodes the local numbering by asserting that
+numeric `6` and `SAT` are equivalent. That should be corrected rather than
+preserved.
+
+Cloudflare reference:
+
+- https://developers.cloudflare.com/workers/configuration/cron-triggers/
+
+### Acceptance
+
+- interpret numeric weekdays exactly as Cloudflare: `1=SUN` through
+  `7=SAT`
+- either reject numeric `0` or match the upstream parser's observed behavior;
+  do not silently treat it as the canonical Sunday value
+- keep named weekdays (`SUN`...`SAT`) working
+- add explicit tests for `1 == SUN`, `2 == MON`, and `7 == SAT`
+- add a weekday range test equivalent to Cloudflare's documented
+  `MON-FRI` / `2-6`
+- include numeric weekday schedules in the upstream differential catalog
+
 ## Validation
 
 Run and record:
