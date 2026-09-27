@@ -205,10 +205,11 @@ test("connect() secureTransport=on resolves opened only after TLS handshake", as
 });
 
 test("connect() startTls requires secureTransport=starttls and neuters the old socket", async (t) => {
-  // Plaintext server that drops the connection once bytes arrive (TLS
-  // ClientHello) — the upgraded socket's `opened` rejects.
+  // Plaintext echo-less server: TCP stays open, the TLS handshake never
+  // completes — the upgraded socket's `opened` stays unsettled.
+  const received = [];
   const port = await startTcpServer(t, (socket) =>
-    socket.on("data", () => socket.destroy()),
+    socket.on("data", (chunk) => received.push(Buffer.from(chunk))),
   );
 
   const plain = connectSocket(`127.0.0.1:${port}`, {
@@ -228,6 +229,17 @@ test("connect() startTls requires secureTransport=starttls and neuters the old s
   await starttls.opened;
   assert.equal(starttls.secureTransport, "starttls");
   assert.equal(starttls.upgraded, false);
+
+  // Capture the original stream objects — the upgrade must detach THESE
+  // references (in-place takeover), not just replace the properties.
+  const oldReadable = starttls.readable;
+  const oldWritable = starttls.writable;
+  const writer = oldWritable.getWriter();
+  // A write issued before startTls() still flushes before the handshake.
+  const pendingWrite = writer.write(
+    new TextEncoder().encode("plain before upgrade"),
+  );
+
   const upgraded = starttls.startTls();
   // Pinned testStartTlsBehaviorOnUpgrade: the ORIGINAL socket flips to
   // upgraded=true when its closed resolves; the returned secure socket stays
@@ -235,9 +247,22 @@ test("connect() startTls requires secureTransport=starttls and neuters the old s
   assert.equal(starttls.upgraded, true);
   assert.equal(upgraded.upgraded, false);
   assert.equal(upgraded.secureTransport, "on");
-  // The original socket is neutered by the upgrade: closed resolves and its
-  // streams are detached; close() must not tear down the upgraded transport.
   await starttls.closed;
-  await assert.rejects(upgraded.opened);
-  await upgraded.close().catch(() => {});
+  // The write issued before the upgrade flushed; held references are now
+  // unusable.
+  await pendingWrite;
+  await assert.rejects(writer.write(new Uint8Array([0x41])), /detached/);
+  await assert.rejects(oldReadable.getReader().read(), /detached/);
+  assert.throws(() => starttls.startTls(), /already been called/);
+
+  // Upgraded socket: handshake stalls on the plaintext server; opened never
+  // resolves (suppress rejection/pending noise) — closing cleans up.
+  upgraded.opened.catch(() => {});
+  await upgraded.close();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.ok(
+    received.some((chunk) =>
+      chunk.toString("utf8").includes("plain before upgrade"),
+    ),
+  );
 });

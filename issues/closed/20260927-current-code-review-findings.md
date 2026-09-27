@@ -281,7 +281,9 @@ Implemented on 2026-09-27:
   and direct `secureTransport: "on"` sockets report `false` — pinned
   workerd semantics), `protocol`,
   `secureTransport` reporting `"off"|"on"|"starttls"`, `startTls(options?)`
-  which requires `"starttls"` and neuters the original socket's streams) at
+  which requires `"starttls"`, runs once per socket, flushes pending writes
+  before the handshake, and detaches the original readable/writable stream
+  objects in place) at
   the runtime level and is never delivered to the handler — `opened`
   resolves on `secureConnect` for TLS sockets so handshake failures reject
   it; other members receive their

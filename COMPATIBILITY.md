@@ -39,11 +39,13 @@ loading, Web APIs, callback invocation, and narrow host bridges.
   failures reject it), `secureTransport` reports `"off"|"on"|"starttls"`,
   `upgraded`/`protocol`/`readable`/`writable`/`closed` per the upstream
   `Socket` surface, and `startTls(options?)` requires
-  `secureTransport: "starttls"` (throws otherwise): it flips `upgraded` to
-  `true` on the ORIGINAL socket before resolving its `closed` — the
-  returned TLS socket reports `upgraded: false` — and neuters the
-  original socket's streams on upgrade; other methods take public args +
-  injected env/ctx. Every configured
+  `secureTransport: "starttls"` (throws otherwise — and a second call on
+  the same socket throws `startTls has already been called`): it flips
+  `upgraded` to `true` on the ORIGINAL socket before resolving its
+  `closed` — the returned TLS socket reports `upgraded: false` — flushes
+  pending writes before the handshake, and detaches the original
+  readable/writable objects in place (held references error on use);
+  other methods take public args + injected env/ctx. Every configured
   Workflow class resolves to a `Workflow` binding under its
   export name (workerd `Server: configured Workflow is exposed through
   ctx.exports`). `wrangler dev` does not implement any of this — a known
