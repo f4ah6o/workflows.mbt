@@ -197,6 +197,10 @@ test("connect() secureTransport=on resolves opened only after TLS handshake", as
     secureTransport: "on",
     allowHalfOpen: false,
   });
+  // A directly-TLS socket was not upgraded — `upgraded` tracks startTls() on
+  // the original socket only (pinned workerd semantics).
+  assert.equal(socket.upgraded, false);
+  assert.equal(socket.secureTransport, "on");
   await assert.rejects(socket.opened);
 });
 
@@ -223,8 +227,14 @@ test("connect() startTls requires secureTransport=starttls and neuters the old s
   });
   await starttls.opened;
   assert.equal(starttls.secureTransport, "starttls");
+  assert.equal(starttls.upgraded, false);
   const upgraded = starttls.startTls();
-  assert.equal(upgraded.upgraded, true);
+  // Pinned testStartTlsBehaviorOnUpgrade: the ORIGINAL socket flips to
+  // upgraded=true when its closed resolves; the returned secure socket stays
+  // upgraded=false with secureTransport "on".
+  assert.equal(starttls.upgraded, true);
+  assert.equal(upgraded.upgraded, false);
+  assert.equal(upgraded.secureTransport, "on");
   // The original socket is neutered by the upgrade: closed resolves and its
   // streams are detached; close() must not tear down the upgraded transport.
   await starttls.closed;

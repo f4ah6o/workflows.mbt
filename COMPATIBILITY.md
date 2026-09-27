@@ -39,7 +39,9 @@ loading, Web APIs, callback invocation, and narrow host bridges.
   failures reject it), `secureTransport` reports `"off"|"on"|"starttls"`,
   `upgraded`/`protocol`/`readable`/`writable`/`closed` per the upstream
   `Socket` surface, and `startTls(options?)` requires
-  `secureTransport: "starttls"` (throws otherwise) and neuters the
+  `secureTransport: "starttls"` (throws otherwise): it flips `upgraded` to
+  `true` on the ORIGINAL socket before resolving its `closed` — the
+  returned TLS socket reports `upgraded: false` — and neuters the
   original socket's streams on upgrade; other methods take public args +
   injected env/ctx. Every configured
   Workflow class resolves to a `Workflow` binding under its

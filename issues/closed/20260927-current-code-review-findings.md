@@ -276,7 +276,10 @@ Implemented on 2026-09-27:
   and resolves `FetcherScheduledResult` (`outcome`/`noRetry`, with a thrown
   error reported as `outcome: "exception"`); `connect(address, options?)`
   opens an outbound TCP/TLS socket (`Socket` shape: `readable`/`writable`
-  web streams, `opened`/`closed` promises, `upgraded`, `protocol`,
+  web streams, `opened`/`closed` promises, `upgraded` (flips to `true` on
+  the ORIGINAL socket during `startTls()`, while the returned TLS socket
+  and direct `secureTransport: "on"` sockets report `false` — pinned
+  workerd semantics), `protocol`,
   `secureTransport` reporting `"off"|"on"|"starttls"`, `startTls(options?)`
   which requires `"starttls"` and neuters the original socket's streams) at
   the runtime level and is never delivered to the handler — `opened`

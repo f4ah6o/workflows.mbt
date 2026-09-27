@@ -15,7 +15,10 @@ export class LoopbackSocket {
   constructor(socket, { secureTransport } = {}) {
     this.#socket = socket;
     this.secureTransport = socket.encrypted ? "on" : secureTransport ?? "off";
-    this.upgraded = Boolean(socket.encrypted);
+    // `upgraded` is false for every socket — including the TLS socket returned
+    // by startTls() — and flips to true on the ORIGINAL socket when startTls()
+    // upgrades it (pinned workerd Socket semantics).
+    this.upgraded = false;
     this.protocol = "tcp";
     this.readable = Readable.toWeb(socket);
     this.writable = Writable.toWeb(socket);
@@ -61,6 +64,7 @@ export class LoopbackSocket {
       );
     }
     this.#neutered = true;
+    this.upgraded = true;
     // Neuter the original socket's streams — erroring them (not cancelling)
     // keeps the underlying transport alive for the TLS upgrade while making
     // the old Socket observably unusable.
