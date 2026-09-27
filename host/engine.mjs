@@ -539,13 +539,40 @@ export class WorkflowRuntime {
     this.storage.finishRollback(id, "complete", null);
   }
 
-  workflowExecutionContext(instanceStorageId = null) {
+  // Loopback-compatible entries for ctx.exports, mirroring workerd's
+  // LoopbackForExport surface: `default` is a service stub whose methods are
+  // invoked with (arg, env, ctx) injected. Named WorkflowEntrypoint exports
+  // are not exposed by the pinned upstream runtime (verified against
+  // wrangler dev), so they are not fabricated here.
+  loopbackHandler(target) {
+    const runtime = this;
+    return new Proxy(target, {
+      get(obj, prop) {
+        const value = Reflect.get(obj, prop);
+        if (typeof value !== "function") return value;
+        return (arg, ...rest) =>
+          Reflect.apply(value, obj, [
+            arg,
+            runtime.env(),
+            runtime.workflowExecutionContext(),
+            ...rest,
+          ]);
+      },
+    });
+  }
+
+  workflowExports() {
     const exports = {};
-    if (this.workflowModule && "default" in this.workflowModule) {
-      exports.default = this.workflowModule.default;
+    const defaultExport = this.workflowModule?.default;
+    if (defaultExport != null && ["object", "function"].includes(typeof defaultExport)) {
+      exports.default = this.loopbackHandler(defaultExport);
     }
+    return exports;
+  }
+
+  workflowExecutionContext(instanceStorageId = null) {
     return new WorkerExecutionContext(this, {
-      exports,
+      exports: this.workflowExports(),
       onAbort: instanceStorageId == null
         ? undefined
         : () => {

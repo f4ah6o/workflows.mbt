@@ -2,6 +2,8 @@
 // `cloudflare:workers` exposes to Worker fetch handlers and
 // `WorkflowEntrypoint` instances (`this.ctx`).
 
+import { AsyncLocalStorage } from "node:async_hooks";
+
 export class AbortedError extends Error {
   constructor(reason) {
     super(reason instanceof Error ? reason.message : String(reason ?? "Invocation aborted"));
@@ -39,27 +41,32 @@ class LocalSpan {
 }
 
 function createTracing() {
-  let activeSpan;
+  const spanStore = new AsyncLocalStorage();
+  // workerd keeps the active span in the invocation's async context, so it is
+  // still the active span after an `await` inside the callback, and the span
+  // ends when a returned Promise settles.
+  const runWithSpan = (name, callback, args) => {
+    const span = new LocalSpan(name);
+    const result = spanStore.run(span, () => callback(span, ...args));
+    if (result != null && typeof result.then === "function") {
+      return Promise.resolve(result).finally(() => span.end());
+    }
+    span.end();
+    return result;
+  };
   return {
     Span: LocalSpan,
     enterSpan(name, callback, ...args) {
-      return callback(new LocalSpan(name), ...args);
+      return runWithSpan(name, callback, args);
     },
     startActiveSpan(name, callback, ...args) {
-      const span = new LocalSpan(name);
-      const previous = activeSpan;
-      activeSpan = span;
-      try {
-        return callback(span, ...args);
-      } finally {
-        activeSpan = previous;
-      }
+      return runWithSpan(name, callback, args);
     },
     startSpan(name) {
       return new LocalSpan(name);
     },
     getActiveSpan() {
-      return activeSpan;
+      return spanStore.getStore();
     },
   };
 }

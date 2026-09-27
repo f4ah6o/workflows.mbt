@@ -82,6 +82,13 @@ export default {
       });
     }
 
+    if (request.method === "GET" && url.pathname === "/loopback") {
+      const loopback = await ctx.exports.default.fetch(
+        new Request(new URL("/cookies", request.url)),
+      );
+      return new Response(`loopback:${loopback.status}:${await loopback.text()}`);
+    }
+
     if (request.method === "GET" && url.pathname === "/cookies") {
       const headers = new Headers();
       headers.append("Set-Cookie", "first=one; Path=/; HttpOnly");

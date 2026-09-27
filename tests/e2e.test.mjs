@@ -1488,6 +1488,10 @@ test("default Worker preserves multiple Set-Cookie response headers", async (t) 
     "second=two; Path=/; SameSite=Lax",
   ]);
   assert.equal(await response.text(), "cookies");
+
+  const loopback = await fetch(`http://127.0.0.1:${address.port}/loopback`);
+  assert.equal(loopback.status, 200);
+  assert.equal(await loopback.text(), "loopback:200:cookies");
 });
 
 
@@ -1605,6 +1609,8 @@ test("WorkflowEntrypoint exposes the ctx contract during run", async (t) => {
     props: "object",
     exports: "object",
     tracing: "object",
+    spanStaysActive: true,
+    spanExited: true,
     waited: true,
   });
   await poll(() => runtime.backgroundTasks.size === 0);

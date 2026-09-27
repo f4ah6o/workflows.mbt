@@ -264,15 +264,23 @@ Implemented on 2026-09-27:
   `waitUntil()` (registered with the runtime's background-task set and drained
   by `runtime.close()` before SQLite closes — the returned result never waits
   on them), `passThroughOnException()` (no-op), `props`/`exports` (objects;
-  `exports` carries the module `default`), `tracing` (no-op `Span` + active-span
-  tracking), `abort()` (terminates the Workflow invocation's instance and
-  unwinds `run()`), and `cache`/`access` present as `undefined` (optional
-  upstream). `runInstance`, `runRollbackInstance`, and the default Worker
-  `fetch` handler receive it. E2E: `entrypoint-ctx` asserts presence/typeofs
-  and `waitUntil` delivery from unmodified source; `wait-until-ctx` asserts a
-  delayed `waitUntil` continuation still runs to completion before
-  `runtime.close()` resolves. The `entrypoint-ctx` differential probe reports
-  the full surface and matches upstream exactly under `wrangler dev`. The
+  `exports.default` is a loopback service stub — its methods are invoked with
+  env/ctx injected, matching upstream `LoopbackForExport` for the default
+  handler), `tracing` (no-op `Span`; `enterSpan`/`startActiveSpan` keep the
+  span active across `await` via `AsyncLocalStorage` and end it when the
+  callback's Promise settles), `abort()` (terminates the Workflow invocation's
+  instance and unwinds `run()`), and `cache`/`access` present as `undefined`
+  (optional upstream). `runInstance`, `runRollbackInstance`, and the default
+  Worker `fetch` handler receive it. E2E: `entrypoint-ctx` asserts
+  presence/typeofs, `waitUntil` delivery, and span-across-await from
+  unmodified source; `wait-until-ctx` asserts a delayed `waitUntil`
+  continuation still runs to completion before `runtime.close()` resolves;
+  the `/loopback` route verifies `ctx.exports.default.fetch` calls through
+  with env/ctx injected. The `entrypoint-ctx` differential probe reports the
+  full surface — including `exports` loopback fetch behavior and
+  span-across-await — and matches upstream exactly under `wrangler dev`
+  (upstream does not expose WorkflowEntrypoint class exports on `ctx.exports`
+  there, so none are fabricated locally). The
   pinned oracle now also verifies the local host/shim classes implement every
   tracked upstream member — `ExecutionContext` included (`localSurface` in
   `compat-results/drift-*.json`), so a tracked member cannot silently lose its
@@ -287,7 +295,8 @@ Implemented on 2026-09-27:
 Validation results (2026-09-27, this checkout):
 
 - `npm run test`: PASS — moon check PASS, moon JS kernel build PASS, moon
-  tests PASS, host tests PASS, durable process E2E PASS (39/39).
+  tests PASS, host tests PASS, durable process E2E PASS (39/39), re-run after
+  the ExecutionContext surface expansion.
 - `npm run compat:pinned`: PASS — contract check `pass: true` with empty drift;
   differential `pass: true` with zero differences across six probes including
   the new `entrypoint-ctx`.

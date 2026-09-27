@@ -22,6 +22,10 @@ loading, Web APIs, callback invocation, and narrow host bridges.
 - [x] `this.ctx` — pinned `ExecutionContext` surface (`waitUntil`,
   `passThroughOnException`, `props`, `exports`, `tracing`, `abort`;
   `cache`/`access` remain undefined), verified against the oracle
+- [x] `ctx.exports.default` is a loopback service stub (methods invoked with
+  env/ctx injected), matching upstream workerd behavior
+- [x] `ctx.tracing` spans propagate via async context (`getActiveSpan()` holds
+  across `await`, ends when the callback's Promise settles)
 - [x] `event.payload`
 - [x] `event.timestamp`
 - [x] `event.instanceId`

@@ -404,6 +404,14 @@ export class CtxWorkflow extends WorkflowEntrypoint<{}, {}> {
     );
     await Promise.resolve();
     await Promise.resolve();
+    const spanStaysActive = await this.ctx.tracing.enterSpan(
+      "ctx-check",
+      async (span) => {
+        const before = this.ctx.tracing.getActiveSpan() === span;
+        await Promise.resolve();
+        return before && this.ctx.tracing.getActiveSpan() === span;
+      },
+    );
     return {
       hasCtx: this.ctx != null,
       waitUntil: typeof this.ctx.waitUntil,
@@ -412,6 +420,8 @@ export class CtxWorkflow extends WorkflowEntrypoint<{}, {}> {
       props: typeof this.ctx.props,
       exports: typeof this.ctx.exports,
       tracing: typeof this.ctx.tracing,
+      spanStaysActive,
+      spanExited: this.ctx.tracing.getActiveSpan() === undefined,
       waited,
     };
   }

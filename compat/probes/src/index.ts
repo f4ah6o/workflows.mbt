@@ -41,6 +41,40 @@ export class OracleWorkflow extends WorkflowEntrypoint<{}, Params> {
             return `throws:${(error as Error).name}`;
           }
         };
+        const probeAsync = async (fn: () => Promise<unknown>): Promise<unknown> => {
+          try {
+            return await fn();
+          } catch (error) {
+            return `throws:${(error as Error).name}`;
+          }
+        };
+        const exportsObj = ctx?.exports as Record<string, unknown> | undefined;
+        const exportsDefault = exportsObj?.default as
+          | { fetch?: (request: Request) => Promise<Response> }
+          | undefined;
+        const exportsWorkflow = exportsObj?.OracleWorkflow as
+          | { create?: (options: unknown) => Promise<unknown> }
+          | undefined;
+        const spanProbe = (method: "enterSpan" | "startActiveSpan") =>
+          probeAsync(async () => {
+            const fn = tracing?.[method] as
+              | ((name: string, callback: (span: unknown) => unknown) => unknown)
+              | undefined;
+            if (typeof fn !== "function") return "not-a-function";
+            const result = fn.call(tracing, "probe-span", async (span) => {
+                const before = tracing?.getActiveSpan() === span;
+                await new Promise((resolve) => setTimeout(resolve, 5));
+                return {
+                  before,
+                  afterAwait: tracing?.getActiveSpan() === span,
+                };
+              });
+            const awaited = await result;
+            return {
+              ...((awaited ?? {}) as Record<string, unknown>),
+              afterExit: tracing?.getActiveSpan() === undefined,
+            };
+          });
         return {
           hasCtx: ctx != null,
           waitUntil: typeof ctx?.waitUntil,
@@ -48,14 +82,23 @@ export class OracleWorkflow extends WorkflowEntrypoint<{}, Params> {
           abort: typeof ctx?.abort,
           props: typeof ctx?.props,
           propsValue: probe(() => JSON.stringify(ctx?.props ?? null)),
-          exports: typeof ctx?.exports,
+          exports: typeof exportsObj,
           exportsKeys: probe(() =>
-            ctx?.exports == null
+            exportsObj == null
               ? null
-              : Object.keys(ctx.exports)
+              : Object.keys(exportsObj)
                   .filter((key) => !key.startsWith("__INTERNAL_"))
                   .sort(),
           ),
+          exportsWorkflow: typeof exportsWorkflow,
+          exportsWorkflowCreate: probe(() => typeof exportsWorkflow?.create),
+          exportsDefaultFetch: await probeAsync(async () => {
+            if (typeof exportsDefault?.fetch !== "function") return "not-a-function";
+            const response = await exportsDefault.fetch(
+              new Request("http://loopback.invalid/health"),
+            );
+            return { status: response.status, body: await response.json() };
+          }),
           tracing: typeof tracing,
           tracingSpan: typeof tracing?.Span,
           tracingActiveSpan: probe(() =>
@@ -63,6 +106,8 @@ export class OracleWorkflow extends WorkflowEntrypoint<{}, Params> {
               ? (tracing.getActiveSpan as () => unknown)() === undefined
               : "not-a-function",
           ),
+          tracingEnterSpan: await spanProbe("enterSpan"),
+          tracingStartActiveSpan: await spanProbe("startActiveSpan"),
           cache: typeof ctx?.cache,
           access: typeof ctx?.access,
         };
