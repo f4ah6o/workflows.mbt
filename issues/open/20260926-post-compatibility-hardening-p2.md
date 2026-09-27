@@ -4,6 +4,27 @@ Status: open
 Created: 2026-09-26  
 Target: after broad-compatibility milestone
 
+
+
+## Triage — 2026-09-27
+
+This file is the optional/long-horizon hardening backlog. Concrete correctness
+regressions discovered in already-claimed compatibility surfaces are tracked
+separately in `20260927-current-code-review-findings.md` so they are not buried
+among platform-breadth work.
+
+In particular:
+
+- scheduled `default_retention` propagation and REST event-body fidelity are
+  focused correctness follow-ups, not generic P2 hardening
+- inbound Worker request-body streaming is tracked in the focused review issue
+  because it is a concrete default-Worker HTTP gap
+- this file keeps REST completeness scoped to optional transports,
+  pagination/filter fidelity, and documented stable error-code fidelity
+
+This separation should make it clear which work fixes current behavior versus
+which work expands the supported platform.
+
 ## Context
 
 The broad compatibility milestone implements and tests the source/runtime surface
