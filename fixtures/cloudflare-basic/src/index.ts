@@ -83,10 +83,14 @@ export default {
     }
 
     if (request.method === "GET" && url.pathname === "/loopback") {
-      const loopback = await ctx.exports.default.fetch(
-        new Request(new URL("/cookies", request.url)),
+      const target = new URL("/cookies", request.url);
+      const viaRequest = await ctx.exports.default.fetch(new Request(target));
+      const viaStringInit = await ctx.exports.default.fetch(target.href, {
+        method: "GET",
+      });
+      return new Response(
+        `loopback:${viaRequest.status}:${await viaRequest.text()}|str:${viaStringInit.status}:${await viaStringInit.text()}`,
       );
-      return new Response(`loopback:${loopback.status}:${await loopback.text()}`);
     }
 
     if (request.method === "GET" && url.pathname === "/cookies") {

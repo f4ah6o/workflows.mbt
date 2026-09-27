@@ -61,9 +61,19 @@ export class OracleWorkflow extends WorkflowEntrypoint<{}, Params> {
               | ((name: string, callback: (span: unknown) => unknown) => unknown)
               | undefined;
             if (typeof fn !== "function") return "not-a-function";
+            let endedDuringCallback = false;
+            let ended = false;
             const result = fn.call(tracing, "probe-span", async (span) => {
+                const end = span.end as (() => void) | undefined;
+                if (typeof end === "function") {
+                  (span as { end: () => void }).end = () => {
+                    ended = true;
+                    return end.call(span);
+                  };
+                }
                 const before = tracing?.getActiveSpan() === span;
                 await new Promise((resolve) => setTimeout(resolve, 5));
+                endedDuringCallback = ended;
                 return {
                   before,
                   afterAwait: tracing?.getActiveSpan() === span,
@@ -73,6 +83,8 @@ export class OracleWorkflow extends WorkflowEntrypoint<{}, Params> {
             return {
               ...((awaited ?? {}) as Record<string, unknown>),
               afterExit: tracing?.getActiveSpan() === undefined,
+              endedDuringCallback,
+              endedAfterSettle: ended,
             };
           });
         return {
@@ -96,6 +108,14 @@ export class OracleWorkflow extends WorkflowEntrypoint<{}, Params> {
             if (typeof exportsDefault?.fetch !== "function") return "not-a-function";
             const response = await exportsDefault.fetch(
               new Request("http://loopback.invalid/health"),
+            );
+            return { status: response.status, body: await response.json() };
+          }),
+          exportsDefaultFetchStr: await probeAsync(async () => {
+            if (typeof exportsDefault?.fetch !== "function") return "not-a-function";
+            const response = await exportsDefault.fetch(
+              "http://loopback.invalid/health",
+              { method: "GET" },
             );
             return { status: response.status, body: await response.json() };
           }),

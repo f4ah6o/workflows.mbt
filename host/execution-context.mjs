@@ -12,6 +12,17 @@ export class AbortedError extends Error {
   }
 }
 
+// Span lifecycle bookkeeping: `enterSpan` AUTO_ENDs its span and
+// `startActiveSpan` is MANUAL_END. Upstream (workerd) performs this ending
+// natively — it never calls the JS-visible `span.end()` method (verified via
+// the differential probe), so ending here also bypasses the public method to
+// stay unobservable for callers that patch or subclass `end()`.
+const finishedSpans = new WeakSet();
+
+function finishSpan(span) {
+  finishedSpans.add(span);
+}
+
 class LocalSpan {
   constructor(name) {
     this.name = name;
@@ -37,30 +48,33 @@ class LocalSpan {
     return this;
   }
 
-  end() {}
+  end() {
+    finishSpan(this);
+  }
 }
 
 function createTracing() {
   const spanStore = new AsyncLocalStorage();
   // workerd keeps the active span in the invocation's async context, so it is
-  // still the active span after an `await` inside the callback, and the span
-  // ends when a returned Promise settles.
-  const runWithSpan = (name, callback, args) => {
+  // still the active span after an `await` inside the callback.
+  const runWithSpan = (name, callback, args, autoEnd) => {
     const span = new LocalSpan(name);
     const result = spanStore.run(span, () => callback(span, ...args));
-    if (result != null && typeof result.then === "function") {
-      return Promise.resolve(result).finally(() => span.end());
+    if (autoEnd) {
+      if (result != null && typeof result.then === "function") {
+        return Promise.resolve(result).finally(() => finishSpan(span));
+      }
+      finishSpan(span);
     }
-    span.end();
     return result;
   };
   return {
     Span: LocalSpan,
     enterSpan(name, callback, ...args) {
-      return runWithSpan(name, callback, args);
+      return runWithSpan(name, callback, args, true);
     },
     startActiveSpan(name, callback, ...args) {
-      return runWithSpan(name, callback, args);
+      return runWithSpan(name, callback, args, false);
     },
     startSpan(name) {
       return new LocalSpan(name);

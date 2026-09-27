@@ -550,12 +550,23 @@ export class WorkflowRuntime {
       get(obj, prop) {
         const value = Reflect.get(obj, prop);
         if (typeof value !== "function") return value;
-        return (arg, ...rest) =>
+        if (prop === "fetch") {
+          // Fetcher.fetch(input, init) — workerd normalizes input+init into a
+          // Request before invoking the handler as (request, env, ctx).
+          return (input, init) =>
+            Reflect.apply(value, obj, [
+              new Request(input, init),
+              runtime.env(),
+              runtime.workflowExecutionContext(),
+            ]);
+        }
+        // Other handler members take their public arguments followed by the
+        // injected (env, ctx) pair.
+        return (...args) =>
           Reflect.apply(value, obj, [
-            arg,
+            ...args,
             runtime.env(),
             runtime.workflowExecutionContext(),
-            ...rest,
           ]);
       },
     });

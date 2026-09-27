@@ -85,13 +85,71 @@ export interface CloudflareAccessContext {
   getIdentity(): Promise<unknown>;
 }
 
+// Loopback type surface for `ExecutionContext.exports`, equivalent to
+// upstream `Cloudflare.Exports` (which maps `GlobalProps.mainModule` through
+// `LoopbackForExport`). Populate `Cloudflare.GlobalProps.mainModule` via
+// declaration merging — the same role the wrangler-generated
+// `worker-configuration.d.ts` plays upstream:
+//
+//   declare namespace Cloudflare {
+//     interface GlobalProps {
+//       mainModule: typeof import("./index");
+//     }
+//   }
+//
+// Entries typed as a `WorkflowEntrypoint` subclass resolve to a `Workflow`
+// binding; an `ExportedHandler`-shaped entry resolves to a `ServiceStub`.
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace Cloudflare {
+    interface GlobalProps {}
+  }
+}
+
+type MainModule = Cloudflare.GlobalProps extends { mainModule: infer M }
+  ? M
+  : {};
+
+export interface ExportedHandlerFetchHandler<Env = unknown> {
+  (request: Request, env: Env, ctx: ExecutionContext):
+    | Response
+    | Promise<Response>;
+}
+
+export interface ExportedHandler<Env = unknown> {
+  fetch?: ExportedHandlerFetchHandler<Env>;
+  scheduled?(controller: unknown, env: Env, ctx: ExecutionContext): unknown;
+  queue?(batch: unknown, env: Env, ctx: ExecutionContext): unknown;
+  tail?(events: unknown, env: Env, ctx: ExecutionContext): unknown;
+  trace?(traces: unknown, env: Env, ctx: ExecutionContext): unknown;
+  test?(controller: unknown, env: Env, ctx: ExecutionContext): unknown;
+}
+
+// Fetcher-compatible loopback service stub: the public call signature drops
+// the handler's trailing (env, ctx) pair and accepts `RequestInfo | URL` +
+// `RequestInit`, which the runtime normalizes into a `Request`.
+export interface ServiceStub {
+  fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+}
+
+export type LoopbackForExport<T> =
+  T extends new (...args: any[]) => WorkflowEntrypoint<any, infer Params>
+    ? Workflow<Params>
+    : T extends ExportedHandler<any>
+      ? ServiceStub
+      : undefined;
+
+export type Exports = {
+  [K in keyof MainModule]: LoopbackForExport<MainModule[K]>;
+};
+
 // Mirrors the pinned Cloudflare ExecutionContext surface (workerd
 // v1.20260925.2). `props`, `exports`, and `tracing` are always present;
 // `cache`/`access` are optional upstream and remain undefined locally.
 export interface ExecutionContext<Props = unknown> {
   waitUntil(promise: Promise<unknown>): void;
   passThroughOnException(): void;
-  readonly exports: Record<string, unknown>;
+  readonly exports: Exports;
   readonly props: Props;
   cache?: CacheContext;
   readonly access?: CloudflareAccessContext;

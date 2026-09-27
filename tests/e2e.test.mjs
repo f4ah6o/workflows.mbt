@@ -1491,7 +1491,10 @@ test("default Worker preserves multiple Set-Cookie response headers", async (t) 
 
   const loopback = await fetch(`http://127.0.0.1:${address.port}/loopback`);
   assert.equal(loopback.status, 200);
-  assert.equal(await loopback.text(), "loopback:200:cookies");
+  assert.equal(
+    await loopback.text(),
+    "loopback:200:cookies|str:200:cookies",
+  );
 });
 
 

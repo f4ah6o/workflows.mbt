@@ -264,23 +264,35 @@ Implemented on 2026-09-27:
   `waitUntil()` (registered with the runtime's background-task set and drained
   by `runtime.close()` before SQLite closes — the returned result never waits
   on them), `passThroughOnException()` (no-op), `props`/`exports` (objects;
-  `exports.default` is a loopback service stub — its methods are invoked with
-  env/ctx injected, matching upstream `LoopbackForExport` for the default
-  handler), `tracing` (no-op `Span`; `enterSpan`/`startActiveSpan` keep the
-  span active across `await` via `AsyncLocalStorage` and end it when the
-  callback's Promise settles), `abort()` (terminates the Workflow invocation's
-  instance and unwinds `run()`), and `cache`/`access` present as `undefined`
-  (optional upstream). `runInstance`, `runRollbackInstance`, and the default
-  Worker `fetch` handler receive it. E2E: `entrypoint-ctx` asserts
-  presence/typeofs, `waitUntil` delivery, and span-across-await from
-  unmodified source; `wait-until-ctx` asserts a delayed `waitUntil`
-  continuation still runs to completion before `runtime.close()` resolves;
-  the `/loopback` route verifies `ctx.exports.default.fetch` calls through
-  with env/ctx injected. The `entrypoint-ctx` differential probe reports the
-  full surface — including `exports` loopback fetch behavior and
-  span-across-await — and matches upstream exactly under `wrangler dev`
-  (upstream does not expose WorkflowEntrypoint class exports on `ctx.exports`
-  there, so none are fabricated locally). The
+  `exports.default` is a loopback service stub — `fetch(input, init?)`
+  normalizes `RequestInfo | URL` + `RequestInit` into a `Request` before
+  invoking the handler as `(request, env, ctx)`, and other members receive
+  their public args followed by injected env/ctx, matching upstream
+  `LoopbackForExport`/`Fetcher` semantics for the default handler), `tracing`
+  (no-op `Span`; `enterSpan`/`startActiveSpan` keep the span active across
+  `await` via `AsyncLocalStorage`; `enterSpan` AUTO_ENDs via internal
+  bookkeeping while `startActiveSpan` is MANUAL_END — neither invokes the
+  public `span.end()`, matching probe-verified workerd behavior), `abort()`
+  (terminates the Workflow invocation's instance and unwinds `run()`), and
+  `cache`/`access` present as `undefined` (optional upstream). `runInstance`,
+  `runRollbackInstance`, and the default Worker `fetch` handler receive it.
+  `ExecutionContext.exports` is typed by a module-aware `Exports` mapped type
+  driven by `Cloudflare.GlobalProps.mainModule` (the wrangler-generated
+  augmentation point): `WorkflowEntrypoint` subclass exports resolve to
+  `Workflow<Params>` bindings and `ExportedHandler`-shaped exports to a
+  `ServiceStub` (`Fetcher`-compatible `fetch(input, init?)`), so valid
+  Cloudflare source compiles against the shim without casts — exercised by the
+  `compat:typecheck` fixture. E2E: `entrypoint-ctx` asserts presence/typeofs,
+  `waitUntil` delivery, and span-across-await from unmodified source;
+  `wait-until-ctx` asserts a delayed `waitUntil` continuation still runs to
+  completion before `runtime.close()` resolves; the `/loopback` route verifies
+  `ctx.exports.default.fetch` for both `Request` and string+`init` inputs.
+  The `entrypoint-ctx` differential probe reports the full surface —
+  including `exports` loopback fetch behavior (Request and string+init
+  inputs), span-across-await, and span end semantics — and matches upstream
+  exactly under `wrangler dev` (upstream does not expose WorkflowEntrypoint
+  class exports on `ctx.exports` there at runtime, so none are fabricated
+  locally; the type surface still resolves them for source compat). The
   pinned oracle now also verifies the local host/shim classes implement every
   tracked upstream member — `ExecutionContext` included (`localSurface` in
   `compat-results/drift-*.json`), so a tracked member cannot silently lose its
@@ -297,9 +309,10 @@ Validation results (2026-09-27, this checkout):
 - `npm run test`: PASS — moon check PASS, moon JS kernel build PASS, moon
   tests PASS, host tests PASS, durable process E2E PASS (39/39), re-run after
   the ExecutionContext surface expansion.
-- `npm run compat:pinned`: PASS — contract check `pass: true` with empty drift;
-  differential `pass: true` with zero differences across six probes including
-  the new `entrypoint-ctx`.
+- `npm run compat:pinned`: PASS — `compat:typecheck` (new tsc fixture) PASS,
+  contract check `pass: true` with empty drift; differential `pass: true`
+  with zero differences across six probes including the expanded
+  `entrypoint-ctx` (loopback fetch overloads + span end semantics).
 - `npm run compat:latest`: PASS — required because the `entrypoint-ctx` probe
   was added to the differential catalog; both modes verified separately.
 

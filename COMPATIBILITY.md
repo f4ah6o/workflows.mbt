@@ -22,10 +22,14 @@ loading, Web APIs, callback invocation, and narrow host bridges.
 - [x] `this.ctx` — pinned `ExecutionContext` surface (`waitUntil`,
   `passThroughOnException`, `props`, `exports`, `tracing`, `abort`;
   `cache`/`access` remain undefined), verified against the oracle
-- [x] `ctx.exports.default` is a loopback service stub (methods invoked with
-  env/ctx injected), matching upstream workerd behavior
+- [x] `ctx.exports.default` is a loopback service stub (`fetch(input, init)`
+  normalizes to `Request`; other methods take public args + injected env/ctx),
+  matching upstream `Fetcher` semantics; typed via a module-aware `Exports`
+  mapped type driven by `Cloudflare.GlobalProps.mainModule` (the
+  wrangler-generated augmentation point)
 - [x] `ctx.tracing` spans propagate via async context (`getActiveSpan()` holds
-  across `await`, ends when the callback's Promise settles)
+  across `await`); `enterSpan` AUTO_ENDs internally while `startActiveSpan` is
+  MANUAL_END — neither path calls the public `span.end()`, matching workerd
 - [x] `event.payload`
 - [x] `event.timestamp`
 - [x] `event.instanceId`
@@ -317,7 +321,8 @@ The initial differential probes are:
 - `sleep` — durable sleep behavior
 - `wait-for-event` — event delivery through `waitForEvent`
 - `rollback` — rollback ordering and terminal error behavior
-- `entrypoint-ctx` — `this.ctx` presence and method surface during `run()`
+- `entrypoint-ctx` — `this.ctx` presence, method surface, `ctx.exports`
+  loopback behavior, and span async-context/end semantics during `run()`
 
 The pinned check also verifies the local host/shim classes still implement
 every member the upstream types track (`localSurface` in the drift report), so
@@ -325,6 +330,13 @@ a tracked member cannot silently lose its local implementation. The tracked
 surfaces are `Workflow`, `WorkflowInstance`, `WorkflowInstanceCreateOptions`,
 `WorkflowInstanceSubscribeOptions`, `WorkflowStep`, `WorkflowEntrypoint`, and
 `ExecutionContext`.
+
+`compat:pinned` also runs `npm run compat:typecheck` (tsc over
+`compat/typecheck/`): a compile-time fixture that consumes the shim
+`cloudflare:workers` declarations the way source-compatible Worker code does
+— `this.ctx.exports.default.fetch(...)` and typed WorkflowEntrypoint loopback
+exports — without casts, via `Cloudflare.GlobalProps.mainModule`
+augmentation (the wrangler-generated pattern).
 
 `npm run compat:latest` is intentionally outside required PR CI. The scheduled
 `compatibility-latest` workflow resolves current upstream packages, classifies
