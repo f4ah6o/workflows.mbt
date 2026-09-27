@@ -111,6 +111,78 @@ References:
 - retain the existing response-streaming, `waitUntil`, and multi-`Set-Cookie`
   regressions
 
+
+## P1 — restore persisted ordinals for `sleepUntil()` replay
+
+### Finding
+
+Durable step ordinals are used for replay ordering, restart-from-step invalidation,
+and rollback ordering. The replay paths for `step.do()`, `step.sleep()`, and
+`step.waitForEvent()` adopt a previously persisted ordinal when an earlier
+callback was skipped during replay.
+
+`ExecutionContext.sleepUntil()` looks up the persisted step but does not call
+`adoptPersistedOrdinal(identity, existing)`.
+
+That makes `sleepUntil()` the odd path out. After replay skips nested durable
+work inside an already-completed callback, a waiting/completed `sleepUntil`
+can leave the in-memory ordinal counter behind its stored ordinal. A later newly
+created step can then receive an ordinal that is already used by the persisted
+sleep, weakening ordering assumptions used by restart/rollback logic.
+
+There is currently no `sleepUntil` E2E fixture, while the compatibility matrix
+marks both Date and Unix-millisecond `sleepUntil` forms implemented.
+
+### Acceptance
+
+- call `adoptPersistedOrdinal(identity, existing)` in the `sleepUntil()`
+  replay path, matching `sleep()` and `waitForEvent()`
+- add Date and Unix-millisecond `sleepUntil` regression coverage
+- add a replay fixture where an earlier completed callback originally created a
+  nested durable operation, then a persisted `sleepUntil` is replayed, followed
+  by a newly created step
+- assert persisted ordinals remain strictly ordered for that execution
+- verify restart-from-step and rollback ordering remain correct
+
+## P1 — expose the Cloudflare `WorkflowEntrypoint.ctx` contract
+
+### Finding
+
+The pinned upstream API snapshot already records `ctx` as a
+`WorkflowEntrypoint` member. Current Cloudflare Workers types define
+`WorkflowEntrypoint` with a protected `ctx: ExecutionContext` constructor
+property.
+
+The local shim currently discards the constructor's first argument:
+
+```js
+export class WorkflowEntrypoint {
+  constructor(_ctx, env) {
+    this.env = env ?? {};
+  }
+}
+```
+
+The runtime also instantiates Workflow classes with a bare `{}` for that
+argument. A Workflow source that uses the documented context contract through
+`this.ctx` therefore sees `undefined` locally even though the oracle knows
+the member exists.
+
+References:
+
+- https://github.com/cloudflare/workerd/blob/main/types/defines/rpc.d.ts
+- https://developers.cloudflare.com/workers/runtime-apis/context/
+
+### Acceptance
+
+- define the local Workflow entrypoint context contract explicitly
+- preserve `this.ctx` on the compatibility class
+- provide the context methods that are valid for a Workflow invocation, with
+  behavior matching the supported Cloudflare surface
+- add a source-unmodified fixture that accesses `this.ctx`
+- make the compatibility oracle verify implementation/probe evidence for tracked
+  members, not only that the upstream member still exists
+
 ## Validation
 
 Run and record:
