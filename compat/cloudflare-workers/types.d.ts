@@ -128,11 +128,28 @@ export interface ExportedHandler<Env = unknown> {
   test?(controller: unknown, env: Env, ctx: ExecutionContext): unknown;
 }
 
-// Fetcher-compatible loopback service stub: the public call signature drops
-// the handler's trailing (env, ctx) pair and accepts `RequestInfo | URL` +
-// `RequestInit`, which the runtime normalizes into a `Request`.
+// Fetcher-compatible loopback service stub. The public signatures are the
+// pinned Fetcher surface: `fetch` normalizes `RequestInfo | URL` + `RequestInit`
+// into a `Request`; `queue`/`scheduled` adapt the public call into a
+// `MessageBatch`/`ScheduledController` event delivered to the handler and
+// return the structured Fetcher result; `connect` opens an outbound socket at
+// the runtime level and never reaches the handler. Ambient members
+// (`SocketAddress`, `Socket`, `ServiceBindingQueueMessage`, …) come from
+// `@cloudflare/workers-types`.
 export interface ServiceStub {
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+  connect(
+    address: SocketAddress | string,
+    options?: SocketOptions,
+  ): Socket;
+  queue(
+    queueName: string,
+    messages: ServiceBindingQueueMessage[],
+    metadata?: MessageBatchMetadata,
+  ): Promise<FetcherQueueResult>;
+  scheduled(
+    options?: FetcherScheduledOptions,
+  ): Promise<FetcherScheduledResult>;
 }
 
 export type LoopbackForExport<T> =

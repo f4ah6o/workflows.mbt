@@ -429,17 +429,30 @@ export class CtxWorkflow extends WorkflowEntrypoint<{}, {}> {
 
 
 // Named handler-shaped export — upstream exposes it as a loopback service
-// stub; exercised via ctx.exports.HelperHandler.fetch below.
+// stub; exercised via ctx.exports.HelperHandler below.
 export const HelperHandler = {
   async fetch(request: Request) {
     return new Response(`helper:${request.method}`);
   },
+  async queue(batch: any) {
+    for (const message of batch.messages) {
+      if (message.body?.retry) message.retry({ delaySeconds: 7 });
+      else message.ack();
+    }
+  },
+  async scheduled(controller: any) {
+    controller.noRetry();
+  },
 };
 
 // workerd exposes configured Workflow classes through ctx.exports; wrangler
-// dev does not — exercised here via ctx.exports.CtxWorkflow.create/get.
-export class LoopbackCreateWorkflow extends WorkflowEntrypoint<{}, {}> {
-  async run(_event: WorkflowEvent<{}>, _step: WorkflowStep) {
+// dev does not — exercised here via ctx.exports.CtxWorkflow.create/get plus
+// the Fetcher surface on a co-exported handler.
+export class LoopbackCreateWorkflow extends WorkflowEntrypoint<
+  {},
+  { baseUrl: string }
+> {
+  async run(event: WorkflowEvent<{ baseUrl: string }>, _step: WorkflowStep) {
     const exports = this.ctx.exports as Record<string, any>;
     const created = await exports.CtxWorkflow.create({
       id: "via-exports-1",
@@ -450,10 +463,39 @@ export class LoopbackCreateWorkflow extends WorkflowEntrypoint<{}, {}> {
       "http://loopback.invalid/",
       { method: "POST" },
     );
+    const queueResult = await exports.HelperHandler.queue("queue-1", [
+      { id: "m1", timestamp: new Date(0), attempts: 1, body: { ok: true } },
+      { id: "m2", timestamp: new Date(0), attempts: 2, body: { retry: true } },
+    ]);
+    const scheduledResult = await exports.HelperHandler.scheduled({
+      cron: "*/5 * * * *",
+      scheduledTime: new Date(1000),
+    });
+    // Fetcher.connect opens a real outbound socket (never reaches the
+    // handler): issue a raw HTTP request over the socket to the counter
+    // server.
+    const { hostname, port } = new URL(event.payload.baseUrl);
+    const socket = exports.HelperHandler.connect(`${hostname}:${port}`);
+    await socket.opened;
+    const writer = socket.writable.getWriter();
+    await writer.write(
+      new TextEncoder().encode("GET /via-socket HTTP/1.0\r\nHost: loopback\r\n\r\n"),
+    );
+    await writer.close();
+    const reader = socket.readable.getReader();
+    const first = await reader.read();
+    await reader.cancel();
+    await socket.close();
+    const socketHead = new TextDecoder()
+      .decode(first.value)
+      .split("\r\n")[0];
     return {
       createdId: created.id,
       fetchedId: fetched.id,
       helperBody: await helper.text(),
+      queueResult,
+      scheduledResult,
+      socketHead,
       exportsEnumerates: ["CtxWorkflow", "HelperHandler"].every((key) =>
         Object.keys(this.ctx.exports).includes(key),
       ),

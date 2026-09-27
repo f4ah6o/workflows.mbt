@@ -27,6 +27,26 @@ export class TypecheckWorkflow extends WorkflowEntrypoint<Env, Params> {
       new URL("https://example.com/health"),
     );
 
+    // Named handler export resolves to the full Fetcher service-stub surface.
+    const queueResult = await this.ctx.exports.HelperHandler.queue("queue-1", [
+      {
+        id: "m1",
+        timestamp: new Date(0),
+        attempts: 1,
+        body: { ok: true },
+      },
+    ]);
+    const scheduledResult = await this.ctx.exports.HelperHandler.scheduled({
+      cron: "*/5 * * * *",
+      scheduledTime: new Date(0),
+    });
+    const socket = this.ctx.exports.HelperHandler.connect("127.0.0.1:8080", {
+      secureTransport: "off",
+      allowHalfOpen: false,
+    });
+    await socket.opened;
+    socket.close();
+
     // WorkflowEntrypoint export resolves to a typed Workflow<Params> binding.
     const instance = await this.ctx.exports.TypecheckWorkflow.create({
       params: { url: "https://example.com" },
@@ -41,6 +61,18 @@ export class TypecheckWorkflow extends WorkflowEntrypoint<Env, Params> {
     };
   }
 }
+
+export const HelperHandler = {
+  async fetch(request: Request) {
+    return new Response(`helper:${request.method}`);
+  },
+  async queue(batch: MessageBatch) {
+    for (const message of batch.messages) message.ack();
+  },
+  async scheduled(controller: ScheduledController) {
+    controller.noRetry();
+  },
+};
 
 export default {
   async fetch(request: Request, _env: Env, _ctx: ExecutionContext) {

@@ -25,9 +25,16 @@ loading, Web APIs, callback invocation, and narrow host bridges.
 - [x] `ctx.exports` loopback surface: every supported top-level export is an
   ordinary enumerable own property (workerd installs `ctxExports` via
   `v8Set`): `default` and other `ExportedHandler`-shaped exports are service
-  stubs (`fetch(input, init)` normalizes to `Request`; other methods take
-  public args + injected env/ctx) matching upstream `Fetcher` semantics, and
-  every configured Workflow class resolves to a `Workflow` binding under its
+  stubs implementing the full upstream `Fetcher` contract —
+  `fetch(input, init)` normalizes to `Request`; `queue(queueName, messages,
+  metadata?)` delivers a `MessageBatch` (`ack`/`retry`/`ackAll`/`retryAll`)
+  and resolves the `FetcherQueueResult` (`outcome`, `ackAll`, `retryBatch`,
+  `explicitAcks`, `retryMessages`) the handler produced;
+  `scheduled(options?)` delivers a `ScheduledController` and resolves
+  `FetcherScheduledResult`; `connect(address, options)` opens an outbound
+  TCP/TLS socket at the runtime level (never delivered to the handler);
+  other methods take public args + injected env/ctx. Every configured
+  Workflow class resolves to a `Workflow` binding under its
   export name (workerd `Server: configured Workflow is exposed through
   ctx.exports`). `wrangler dev` does not implement any of this — a known
   dev/oracle limitation covered by local e2e, not matched. Gap:

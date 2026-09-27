@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WorkflowBinding, WorkflowInstanceHandle } from "./binding.mjs";
+import { connectSocket } from "./socket.mjs";
 import { loadProjectConfig } from "./config.mjs";
 import { matchesCron } from "./cron.mjs";
 import { parseDuration, parseSleepUntil } from "./duration.mjs";
@@ -545,9 +546,30 @@ export class WorkflowRuntime {
   // Workflow bindings (see workflowExports).
   loopbackHandler(target) {
     const runtime = this;
+    const handlerEnvAndCtx = () => [
+      runtime.env(),
+      runtime.workflowExecutionContext(),
+    ];
     return new Proxy(target, {
       get(obj, prop) {
         const value = Reflect.get(obj, prop);
+        // Fetcher.connect opens an outbound socket through the runtime; it is
+        // never delivered to the handler object.
+        if (prop === "connect") {
+          return (address, options) => connectSocket(address, options);
+        }
+        // Fetcher.queue/scheduled adapt the public call into the
+        // MessageBatch/ScheduledController event shape and return the
+        // structured Fetcher result. They exist on the stub whether or not
+        // the handler implements them — calling through without a handler
+        // member raises a TypeError, matching upstream dispatch failure.
+        if (prop === "queue") {
+          return (queueName, messages, metadata) =>
+            runtime.runQueueBatch(obj, value, queueName, messages, metadata);
+        }
+        if (prop === "scheduled") {
+          return (options) => runtime.runScheduledLoopback(obj, value, options);
+        }
         if (typeof value !== "function") return value;
         if (prop === "fetch") {
           // Fetcher.fetch(input, init) — workerd normalizes input+init into a
@@ -555,20 +577,85 @@ export class WorkflowRuntime {
           return (input, init) =>
             Reflect.apply(value, obj, [
               new Request(input, init),
-              runtime.env(),
-              runtime.workflowExecutionContext(),
+              ...handlerEnvAndCtx(),
             ]);
         }
-        // Other handler members take their public arguments followed by the
+        // Any other handler member takes its public arguments followed by the
         // injected (env, ctx) pair.
         return (...args) =>
-          Reflect.apply(value, obj, [
-            ...args,
-            runtime.env(),
-            runtime.workflowExecutionContext(),
-          ]);
+          Reflect.apply(value, obj, [...args, ...handlerEnvAndCtx()]);
       },
     });
+  }
+
+  runQueueBatch(target, handler, queueName, messages, metadata) {
+    const result = {
+      outcome: "ok",
+      ackAll: false,
+      retryBatch: { retry: false },
+      explicitAcks: [],
+      retryMessages: [],
+    };
+    const batch = {
+      queue: queueName,
+      metadata,
+      ackAll() {
+        result.ackAll = true;
+      },
+      retryAll(options) {
+        result.retryBatch = { retry: true, delaySeconds: options?.delaySeconds };
+      },
+      messages: (messages ?? []).map((message) => ({
+        id: message.id,
+        timestamp: message.timestamp,
+        attempts: message.attempts,
+        body:
+          message.body !== undefined
+            ? message.body
+            : JSON.parse(new TextDecoder().decode(message.serializedBody)),
+        ack() {
+          result.explicitAcks.push(message.id);
+        },
+        retry(options) {
+          result.retryMessages.push({
+            msgId: message.id,
+            delaySeconds: options?.delaySeconds,
+          });
+        },
+      })),
+    };
+    return Promise.resolve(
+      Reflect.apply(handler, target, [
+        batch,
+        this.env(),
+        this.workflowExecutionContext(),
+      ]),
+    ).then(() => result);
+  }
+
+  runScheduledLoopback(target, handler, options) {
+    let noRetry = false;
+    const scheduledTime = options?.scheduledTime ?? new Date();
+    const controller = {
+      scheduledTime:
+        typeof scheduledTime === "number"
+          ? scheduledTime
+          : scheduledTime.getTime(),
+      cron: options?.cron ?? "",
+      noRetry() {
+        noRetry = true;
+      },
+    };
+    return Promise.resolve(
+      Reflect.apply(handler, target, [
+        controller,
+        this.env(),
+        this.workflowExecutionContext(),
+      ]),
+    ).then(
+      () => ({ outcome: "ok", noRetry }),
+      () => ({ outcome: "exception", noRetry }),
+    );
   }
 
   workflowExports() {

@@ -264,11 +264,20 @@ Implemented on 2026-09-27:
   `waitUntil()` (registered with the runtime's background-task set and drained
   by `runtime.close()` before SQLite closes — the returned result never waits
   on them), `passThroughOnException()` (no-op), `props`/`exports` (objects;
-  `exports.default` is a loopback service stub — `fetch(input, init?)`
-  normalizes `RequestInfo | URL` + `RequestInit` into a `Request` before
-  invoking the handler as `(request, env, ctx)`, and other members receive
-  their public args followed by injected env/ctx, matching upstream
-  `LoopbackForExport`/`Fetcher` semantics for the default handler), `tracing`
+  `exports.default` is a loopback service stub implementing the full upstream
+  `Fetcher` contract: `fetch(input, init?)` normalizes `RequestInfo | URL` +
+  `RequestInit` into a `Request`; `queue(queueName, messages, metadata?)`
+  adapts `ServiceBindingQueueMessage[]` into a `MessageBatch`
+  (`ack`/`retry`/`ackAll`/`retryAll`) and resolves the `FetcherQueueResult`
+  (`outcome`, `ackAll`, `retryBatch`, `explicitAcks`, `retryMessages`) the
+  handler produced; `scheduled(options?)` delivers a `ScheduledController`
+  and resolves `FetcherScheduledResult` (`outcome`/`noRetry`, with a thrown
+  error reported as `outcome: "exception"`); `connect(address, options?)`
+  opens an outbound TCP/TLS socket (`Socket` shape: `readable`/`writable`
+  web streams, `opened`/`closed` promises, `startTls()`) at the runtime
+  level and is never delivered to the handler; other members receive their
+  public args followed by injected env/ctx, matching upstream
+  `LoopbackForExport`/`Fetcher` semantics), `tracing`
   (no-op `Span`; `enterSpan`/`startActiveSpan` keep the span active across
   `await` via `AsyncLocalStorage`; `enterSpan` AUTO_ENDs via internal
   bookkeeping while `startActiveSpan` is MANUAL_END — neither invokes the
@@ -280,7 +289,8 @@ Implemented on 2026-09-27:
   driven by `Cloudflare.GlobalProps.mainModule` (the wrangler-generated
   augmentation point): `WorkflowEntrypoint` subclass exports resolve to
   `Workflow<Params>` bindings and `ExportedHandler`-shaped exports to a
-  `ServiceStub` (`Fetcher`-compatible `fetch(input, init?)`), so valid
+  `ServiceStub` carrying the full `Fetcher` surface (`fetch`/`connect`/
+  `queue`/`scheduled` against ambient `@cloudflare/workers-types` types), so valid
   Cloudflare source compiles against the shim without casts — exercised by the
   `compat:typecheck` fixture. E2E: `entrypoint-ctx` asserts presence/typeofs,
   `waitUntil` delivery, and span-across-await from unmodified source;
@@ -301,8 +311,10 @@ Implemented on 2026-09-27:
   local service-binding/actor backing). `wrangler dev` implements none of
   this, so the named-export surface is a documented dev/oracle limitation
   covered by the `loopback-create` e2e (which exercises
-  `ctx.exports.CtxWorkflow.create/get` and `ctx.exports.HelperHandler.fetch`
-  plus enumerability) instead of the differential probe. The
+  `ctx.exports.CtxWorkflow.create/get`, `ctx.exports.HelperHandler.fetch`,
+  and the `queue`/`scheduled`/`connect` Fetcher methods including a raw HTTP
+  request over the opened socket, plus enumerability) instead of the
+  differential probe. The
   pinned oracle now also verifies the local host/shim classes implement every
   tracked upstream member — `ExecutionContext` included (`localSurface` in
   `compat-results/drift-*.json`), so a tracked member cannot silently lose its
