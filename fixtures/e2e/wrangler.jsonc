@@ -86,6 +86,11 @@
       "class_name": "CtxWorkflow"
     },
     {
+      "name": "wait-until-ctx",
+      "binding": "WAIT_UNTIL_CTX",
+      "class_name": "WaitUntilTeardownWorkflow"
+    },
+    {
       "name": "retained",
       "binding": "RETAINED",
       "class_name": "DuplicateWorkflow",

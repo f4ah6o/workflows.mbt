@@ -408,8 +408,27 @@ export class CtxWorkflow extends WorkflowEntrypoint<{}, {}> {
       hasCtx: this.ctx != null,
       waitUntil: typeof this.ctx.waitUntil,
       passThroughOnException: typeof this.ctx.passThroughOnException,
+      abort: typeof this.ctx.abort,
+      props: typeof this.ctx.props,
+      exports: typeof this.ctx.exports,
+      tracing: typeof this.ctx.tracing,
       waited,
     };
+  }
+}
+
+
+export class WaitUntilTeardownWorkflow extends WorkflowEntrypoint<
+  {},
+  BaseParams
+> {
+  async run(event: WorkflowEvent<BaseParams>, _step: WorkflowStep) {
+    this.ctx.waitUntil(
+      new Promise((resolve) => setTimeout(resolve, 80)).then(async () => {
+        await fetch(`${event.payload.baseUrl}/wait-until`, { method: "POST" });
+      }),
+    );
+    return "done";
   }
 }
 

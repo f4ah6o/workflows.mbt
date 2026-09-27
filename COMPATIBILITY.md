@@ -19,7 +19,9 @@ loading, Web APIs, callback invocation, and narrow host bridges.
 
 - [x] `WorkflowEntrypoint.run(event, step)`
 - [x] `this.env` injection
-- [x] `this.ctx` execution context (`waitUntil`, `passThroughOnException`)
+- [x] `this.ctx` — pinned `ExecutionContext` surface (`waitUntil`,
+  `passThroughOnException`, `props`, `exports`, `tracing`, `abort`;
+  `cache`/`access` remain undefined), verified against the oracle
 - [x] `event.payload`
 - [x] `event.timestamp`
 - [x] `event.instanceId`
@@ -203,6 +205,7 @@ completion.
 - [x] native Node Web APIs including `fetch`, `Request`, `Response`, URL
 - [x] default Worker `fetch(request, env, ctx)` host
 - [x] `ctx.waitUntil()` returns the HTTP response without awaiting background work
+- [x] `waitUntil()` tasks drain before runtime/host teardown
 - [x] streamed Worker `Response.body` is forwarded incrementally with backpressure
 - [x] inbound `Request.body` is a `ReadableStream` (not pre-buffered) for non-GET/HEAD requests
 - [x] multiple `Set-Cookie` response headers are preserved as separate header values
@@ -314,7 +317,10 @@ The initial differential probes are:
 
 The pinned check also verifies the local host/shim classes still implement
 every member the upstream types track (`localSurface` in the drift report), so
-a tracked member cannot silently lose its local implementation.
+a tracked member cannot silently lose its local implementation. The tracked
+surfaces are `Workflow`, `WorkflowInstance`, `WorkflowInstanceCreateOptions`,
+`WorkflowInstanceSubscribeOptions`, `WorkflowStep`, `WorkflowEntrypoint`, and
+`ExecutionContext`.
 
 `npm run compat:latest` is intentionally outside required PR CI. The scheduled
 `compatibility-latest` workflow resolves current upstream packages, classifies

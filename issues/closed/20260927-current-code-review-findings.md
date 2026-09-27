@@ -259,15 +259,24 @@ Implemented on 2026-09-27:
   persisted ordinal order `outer, nested, until-date, until-ms, after-sleep` is
   strictly 1..5, and restart-from-step leaves it unchanged.
 - `WorkflowEntrypoint.ctx`: the `cloudflare:workers` shim stores
-  `this.ctx`/`this.env`; the local contract (`WorkflowExecutionContext`) is
-  `waitUntil()` (tracked as a runtime background task) and
-  `passThroughOnException()` (no-op, matching the graceful Workflow surface).
-  `runInstance`, `runRollbackInstance`, and the default Worker `fetch` handler
-  receive it. E2E: `entrypoint-ctx` fixture asserts presence, typeofs, and
-  `waitUntil` delivery from unmodified source. The pinned oracle now also
-  verifies the local host/shim classes implement every tracked upstream member
-  (`localSurface` in `compat-results/drift-*.json`), so a tracked member cannot
-  silently lose its implementation.
+  `this.ctx`/`this.env`; the local `WorkerExecutionContext`
+  (`host/execution-context.mjs`) models the pinned `ExecutionContext` surface:
+  `waitUntil()` (registered with the runtime's background-task set and drained
+  by `runtime.close()` before SQLite closes — the returned result never waits
+  on them), `passThroughOnException()` (no-op), `props`/`exports` (objects;
+  `exports` carries the module `default`), `tracing` (no-op `Span` + active-span
+  tracking), `abort()` (terminates the Workflow invocation's instance and
+  unwinds `run()`), and `cache`/`access` present as `undefined` (optional
+  upstream). `runInstance`, `runRollbackInstance`, and the default Worker
+  `fetch` handler receive it. E2E: `entrypoint-ctx` asserts presence/typeofs
+  and `waitUntil` delivery from unmodified source; `wait-until-ctx` asserts a
+  delayed `waitUntil` continuation still runs to completion before
+  `runtime.close()` resolves. The `entrypoint-ctx` differential probe reports
+  the full surface and matches upstream exactly under `wrangler dev`. The
+  pinned oracle now also verifies the local host/shim classes implement every
+  tracked upstream member — `ExecutionContext` included (`localSurface` in
+  `compat-results/drift-*.json`), so a tracked member cannot silently lose its
+  implementation.
 - Cron weekday semantics: `host/cron.mjs` interprets numeric weekdays as
   Cloudflare's `1=SUN..7=SAT` (converted to JS `getUTCDay()` numbering via
   `n - 1`); numeric `0` is rejected as an out-of-range value rather than
@@ -278,7 +287,7 @@ Implemented on 2026-09-27:
 Validation results (2026-09-27, this checkout):
 
 - `npm run test`: PASS — moon check PASS, moon JS kernel build PASS, moon
-  tests PASS, host tests PASS, durable process E2E PASS (38/38).
+  tests PASS, host tests PASS, durable process E2E PASS (39/39).
 - `npm run compat:pinned`: PASS — contract check `pass: true` with empty drift;
   differential `pass: true` with zero differences across six probes including
   the new `entrypoint-ctx`.

@@ -1601,9 +1601,34 @@ test("WorkflowEntrypoint exposes the ctx contract during run", async (t) => {
     hasCtx: true,
     waitUntil: "function",
     passThroughOnException: "function",
+    abort: "function",
+    props: "object",
+    exports: "object",
+    tracing: "object",
     waited: true,
   });
   await poll(() => runtime.backgroundTasks.size === 0);
+});
+
+
+test("ctx.waitUntil tasks drain before runtime close", async (t) => {
+  const counter = await startCounterServer();
+  t.after(() => counter.server.close());
+  const paths = tempRuntimePaths("workflows-mbt-wait-until-");
+  const runtime = await openRuntime(e2eConfig, paths);
+
+  const instance = await runtime.trigger("wait-until-ctx", {
+    id: "wait-until-1",
+    params: { baseUrl: counter.baseUrl },
+  });
+  const status = runtime.instanceStatus(instance.id, "wait-until-ctx");
+  assert.equal(status.status, "complete");
+  assert.equal(status.output, "done");
+
+  // close() must let the 80ms delayed continuation run before storage closes,
+  // without the returned workflow result having waited on it.
+  await runtime.close();
+  assert.equal(counter.counts.get("/wait-until"), 1);
 });
 
 

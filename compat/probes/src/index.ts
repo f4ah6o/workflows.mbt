@@ -32,10 +32,39 @@ export class OracleWorkflow extends WorkflowEntrypoint<{}, Params> {
         return { type: received.type, payload: received.payload };
       }
       case "entrypoint-ctx": {
+        const ctx = this.ctx as unknown as Record<string, unknown> | undefined;
+        const tracing = ctx?.tracing as Record<string, unknown> | undefined;
+        const probe = (fn: () => unknown): unknown => {
+          try {
+            return fn();
+          } catch (error) {
+            return `throws:${(error as Error).name}`;
+          }
+        };
         return {
-          hasCtx: this.ctx != null,
-          waitUntil: typeof this.ctx?.waitUntil,
-          passThroughOnException: typeof this.ctx?.passThroughOnException,
+          hasCtx: ctx != null,
+          waitUntil: typeof ctx?.waitUntil,
+          passThroughOnException: typeof ctx?.passThroughOnException,
+          abort: typeof ctx?.abort,
+          props: typeof ctx?.props,
+          propsValue: probe(() => JSON.stringify(ctx?.props ?? null)),
+          exports: typeof ctx?.exports,
+          exportsKeys: probe(() =>
+            ctx?.exports == null
+              ? null
+              : Object.keys(ctx.exports)
+                  .filter((key) => !key.startsWith("__INTERNAL_"))
+                  .sort(),
+          ),
+          tracing: typeof tracing,
+          tracingSpan: typeof tracing?.Span,
+          tracingActiveSpan: probe(() =>
+            typeof tracing?.getActiveSpan === "function"
+              ? (tracing.getActiveSpan as () => unknown)() === undefined
+              : "not-a-function",
+          ),
+          cache: typeof ctx?.cache,
+          access: typeof ctx?.access,
         };
       }
       case "rollback": {

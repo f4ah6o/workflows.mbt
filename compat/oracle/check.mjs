@@ -87,6 +87,7 @@ function extractApiSurface(text) {
     WorkflowInstanceSubscribeOptions: /type\s+WorkflowInstanceSubscribeOptions\b/,
     WorkflowStep: /(?:export\s+|declare\s+)?abstract\s+class\s+WorkflowStep\b/,
     WorkflowEntrypoint: /(?:export\s+|declare\s+)?abstract\s+class\s+WorkflowEntrypoint\b/,
+    ExecutionContext: /interface\s+ExecutionContext\b/,
   };
   const blocks = Object.fromEntries(
     Object.entries(markers).map(([name, marker]) => [name, extractBlock(text, marker)]),
@@ -108,6 +109,7 @@ function extractApiSurface(text) {
       WorkflowInstanceSubscribeOptions: topLevelNames(blocks.WorkflowInstanceSubscribeOptions),
       WorkflowStep: topLevelNames(blocks.WorkflowStep),
       WorkflowEntrypoint: topLevelNames(blocks.WorkflowEntrypoint),
+      ExecutionContext: topLevelNames(blocks.ExecutionContext),
     },
     instanceStatusValues: [...new Set([...blocks.InstanceStatus.matchAll(/\|\s*[\'"]([^\'"]+)[\'"]/g)].map((match) => match[1]))].sort(),
     eventTypes: [...new Set([...eventText.matchAll(/type:\s*[\'"]([^\'"]+)[\'"]/g)].map((match) => match[1]))].sort(),
@@ -163,6 +165,7 @@ const LOCAL_CLASS_SURFACES = {
   WorkflowInstance: ["host/binding.mjs", "WorkflowInstanceHandle"],
   WorkflowStep: ["compat/cloudflare-workers/index.mjs", "WorkflowStep"],
   WorkflowEntrypoint: ["compat/cloudflare-workers/index.mjs", "WorkflowEntrypoint"],
+  ExecutionContext: ["host/execution-context.mjs", "WorkerExecutionContext"],
 };
 
 const LOCAL_MEMBER_NOISE = new Set([

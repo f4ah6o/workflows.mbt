@@ -9,6 +9,7 @@ import {
   WorkflowInstanceDeletedExecution,
   workflowExecutionScope,
 } from "./execution-scope.mjs";
+import { WorkerExecutionContext } from "./execution-context.mjs";
 import { loadKernel } from "./kernel.mjs";
 import { bundleWorkflow, loadWorkflowModule } from "./loader.mjs";
 import {
@@ -314,7 +315,7 @@ export class WorkflowRuntime {
     if (!workflow) throw new Error(`Workflow registration disappeared: ${row.workflow_name}`);
     const WorkflowClass = this.workflowModule[workflow.className];
     const execution = new ExecutionContext(this, row);
-    const instance = new WorkflowClass(this.workflowExecutionContext(), this.env());
+    const instance = new WorkflowClass(this.workflowExecutionContext(id), this.env());
     const event = this.workflowEvent(row);
 
     this.storage.markInstanceStarted(id, JSON.parse(row.payload));
@@ -382,7 +383,7 @@ export class WorkflowRuntime {
     if (!workflow) throw new Error(`Workflow registration disappeared: ${row.workflow_name}`);
     const WorkflowClass = this.workflowModule[workflow.className];
     const execution = new ExecutionContext(this, row, { rollbackHydration: true });
-    const instance = new WorkflowClass(this.workflowExecutionContext(), this.env());
+    const instance = new WorkflowClass(this.workflowExecutionContext(id), this.env());
     const event = this.workflowEvent(row);
 
     globalThis.__WORKFLOWS_MBT_CONTEXT__ = execution;
@@ -538,14 +539,22 @@ export class WorkflowRuntime {
     this.storage.finishRollback(id, "complete", null);
   }
 
-  workflowExecutionContext() {
-    const runtime = this;
-    return {
-      waitUntil(promise) {
-        runtime.trackBackgroundTask(promise);
-      },
-      passThroughOnException() {},
-    };
+  workflowExecutionContext(instanceStorageId = null) {
+    const exports = {};
+    if (this.workflowModule && "default" in this.workflowModule) {
+      exports.default = this.workflowModule.default;
+    }
+    return new WorkerExecutionContext(this, {
+      exports,
+      onAbort: instanceStorageId == null
+        ? undefined
+        : () => {
+            const row = this.storage.getInstance(instanceStorageId);
+            if (row && !["complete", "errored", "terminated"].includes(row.status)) {
+              this.storage.setInstanceStatus(instanceStorageId, "terminated");
+            }
+          },
+    });
   }
 
   trackBackgroundTask(promise) {
@@ -585,7 +594,13 @@ export class WorkflowRuntime {
     }
   }
 
-  close() {
+  // Drains pending ctx.waitUntil() tasks before closing storage so delayed
+  // continuations still observe a live runtime. Resolves synchronously when
+  // no tasks are pending, so bare close() callers keep old behavior.
+  async close() {
+    while (this.backgroundTasks.size) {
+      await Promise.allSettled([...this.backgroundTasks]);
+    }
     this.storage.close();
   }
 }

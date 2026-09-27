@@ -43,16 +43,70 @@ export type WorkflowStepRollbackOptions<T = unknown> = {
   rollbackConfig?: WorkflowStepRollbackConfig;
 };
 
-export type WorkflowExecutionContext = {
-  waitUntil(promise: Promise<unknown>): void;
-  passThroughOnException(): void;
+export type TracingSpanStatus = {
+  code: "unset" | "ok" | "error";
+  message?: string;
 };
 
-export declare class WorkflowEntrypoint<Env = unknown, Params = unknown> {
-  protected ctx: WorkflowExecutionContext;
-  env: Env;
-  constructor(ctx: WorkflowExecutionContext, env: Env);
-  run(event: WorkflowEvent<Params>, step: WorkflowStep): Promise<unknown>;
+export declare class Span {
+  readonly isTraced: boolean;
+  setAttribute(key: string, value: boolean | number | string): this;
+  setAttributes(
+    attributes: Record<string, boolean | number | string | undefined>,
+  ): this;
+  recordException(exception: unknown): void;
+  updateName(name: string): this;
+  setStatus(status: TracingSpanStatus): this;
+  end(): void;
+}
+
+export interface Tracing {
+  enterSpan<T, A extends unknown[]>(
+    name: string,
+    callback: (span: Span, ...args: A) => T,
+    ...args: A
+  ): T;
+  startActiveSpan<T, A extends unknown[]>(
+    name: string,
+    callback: (span: Span, ...args: A) => T,
+    ...args: A
+  ): T;
+  startSpan(name: string): Span;
+  getActiveSpan(): Span | undefined;
+  Span: typeof Span;
+}
+
+export interface CacheContext {
+  purge(options: unknown): Promise<unknown>;
+}
+
+export interface CloudflareAccessContext {
+  readonly aud: string;
+  getIdentity(): Promise<unknown>;
+}
+
+// Mirrors the pinned Cloudflare ExecutionContext surface (workerd
+// v1.20260925.2). `props`, `exports`, and `tracing` are always present;
+// `cache`/`access` are optional upstream and remain undefined locally.
+export interface ExecutionContext<Props = unknown> {
+  waitUntil(promise: Promise<unknown>): void;
+  passThroughOnException(): void;
+  readonly exports: Record<string, unknown>;
+  readonly props: Props;
+  cache?: CacheContext;
+  readonly access?: CloudflareAccessContext;
+  tracing: Tracing;
+  abort(reason?: unknown): void;
+}
+
+/** @deprecated Use `ExecutionContext`; kept as an alias for earlier local code. */
+export type WorkflowExecutionContext = ExecutionContext;
+
+export declare abstract class WorkflowEntrypoint<Env = unknown, Params = unknown> {
+  protected ctx: ExecutionContext;
+  protected env: Env;
+  constructor(ctx: ExecutionContext, env: Env);
+  run(event: Readonly<WorkflowEvent<Params>>, step: WorkflowStep): Promise<unknown>;
 }
 
 export declare class WorkflowStep {
