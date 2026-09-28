@@ -46,6 +46,10 @@ but is not required to close
 
 ## P2 — persisted ReadableStream output
 
+Status: done (2026-09-28) — `step_streams`/`stream_chunks` chunked persistence,
+atomic commit with the step row, `limits.streamBytes` cap, `WorkflowStreamError`
+on uncommitted streams, restart/replay + REST octet-stream coverage in e2e.
+
 Cloudflare JavaScript Workflows support fresh unlocked
 `ReadableStream<Uint8Array>` step results.
 
@@ -60,6 +64,14 @@ Design a bounded persisted streaming contract that:
 Until then, stream step output must continue to fail explicitly.
 
 ## P2 — complete RpcSerializable audit
+
+Status: done (2026-09-28) — `Headers`/`Request`/`Response`/`Blob` added;
+reconciled with the upstream differential oracle: cyclic graphs fail the
+serialize boundary with a catchable `TypeError` (step ends `failed`, not
+retried) and error own-properties are dropped on decode with `name`
+non-enumerable. Remaining unsupported values (functions, symbols, custom
+prototypes, `WritableStream`) still fail explicitly. The complete upstream
+surface is not claimed (COMPATIBILITY.md Known differences).
 
 Compare the current Workers RPC serializable surface against the local structured
 codec.
@@ -79,6 +91,12 @@ Workflows persistence. Keep unsupported values explicit.
 
 ## P2 — timeout durability audit
 
+Status: done (2026-09-28) — `attempt-timeout` timers are written before the
+attempt runs; restart classifies expired in-flight attempts as
+`WorkflowStepTimeoutError` and stale `running` attempts as
+`WorkflowAttemptInterruptedError`; long timeouts re-arm against a wall-clock
+deadline. Covered by e2e restart tests.
+
 Current per-attempt timeout enforcement uses a host timer.
 
 Audit and, where necessary, move timeout decisions into durable state for:
@@ -94,6 +112,18 @@ The external-side-effect delivery model remains at least once.
 
 ## P2 — multi-process executor lease
 
+Status: done (2026-09-28) — `lease_owner`/`lease_expires_at` claim on
+`runInstance`, heartbeat at `leaseMs/3` that stops once a renewal fails,
+`releaseLease` in `finally`, `listRunnable` excludes live foreign leases
+(expired leases reclaimable), and durable boundaries re-check the lease and
+abort `lease-lost`. Commit-time fencing: every run-scoped commit (step
+completion, retry/timeout scheduling, rollback boundaries, timers, status
+writes, stream chunks) re-validates `lease_owner`/`lease_expires_at` inside
+its own transaction and throws `WorkflowLeaseLostError`, so a stalled
+executor cannot commit after another executor claims the instance.
+Lifecycle commands pass no lease and stay unfenced. Covered by e2e
+two-executor and fencing tests.
+
 Before claiming that multiple runtime processes can safely share one database,
 add an instance lease/claim model with:
 
@@ -106,6 +136,11 @@ add an instance lease/claim model with:
 Do not describe SQLite as multi-process executor-safe before this exists.
 
 ## P2 — storage abstraction hardening / PostgreSQL proof
+
+Status: partial (2026-09-28) — `host/storage/storage.mjs` now enumerates the
+full workflow-semantic contract (registration, instance lifecycle, leases,
+steps/attempts, atomic boundaries, timers, events, rollback, streams).
+PostgreSQL adapter remains open.
 
 Keep storage methods workflow-semantic rather than SQL-shaped.
 
@@ -125,6 +160,12 @@ SQLite-specific.
 
 ## P2 — REST completeness
 
+Status: done (2026-09-28) — `GET .../step` output endpoint (JSON /
+octet-stream / `[REDACTED]`), `GET .../subscribe` SSE with `id:` cursors and
+`?cursor=`/`?filter=`, list `?status=` + `?page=`/`?per_page=` with
+`result_info.total_count`, and a documented error-code table in
+COMPATIBILITY.md. Covered by e2e.
+
 The current facade covers core instance operations and batch create.
 
 Remaining optional Cloudflare REST transports:
@@ -139,6 +180,15 @@ bindings and CLI.
 
 ## P2 — Wrangler environment overlays
 
+Status: done (2026-09-28) — `--env <name>` selects `env.<name>` with
+Wrangler's documented inheritance: non-inheritable keys (`vars`, `secrets`,
+`workflows`, `kv_namespaces`, `d1_databases`, `r2_buckets`, `queues`,
+`services`) must be declared per environment with no top-level fallback;
+inheritable keys fall back; unknown names fail. Secret files match
+Wrangler: `.dev.vars.<env>` replaces `.dev.vars` wholesale, an applicable
+`.dev.vars` excludes all `.env` files, and `.env` files merge as
+`.env.<env>.local` > `.env.local` > `.env.<env>` > `.env`.
+
 Add named Wrangler environment support only where it affects Workflows:
 
 - `--env`
@@ -149,6 +199,11 @@ Add named Wrangler environment support only where it affects Workflows:
 Do not turn the project into a full Wrangler clone.
 
 ## P2 — Cloudflare service-binding adapters
+
+Status: done (2026-09-28) — `adapters` in `workflows.mbt.json`: KV, D1, R2
+persist under the adapters directory; queue producers `loopback`/`spool`;
+service bindings forward `fetch` to a URL. Workers AI / Durable Objects
+remain out of scope.
 
 Optional adapters for real projects that use `this.env` beyond Workflow
 bindings:
@@ -163,6 +218,8 @@ Workers AI and Durable Objects remain separate unless a concrete Workflows
 fixture requires them.
 
 ## P2 — error compatibility audit
+
+Status: done (2026-09-28) — Error surface table in COMPATIBILITY.md.
 
 Maintain a table of stable documented names/codes/shapes for:
 
@@ -182,6 +239,9 @@ Prefer clear local errors over invented Cloudflare codes when upstream behavior
 is undocumented.
 
 ## P2 — account-plan retention policy adapter
+
+Status: done (2026-09-28) — `retention.plan` (`"free"` 3d/3d, `"paid"`
+7d/7d) in `workflows.mbt.json`; no silent plan choice.
 
 Cloudflare uses account-plan defaults when neither per-instance retention nor
 Workflow `default_retention` is supplied.

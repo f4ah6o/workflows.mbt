@@ -1,0 +1,7 @@
+{
+  "adapters": {
+    "queues": {
+      "Q": "spool"
+    }
+  }
+}

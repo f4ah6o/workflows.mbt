@@ -148,6 +148,40 @@
       "name": "self-delete",
       "binding": "SELF_DELETE",
       "class_name": "SelfDeleteWorkflow"
+    },
+    {
+      "name": "stream",
+      "binding": "STREAM",
+      "class_name": "StreamWorkflow"
+    },
+    {
+      "name": "timeout",
+      "binding": "TIMEOUT",
+      "class_name": "TimeoutWorkflow"
+    },
+    {
+      "name": "bindings",
+      "binding": "BINDINGS",
+      "class_name": "BindingsWorkflow"
+    },
+    {
+      "name": "serialization-boundary",
+      "binding": "SERIALIZATION_BOUNDARY",
+      "class_name": "SerializationBoundaryWorkflow"
     }
-  ]
+  ],
+  "kv_namespaces": [
+    { "binding": "KV" }
+  ],
+  "d1_databases": [
+    { "binding": "D1DB", "database_name": "probe-d1" }
+  ],
+  "r2_buckets": [
+    { "binding": "R2B", "bucket_name": "probe-bucket" }
+  ],
+  "queues": {
+    "producers": [
+      { "binding": "Q", "queue": "probe-queue" }
+    ]
+  }
 }

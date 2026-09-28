@@ -536,6 +536,131 @@ export class WaitUntilTeardownWorkflow extends WorkflowEntrypoint<
 }
 
 
+export class StreamWorkflow extends WorkflowEntrypoint<
+  {},
+  { sleepMs: number }
+> {
+  async run(event: WorkflowEvent<{ sleepMs: number }>, step: WorkflowStep) {
+    const stream = await step.do("stream-out", async () =>
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("chunk-a\n"));
+          controller.enqueue(new TextEncoder().encode("chunk-b\n"));
+          controller.close();
+        },
+      }),
+    );
+    if (event.payload.sleepMs > 0) {
+      await step.sleep("stream-pause", event.payload.sleepMs);
+    }
+    // The returned stream is the persisted copy, so reading it here exercises
+    // the same decode path a restarted executor would hit.
+    const bytes = await new Response(stream as ReadableStream<Uint8Array>).arrayBuffer();
+    return { received: new TextDecoder().decode(bytes) };
+  }
+}
+
+
+export class TimeoutWorkflow extends WorkflowEntrypoint<{}, {}> {
+  async run(_event: WorkflowEvent<{}>, step: WorkflowStep) {
+    await step.do(
+      "long-timeout-ok",
+      { timeout: "30 days" },
+      async () => "fast",
+    );
+    return await step.do(
+      "slow-step",
+      {
+        timeout: "50 milliseconds",
+        retries: { limit: 0, delay: 1, backoff: "constant" },
+      },
+      // Never resolves: no timers are armed past the attempt timeout itself.
+      async () => await new Promise(() => {}),
+    );
+  }
+}
+
+
+export class BindingsWorkflow extends WorkflowEntrypoint<
+  { KV: any; D1DB: any; R2B: any; Q: any },
+  {}
+> {
+  async run(_event: WorkflowEvent<{}>, step: WorkflowStep) {
+    return await step.do("bindings", async () => {
+      const { KV, D1DB, R2B, Q } = this.env;
+      await KV.put("probe", "kv-value", { metadata: { tag: "t" } });
+      const kvValue = await KV.get("probe");
+      const { metadata } = await KV.getWithMetadata("probe");
+
+      await D1DB.exec("CREATE TABLE probe (v TEXT)");
+      await D1DB.prepare("INSERT INTO probe VALUES (?)").bind("d1-value").run();
+      const row = await D1DB.prepare("SELECT v FROM probe").first();
+
+      await R2B.put("probe.txt", "r2-value");
+      const object = await R2B.get("probe.txt");
+
+      // Spool mode: delivery is recorded, no handler is invoked.
+      await Q.send({ probe: 1 });
+      await Q.sendBatch([{ body: "a" }, { body: "b", contentType: "text" }]);
+
+      return {
+        kvValue,
+        kvMetadata: metadata,
+        d1Row: row,
+        r2Value: await object.text(),
+      };
+    });
+  }
+}
+
+
+export class ServiceBindingWorkflow extends WorkflowEntrypoint<
+  { SVC: any },
+  { path: string }
+> {
+  async run(event: WorkflowEvent<{ path: string }>, step: WorkflowStep) {
+    return await step.do("via-service", async () => {
+      const response = await this.env.SVC.fetch(`http://internal${event.payload.path}`);
+      return { status: response.status, body: await response.text() };
+    });
+  }
+}
+
+
+export class SerializationBoundaryWorkflow extends WorkflowEntrypoint<{}, {}> {
+  async run(_event: WorkflowEvent<{}>, step: WorkflowStep) {
+    // Upstream: cyclic step output fails the serialize boundary with a
+    // catchable TypeError and the step ends failed (not retried).
+    let cyclicError: { name: string; message: string } | null = null;
+    try {
+      await step.do("cyclic-output", async () => {
+        const cyclic: Record<string, unknown> = { name: "loop" };
+        cyclic.self = cyclic;
+        return cyclic;
+      });
+    } catch (error) {
+      cyclicError = {
+        name: (error as Error).name,
+        message: (error as Error).message,
+      };
+    }
+
+    // Upstream: error own-properties do not survive the
+    // serialize/deserialize boundary; the revived value is still an Error.
+    const revived = await step.do("error-own-props", async () => {
+      return Object.assign(new TypeError("typed"), { code: "E_OWN" });
+    });
+
+    return {
+      cyclicError,
+      revivedIsError: revived instanceof Error,
+      revivedName: (revived as Error).name,
+      revivedCode: (revived as { code?: string }).code ?? null,
+    };
+  }
+}
+
+
 export class SelfDeleteWorkflow extends WorkflowEntrypoint<
   { SELF_DELETE: any },
   BaseParams

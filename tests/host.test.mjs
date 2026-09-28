@@ -6,12 +6,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { loadProjectConfig } from "../host/config.mjs";
+import { loadLocalDevEnv } from "../host/env.mjs";
 import { connectSocket } from "../host/socket.mjs";
 import { matchesCron } from "../host/cron.mjs";
 import { parseDuration, parseSleepUntil } from "../host/duration.mjs";
 import {
   decodeDurableValue,
   encodeDurableValue,
+  normalizeDurableValue,
   SerializationError,
 } from "../host/serialization.mjs";
 
@@ -51,24 +53,118 @@ test("durable structured values round-trip with type preservation", () => {
   assert.equal(decoded.regexp.source, "workflow");
   assert.ok(decoded.error instanceof Error);
   assert.equal(decoded.error.name, "TypeError");
-  // Cloudflare's serialization drops custom own-properties on Errors.
+  // Upstream's structured-clone boundary drops error own-properties and
+  // keeps `name` non-enumerable, so a revived Error stringifies to "{}".
   assert.equal(decoded.error.code, undefined);
+  assert.equal(JSON.stringify(decoded.error), "{}");
+  assert.equal(Object.keys(decoded.error).length, 0);
   assert.equal(decoded.undef, undefined);
   assert.equal(decodeDurableValue(encodeDurableValue(undefined)), undefined);
 });
 
-test("durable structured values reject cycles, functions, and streams explicitly", () => {
-  const cyclic = {};
+test("durable structured values reject cyclic graphs like upstream", () => {
+  // The upstream serialize boundary fails cyclic step output with a
+  // catchable TypeError; acyclic repeated references still encode.
+  const cyclic = { name: "loop" };
   cyclic.self = cyclic;
-  // structuredClone reports cyclic values as TypeError upstream.
   assert.throws(() => encodeDurableValue(cyclic), TypeError);
+
+  const map = new Map();
+  map.set("self", map);
+  assert.throws(() => encodeDurableValue({ map }), TypeError);
+
+  const array = [];
+  array.push(array);
+  assert.throws(() => encodeDurableValue(array), TypeError);
+
+  // A DAG (shared but acyclic) encodes each occurrence independently.
+  const shared = { answer: 42 };
+  const decoded = decodeDurableValue(
+    encodeDurableValue({ first: shared, second: shared }),
+  );
+  assert.deepEqual(decoded.first, { answer: 42 });
+  assert.deepEqual(decoded.second, { answer: 42 });
+});
+
+test("durable structured values reject functions and streams explicitly", () => {
   assert.throws(() => encodeDurableValue({ bad() {} }), SerializationError);
+  assert.throws(
+    () => encodeDurableValue({ sym: Symbol("nope") }),
+    SerializationError,
+  );
   if (typeof ReadableStream !== "undefined") {
     assert.throws(
       () => encodeDurableValue(new ReadableStream()),
-      /ReadableStream.*not yet supported/,
+      /ReadableStream.*persist step streams through the runtime/,
     );
   }
+});
+
+test("durable structured values round-trip Headers, Request, Response, and Blob", async () => {
+  const headers = new Headers({ "x-one": "a" });
+  headers.append("set-cookie", "a=1");
+  headers.append("set-cookie", "b=2");
+  const value = {
+    headers,
+    request: new Request("https://example.test/submit?x=1", {
+      method: "POST",
+      headers: { "content-type": "text/plain" },
+      body: "payload-bytes",
+    }),
+    response: new Response("body-bytes", {
+      status: 418,
+      statusText: "teapot",
+      headers: { "x-res": "yes" },
+    }),
+    blob: new Blob(["blob-bytes"], { type: "text/plain" }),
+    sharedHeaders: headers,
+  };
+  const encoded = encodeDurableValue(
+    value,
+    "value",
+    await normalizeDurableValue(value, "value"),
+  );
+  const decoded = decodeDurableValue(encoded);
+
+  assert.ok(decoded.sharedHeaders instanceof Headers);
+  assert.deepEqual(
+    decoded.headers.get("set-cookie")?.split(", "),
+    ["a=1", "b=2"],
+  );
+  assert.ok(decoded.request instanceof Request);
+  assert.equal(decoded.request.method, "POST");
+  assert.equal(decoded.request.url, "https://example.test/submit?x=1");
+  assert.equal(await decoded.request.text(), "payload-bytes");
+  assert.ok(decoded.response instanceof Response);
+  assert.equal(decoded.response.status, 418);
+  assert.equal(await decoded.response.text(), "body-bytes");
+  assert.ok(decoded.blob instanceof Blob);
+  assert.equal(decoded.blob.type, "text/plain");
+  assert.equal(await decoded.blob.text(), "blob-bytes");
+
+  // Nested streams inside a structured result still fail loudly.
+  await assert.rejects(
+    normalizeDurableValue({ nested: new ReadableStream() }, "value"),
+    /only top-level ReadableStream<Uint8Array> step results/,
+  );
+  // Consumed bodies cannot be persisted.
+  const consumed = new Request("https://example.test", {
+    method: "POST",
+    body: "x",
+    duplex: "half",
+  });
+  await consumed.text();
+  await assert.rejects(
+    normalizeDurableValue({ consumed }, "value"),
+    /already consumed/,
+  );
+
+  // Without the async normalization pass, these composite values error
+  // explicitly rather than serializing lossy shapes.
+  assert.throws(
+    () => encodeDurableValue({ blob: new Blob(["x"]) }),
+    SerializationError,
+  );
 });
 
 test("wrangler jsonc is consumed without rewriting unknown Cloudflare fields", () => {
@@ -86,12 +182,14 @@ test("wrangler jsonc is consumed without rewriting unknown Cloudflare fields", (
         "binding": "WF",
         "class_name": "Workflow"
       }],
-      "r2_buckets": [{ "binding": "R2", "bucket_name": "ignored" }],
+      "r2_buckets": [{ "binding": "R2", "bucket_name": "assets" }],
+      "placement": { "mode": "smart" },
     }`,
   );
   const config = loadProjectConfig(path);
   assert.equal(config.workflows[0].binding, "WF");
-  assert.deepEqual(config.ignoredWranglerFields, ["r2_buckets"]);
+  assert.deepEqual(config.r2Buckets, [{ binding: "R2", bucket_name: "assets" }]);
+  assert.deepEqual(config.ignoredWranglerFields, ["placement"]);
   assert.equal(config.storagePath, join(root, ".workflows/workflows.db"));
 });
 
@@ -180,6 +278,163 @@ test("Wrangler vars and .dev.vars secrets are available to workflow env", () => 
   });
   assert.deepEqual(config.localDevEnv, { SECRET_KEY: "secret-value" });
   assert.deepEqual(config.ignoredWranglerFields, []);
+});
+
+
+test("wrangler env overlay treats non-inheritable keys per Wrangler", () => {
+  const root = mkdtempSync(join(tmpdir(), "workflows-mbt-env-overlay-"));
+  const path = join(root, "wrangler.jsonc");
+  writeFileSync(
+    path,
+    JSON.stringify({
+      name: "overlay-test",
+      main: "src/index.ts",
+      vars: { BASE: "base", SHARED: "base-value" },
+      secrets: { required: ["BASE_SECRET"] },
+      workflows: [{
+        name: "wf-base",
+        binding: "WF_BASE",
+        class_name: "Workflow",
+      }],
+      kv_namespaces: [{ binding: "KV_BASE" }],
+      env: {
+        staging: {
+          vars: { SHARED: "staging-value", STAGED: "yes" },
+          secrets: { required: ["STAGING_SECRET"] },
+          workflows: [{
+            name: "wf-staging",
+            binding: "WF_STAGING",
+            class_name: "StagingWorkflow",
+          }],
+        },
+      },
+    }),
+  );
+  writeFileSync(join(root, ".dev.vars"), 'BASE_SECRET="base"\nSHARED_SECRET="from-base"\n');
+  writeFileSync(
+    join(root, ".dev.vars.staging"),
+    'STAGING_SECRET="staged"\nSHARED_SECRET="from-staging"\n',
+  );
+
+  const config = loadProjectConfig(path, { envName: "staging" });
+  assert.equal(config.envName, "staging");
+  // vars are non-inheritable: the environment only sees its own keys.
+  assert.deepEqual(config.vars, {
+    SHARED: "staging-value",
+    STAGED: "yes",
+  });
+  assert.equal(config.workflows.length, 1);
+  assert.equal(config.workflows[0].binding, "WF_STAGING");
+  // Bindings are non-inheritable too: no top-level KV leaks into staging.
+  assert.deepEqual(config.kvNamespaces, []);
+  // secrets.required is non-inheritable; .dev.vars.staging replaces
+  // .dev.vars entirely — the generic file is not merged in.
+  assert.deepEqual(config.localDevEnv, { STAGING_SECRET: "staged" });
+
+  // An environment that does not exist fails loudly.
+  assert.throws(
+    () => loadProjectConfig(path, { envName: "production" }),
+    /no environment named "production"/,
+  );
+
+  // .dev.vars.<env> existing means only that file loads — BASE_SECRET from
+  // the generic file is not visible under the environment.
+  assert.deepEqual(loadLocalDevEnv(root, { envName: "staging" }), {
+    SHARED_SECRET: "from-staging",
+    STAGING_SECRET: "staged",
+  });
+  // Without an environment, the generic .dev.vars loads as before.
+  assert.deepEqual(loadLocalDevEnv(root), {
+    BASE_SECRET: "base",
+    SHARED_SECRET: "from-base",
+  });
+});
+
+test("wrangler env secret files: .dev.vars excludes .env, .env files merge", () => {
+  const root = mkdtempSync(join(tmpdir(), "workflows-mbt-env-dotenv-"));
+
+  // .env family merge: least specific first, most specific last.
+  writeFileSync(join(root, ".env"), 'A="base"\nB="base"\nC="base"\nD="base"\n');
+  writeFileSync(join(root, ".env.staging"), 'B="env"\nC="env"\nD="env"\n');
+  writeFileSync(join(root, ".env.local"), 'C="local"\nD="local"\n');
+  writeFileSync(join(root, ".env.staging.local"), 'D="env-local"\n');
+
+  assert.deepEqual(loadLocalDevEnv(root, { envName: "staging" }), {
+    A: "base",
+    B: "env",
+    C: "local",
+    D: "env-local",
+  });
+  assert.deepEqual(loadLocalDevEnv(root), {
+    A: "base",
+    B: "base",
+    C: "local",
+    D: "local",
+  });
+
+  // A generic .dev.vars excludes every .env file — no mixing with an
+  // environment-specific .env.
+  writeFileSync(join(root, ".dev.vars"), 'A="devvars"\nE="devvars"\n');
+  assert.deepEqual(loadLocalDevEnv(root, { envName: "staging" }), {
+    A: "devvars",
+    E: "devvars",
+  });
+
+  // An environment-specific .dev.vars replaces both .dev.vars and .env files.
+  writeFileSync(join(root, ".dev.vars.staging"), 'A="staging-devvars"\nF="s"\n');
+  assert.deepEqual(loadLocalDevEnv(root, { envName: "staging" }), {
+    A: "staging-devvars",
+    F: "s",
+  });
+});
+
+
+test("workflows.mbt.json retention adapter resolves plan and explicit durations", () => {
+  const root = mkdtempSync(join(tmpdir(), "workflows-mbt-retention-cfg-"));
+  const wranglerPath = join(root, "wrangler.jsonc");
+  writeFileSync(
+    wranglerPath,
+    JSON.stringify({
+      name: "retention-cfg",
+      main: "src/index.ts",
+      workflows: [{ name: "wf", binding: "WF", class_name: "Workflow" }],
+    }),
+  );
+
+  writeFileSync(
+    join(root, "workflows.mbt.json"),
+    JSON.stringify({ retention: { plan: "paid" } }),
+  );
+  let config = loadProjectConfig(wranglerPath);
+  assert.deepEqual(config.retentionPolicy, {
+    successRetentionMs: 7 * 86_400_000,
+    errorRetentionMs: 7 * 86_400_000,
+  });
+
+  writeFileSync(
+    join(root, "workflows.mbt.json"),
+    JSON.stringify({
+      retention: { plan: "free", success: "1 hour" },
+    }),
+  );
+  config = loadProjectConfig(wranglerPath);
+  assert.deepEqual(config.retentionPolicy, {
+    successRetentionMs: 3_600_000,
+    errorRetentionMs: 3 * 86_400_000,
+  });
+
+  writeFileSync(
+    join(root, "workflows.mbt.json"),
+    JSON.stringify({ retention: { plan: "enterprise" } }),
+  );
+  assert.throws(
+    () => loadProjectConfig(wranglerPath),
+    /retention\.plan must be one of free, paid/,
+  );
+
+  writeFileSync(join(root, "workflows.mbt.json"), "{}");
+  config = loadProjectConfig(wranglerPath);
+  assert.equal(config.retentionPolicy, null);
 });
 
 

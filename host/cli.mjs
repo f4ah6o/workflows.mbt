@@ -24,13 +24,13 @@ function parse(argv) {
 
 function usage() {
   console.error(`Usage:
-  workflows dev --config wrangler.jsonc [--host 127.0.0.1] [--port 8787] [--no-http]
+  workflows dev --config wrangler.jsonc [--env <name>] [--host 127.0.0.1] [--port 8787] [--no-http]
   workflows trigger <workflow> --params '{"name":"Alice"}' [--id <id>]
   workflows status <workflow> <instance-id>
   workflows event <workflow> <instance-id> <type> --payload '{"approved":true}'
   workflows pause|resume|terminate <workflow> <instance-id>
   workflows restart <workflow> <instance-id> [--from <name>] [--count 2] [--type do]
-Common options: --config <wrangler.jsonc> --storage <sqlite-path>`);
+Common options: --config <wrangler.jsonc> --env <name> --storage <sqlite-path>`);
 }
 
 const { positionals, flags } = parse(process.argv.slice(2));
@@ -41,8 +41,9 @@ if (!command) {
 } else {
   const runtime = await WorkflowRuntime.open({
     configPath: flags.config ?? "wrangler.jsonc",
-    storagePath: flags.storage,
-    buildDir: flags["build-dir"],
+    storagePath: flags.storage === true ? undefined : flags.storage,
+    buildDir: flags["build-dir"] === true ? undefined : flags["build-dir"],
+    envName: flags.env === true ? undefined : flags.env,
   });
   try {
     if (command === "dev") {
