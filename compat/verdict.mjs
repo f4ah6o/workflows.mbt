@@ -91,9 +91,20 @@ function phaseStatus(phase, name, summaryFields = () => ({})) {
     return "invalid";
   }
   const r = phase.result;
+  // A phase may report a well-formed failure record instead of a verdict —
+  // e.g. candidate resolution failed, or a local tool could not spawn. These
+  // are never drift: pass/fail describes verified semantics only.
   if (r.phaseStatus === "upstream-acquisition-failure") {
     phases[name] = { status: "upstream-acquisition-failure", error: r.error ?? null };
     return "acquisition-failure";
+  }
+  if (r.phaseStatus === "upstream-execution-failure") {
+    phases[name] = { status: "upstream-execution-failure", error: r.error ?? null };
+    return "execution-failure";
+  }
+  if (r.phaseStatus === "toolchain-failure" || r.phaseStatus === "local-runtime-failure") {
+    phases[name] = { status: r.phaseStatus, error: r.error ?? null };
+    return "local-failure";
   }
   phases[name] = { status: r.pass ? "pass" : "fail", ...summaryFields(r) };
   return r.pass ? "pass" : "fail";
@@ -150,6 +161,11 @@ if (oracle === "hosted" && differentialOutcome === "invalid") {
   }
   if (issues.length > 0) {
     verdict = "incomplete-evidence";
+  } else if (contractOutcome === "acquisition-failure" || differentialOutcome === "acquisition-failure" ||
+      typecheckOutcome === "acquisition-failure") {
+    verdict = "upstream-acquisition-failure";
+  } else if (differentialOutcome === "execution-failure") {
+    verdict = "upstream-execution-failure";
   } else if (differentialOutcome === "fail" &&
       (differential.result.sideErrors?.cloudflare ?? differential.result.sideErrors?.hosted ?? differential.result.phaseStatus === "upstream-execution-failure")) {
     verdict = "upstream-execution-failure";
@@ -157,6 +173,11 @@ if (oracle === "hosted" && differentialOutcome === "invalid") {
   } else if (differentialOutcome === "fail" && differential.result.sideErrors?.workflowsMbt) {
     verdict = "local-runtime-failure";
     issues.push("workflows.mbt side failed: " + differential.result.sideErrors.workflowsMbt);
+  } else if (typecheckOutcome === "local-failure" || contractOutcome === "local-failure" ||
+      differentialOutcome === "local-failure") {
+    // A local tool/harness failure is not evidence about upstream semantics —
+    // never report it as contract or semantic drift.
+    verdict = "local-runtime-failure";
   } else {
     // Coverage: a differential that ran zero or partial probes is incomplete,
     // not compatible.

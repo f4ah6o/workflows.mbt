@@ -35,7 +35,7 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resultsDirFor } from "./candidate.mjs";
@@ -122,12 +122,57 @@ function identityFor() {
   }));
 }
 
+// ---- durable state: sidecar cache over committed issue packets ----------
+// compat-results/ is ephemeral (a fresh CI checkout has none). The durable
+// truth is issues/open/<date>-<key>.md — each packet carries a machine
+// footer `<!-- drift-state:{...} -->` with the entry minus publish fields.
+// On every run we rebuild keys from those committed packets and merge any
+// the sidecar lost, so versionsSeen/resolve/recur survive across runs.
+const FOOTER_PREFIX = "<!-- drift-state:";
+function issueFileFor(problemKey) {
+  let files = [];
+  try { files = readdirSync(issuesDir); } catch {}
+  return files.find((f) => f.endsWith(`-${problemKey}.md`) || f === `${problemKey}.md`) ?? null;
+}
+function rebuildStateFromIssues() {
+  const rebuilt = {};
+  let files = [];
+  try { files = readdirSync(issuesDir); } catch {}
+  for (const f of files) {
+    if (!f.endsWith(".md")) continue;
+    const m = f.match(/(drift-[0-9a-f]{8})\.md$/);
+    if (!m) continue;
+    try {
+      const text = readFileSync(join(issuesDir, f), "utf8");
+      const idx = text.lastIndexOf(FOOTER_PREFIX);
+      if (idx < 0) continue;
+      const end = text.indexOf("-->", idx);
+      if (end < 0) continue;
+      rebuilt[m[1]] = JSON.parse(text.slice(idx + FOOTER_PREFIX.length, end).trim());
+    } catch {}
+  }
+  return rebuilt;
+}
+function stateFooterFor(stateEntry) {
+  const { github: _github, ...rest } = stateEntry;
+  return `\n${FOOTER_PREFIX}${JSON.stringify(rest)} -->\n`;
+}
+function stripFooter(text) {
+  const idx = text.lastIndexOf(FOOTER_PREFIX);
+  if (idx < 0) return text.endsWith("\n") ? text : text + "\n";
+  return text.slice(0, idx).replace(/\n+$/, "\n");
+}
+for (const [k, rebuilt] of Object.entries(rebuildStateFromIssues())) {
+  state.keys[k] ??= rebuilt;
+}
+
 const resolutions = [];
 if (!hasDrift) {
   // Resolve open keys only on complete positive evidence: an explicit
   // compatible verdict, or (pre-verdict evidence) both contract and
   // differential phases passing. Missing/malformed phases are incomplete
-  // evidence — they never resolve a record.
+  // evidence — they never resolve a record. Both open and recurred resolve:
+  // a recurrence fixed upstream is resolved evidence, not a permanent flag.
   const positiveEvidence = verdict?.verdict === "compatible"
     || (verdict == null && drift?.pass === true && differential?.pass === true);
   if (!positiveEvidence) {
@@ -135,11 +180,20 @@ if (!hasDrift) {
     process.exit(0);
   }
   for (const [key, entry] of Object.entries(state.keys)) {
-    if (entry.oracle === oracle && entry.status === "open") {
+    if (entry.oracle === oracle && (entry.status === "open" || entry.status === "recurred")) {
       entry.status = "resolved";
       entry.resolvedAt = now;
       entry.resolvedUnder = versionsTuple;
       resolutions.push(key);
+      // The durable packet must reflect resolution too — a fresh run
+      // rebuilds state from these files.
+      const issueFile = issueFileFor(key);
+      if (issueFile) {
+        const text = readFileSync(join(issuesDir, issueFile), "utf8");
+        const updated = stripFooter(text).replace(/^Status: .+$/m, "Status: resolved")
+          + stateFooterFor(entry);
+        writeFileSync(join(issuesDir, issueFile), updated);
+      }
     }
   }
   writeFileSync(statePath, JSON.stringify(state, null, 2) + "\n");
@@ -286,7 +340,7 @@ const lines = [
   "- compat-results/verdict-" + oracle + ".json (verdict)",
   "- compat-results/candidate-" + oracle + ".json (exact upstream candidate incl. real runtime graph)",
 ];
-const record = lines.join("\n") + "\n";
+const record = lines.join("\n") + stateFooterFor(entry);
 
 mkdirSync(resultsDir, { recursive: true });
 const recordPath = join(resultsDir, key + ".md");
@@ -295,9 +349,13 @@ console.log("wrote " + recordPath);
 
 // Durable repo-local destination: the issues/open convention. The same
 // packet is upserted under a dated name — a human reviews and commits it;
-// CI runs just leave it in the checkout.
+// CI runs just leave it in the checkout. The filename is stable per problem
+// identity: an existing packet is updated in place; a new one uses the
+// first-seen date, never the re-observation date.
 mkdirSync(issuesDir, { recursive: true });
-const issuePath = join(issuesDir, `${now.slice(0, 10).replaceAll("-", "")}-${key}.md`);
+const existingIssueFile = issueFileFor(key);
+const issuePath = join(issuesDir,
+  existingIssueFile ?? `${entry.firstSeen.slice(0, 10).replaceAll("-", "")}-${key}.md`);
 writeFileSync(issuePath, record);
 console.log("wrote " + issuePath);
 

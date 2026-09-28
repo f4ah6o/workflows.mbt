@@ -71,18 +71,27 @@ minimal-fix candidates, unconfirmed items, and artifact refs.
   failing probe ids only. The same root cause under a new upstream release
   appends the tuple to `versionsSeen` on the same record — it never spawns a
   second one.
-- **State**: `compat-results/drift-state.json` tracks `open` → `resolved`
-  (flipped only by complete positive evidence) → `recurred`.
+- **State**: the durable source of truth is the committed packet itself —
+  every `issues/open/<date>-<key>.md` carries a machine
+  `<!-- drift-state:{...} -->` footer (status, firstSeen, versionsSeen,
+  recurCount, resolvedAt/Under). Each run rebuilds `drift-state.json` keys
+  from those footers, so a fresh CI checkout loses nothing: the sidecar in
+  compat-results is only a cache. Status flows `open` → `resolved` (flipped
+  only by complete positive evidence; a `recurred` record resolves again)
+  → `recurred`. Resolution also flips `Status:` and the footer on the
+  committed packet.
 - **Destinations**: the packet is always written twice —
   `compat-results/drift-<key>.md` (CI artifact, 30-day retention) and
   `issues/open/<yyyymmdd>-<key>.md`, the repository's durable md-issue
-  convention (upserted in place; a human reviews and commits it, CI just
-  leaves it in the checkout). `--publish` additionally upserts a GitHub
-  issue, but only after checking `has_issues` on the repo — when Issues is
-  disabled, gh is missing, or the token lacks scope, the outcome is
-  recorded as `skipped`/`failed` in `compat-results/publish-<key>.json`; a
-  publish attempt is never reported as a notification success. Test without
-  an API via `--dry-run` or `--mock-dir <dir>`; override the issues dir via
+  convention. The issue filename is stable per problem identity: an
+  existing `*-<key>.md` is updated in place; a new file is dated by
+  first-seen, never by re-observation day. `--publish` additionally
+  upserts a GitHub issue, but only after checking `has_issues` on the repo
+  — when Issues is disabled, gh is missing, or the token lacks scope, the
+  outcome is recorded as `skipped`/`failed` in
+  `compat-results/publish-<key>.json`; a publish attempt is never reported
+  as a notification success. Test without an API via `--dry-run` or
+  `--mock-dir <dir>`; override the issues dir via
   `--issues-dir`/`WORKFLOWS_MBT_ISSUES_DIR`.
 - **No notification spam**: one issue per problem identity. A comment is
   posted only on material change — a new observed tuple or a status

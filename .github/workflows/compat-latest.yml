@@ -82,8 +82,9 @@ jobs:
 
       # compat-results/ holds every evidence artifact: candidate manifest,
       # phase results, verdict, drift packets, publish outcomes, proposed
-      # manifest. Retention is bounded — the durable record is the drift
-      # packet (and its GitHub issue when publishing is available).
+      # manifest. Retention is bounded — but the committed issues/open/*.md
+      # packet is the durable record: its drift-state footer lets the next
+      # run rebuild versionsSeen and resolve/recur state from scratch.
       - name: Upload compatibility artifacts
         if: always()
         uses: actions/upload-artifact@v4

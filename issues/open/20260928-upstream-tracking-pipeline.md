@@ -28,14 +28,16 @@ acquisition-failure. `run-latest.mjs` orchestrates all phases under one
 
 A3 — response path (`compat/drift-record.mjs` rewritten). Dedup key hashes
 oracle + contract paths + probe ids only (problem identity); version tuples
-accumulate in `versionsSeen`. `drift-state.json` tracks open → resolved →
-recurred. Packet includes fix candidates, capability mapping, observed vs
-pinned tuples, repro, unconfirmed items. Every packet is also upserted into
-`issues/open/<yyyymmdd>-<key>.md` — the repo's durable md-issue convention —
-plus `compat-results` for CI artifacts. `--publish` checks `has_issues` and
-records skipped/failed/created/commented in `publish-<key>.json`; `--dry-run`
-and `--mock-dir` make the publisher testable without an API. Comments only on
-material change.
+accumulate in `versionsSeen`. The durable source of truth is the committed
+`issues/open/<yyyymmdd>-<key>.md` packet itself: a `<!-- drift-state:{..} -->`
+footer rebuilds `drift-state.json` on any fresh checkout (the sidecar is a
+cache), and filenames are stable per problem (first-seen date; existing file
+updated in place). Status open → resolved → recurred, with recurred also
+resolving again. Packet includes fix candidates, capability mapping, observed
+vs pinned tuples, repro, unconfirmed items. `--publish` checks `has_issues`
+and records skipped/failed/created/commented in `publish-<key>.json`;
+`--dry-run` and `--mock-dir` make the publisher testable without an API.
+Comments only on material change.
 
 A4 — verified update candidates (`compat/update-candidate.mjs`). Emits
 `proposed-manifest.json` only on a `compatible` verdict; `blocked` with

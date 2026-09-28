@@ -6,7 +6,7 @@
 
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
@@ -142,9 +142,25 @@ test("upstream acquisition/execution failure is never compatible", () => {
   const d3 = dir();
   seedPassing(d3, { overrides: { differential: { pass: false, sideErrors: { workflowsMbt: "dev server crashed" } } } });
   assert.equal(verdictFor(d3).verdict.verdict, "local-runtime-failure");
+
+  // A phase-reported acquisition failure is upstream-side even when the
+  // candidate record itself is absent from this evidence set's meaning.
+  const d4 = dir();
+  seedPassing(d4, { overrides: { typecheck: { pass: false, phaseStatus: "upstream-acquisition-failure", error: "candidate unusable" } } });
+  assert.equal(verdictFor(d4).verdict.verdict, "upstream-acquisition-failure");
   rmSync(d, { recursive: true, force: true });
   rmSync(d2, { recursive: true, force: true });
   rmSync(d3, { recursive: true, force: true });
+  rmSync(d4, { recursive: true, force: true });
+});
+
+test("a local toolchain failure is never reported as drift", () => {
+  // run-typecheck records phaseStatus:"toolchain-failure" when tsc cannot
+  // even spawn — that is a local failure, not contract drift.
+  const d = dir();
+  seedPassing(d, { overrides: { typecheck: { pass: false, phaseStatus: "toolchain-failure", error: "spawn tsc ENOENT" } } });
+  assert.equal(verdictFor(d).verdict.verdict, "local-runtime-failure");
+  rmSync(d, { recursive: true, force: true });
 });
 
 test("missing, malformed, and partial evidence is rejected", () => {
@@ -237,6 +253,32 @@ test("drift records dedup by problem identity, not version", () => {
   const state4 = read(d, "drift-state.json");
   assert.equal(state4.keys[keys1[0]].status, "recurred");
   assert.equal(state4.keys[keys1[0]].recurCount, 1);
+
+  // Second recovery: a recurred record resolves again on positive evidence.
+  seedPassing(d, { runId: "run-e" });
+  write(d, "verdict-latest.json", { oracle: "latest", verdict: "compatible", pass: true, runId: "run-e" });
+  run("compat/drift-record.mjs", ["--oracle", "latest"], d);
+  assert.equal(read(d, "drift-state.json").keys[keys1[0]].status, "resolved",
+    "a recurred record must resolve again on compatible evidence");
+  assert.match(readFileSync(join(d, "issues-open", issueFiles[0]), "utf8"), /^Status: resolved/m,
+    "the durable issue file reflects resolution");
+
+  // Cross-run durability: a fresh checkout has no drift-state.json — the
+  // committed issue packet's state footer rebuilds it. Rename to an older
+  // date first to prove a later re-observation never creates a second file.
+  const oldName = "20260101-" + issueFiles[0].replace(/^\d{8}-/, "");
+  renameSync(join(d, "issues-open", issueFiles[0]), join(d, "issues-open", oldName));
+  rmSync(join(d, "drift-state.json"));
+  driftEvidence("run-f", "4.143.0");
+  run("compat/drift-record.mjs", ["--oracle", "latest"], d);
+  assert.deepEqual(readdirSync(join(d, "issues-open")), [oldName],
+    "re-observing the same problem updates the original packet in place");
+  const state6 = read(d, "drift-state.json");
+  assert.equal(state6.keys[keys1[0]].status, "recurred",
+    "state rebuilt from the issue footer keeps resolve/recur semantics");
+  assert.equal(state6.keys[keys1[0]].recurCount, 2);
+  assert.deepEqual(state6.keys[keys1[0]].versionsSeen, ["4.142.0/1/1", "4.143.0/1/1"],
+    "versionsSeen survives the sidecar reset");
   rmSync(d, { recursive: true, force: true });
 });
 
