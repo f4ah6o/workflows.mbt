@@ -12,8 +12,8 @@ Repo: `/home/ubuntu/repos/workflows-mbt`. Node >= 22 required; the MoonBit toolc
 `node host/cli.mjs <command>` (installed consumers get a `workflows` bin).
 
 - `doctor --config <wrangler.jsonc> [--storage <path>] [--build-dir <dir>] [--json]` — staged preflight; prints `ok`/`FAIL`/`skip`/`warn` lines and `doctor: all checks passed`/`doctor: FAILED`. Exit 1 on any FAIL. Always pass `--storage`/`--build-dir` to a scratch path during testing: the storage check **creates** the sqlite file and the bundle check writes bundles under `<config-dir>/.workflows/` otherwise.
-- `dev --config <wrangler.jsonc> --port <n> [--storage <path>]` — boots HTTP on 127.0.0.1. **Prints no startup/listening output** — poll `/health` for readiness.
-- `--help`/`help` → usage on stdout, exit 0. `--version`/`version` → `<pkg.name> <pkg.version>`, exit 0. Bare invocation → usage on stderr, exit 2. Unknown commands usually crash with an uncaught stack and exit 1 (they open the runtime and resolve workflow/instance before the unknown-command fallback).
+- `dev --config <wrangler.jsonc> --port <n> [--storage <path>]` — boots HTTP on 127.0.0.1 and prints `workflows dev listening on http://<host>:<port>` once bound (`--no-http` prints a disabled line instead). Still poll `/health` for readiness.
+- `--help`/`help`/`-h` → usage on stdout, exit 0. `--version`/`version` → `<pkg.name> <pkg.version>`, exit 0. Bare invocation or an unknown command → usage on stderr, exit 2 — unknown commands are rejected before `WorkflowRuntime.open`, so they work even in a directory with no `wrangler.jsonc`.
 
 ## HTTP surface of `dev`
 
@@ -25,6 +25,6 @@ Requests first hit the Cloudflare-style REST API (`/accounts/<a>/workflows/<wf>/
 
 ## Packaging
 
-`npm pack` runs `prepack` (stages `npm-shrinkwrap.json` from `package-lock.json`, builds kernel if missing) and `postpack` (removes it). The `files` whitelist ships **everything** under `dist/ host/ compat/ fixtures/ docs/ examples/ scripts/ src/` — including gitignored local state like `.workflows/` dirs and any stray files an operator leaves there. Before inspecting a tarball, clean generated state (`rm -rf examples/*/.workflows fixtures/*/.workflows`).
+`npm pack` runs `prepack` (stages `npm-shrinkwrap.json` from `package-lock.json`, builds kernel if missing) and `postpack` (removes it). The `files` whitelist ships `dist/ host/ compat/ fixtures/ docs/ examples/ scripts/ src/` plus the manifests, with `!`-negations that keep gitignored runtime state out of the tarball (`.workflows/`, `.wrangler/`, `*.db*`, `.dev.vars*`, `.env*`, `compat-results/`); consumer-smoke asserts none of these appear in the extracted artifact. Stray *tracked-looking* files left under whitelisted dirs still ship — check `npm pack --dry-run --json` output if unsure.
 
 `npm run test:consumer` (`scripts/consumer-smoke.mjs`) is the full clean-machine journey (~1 min, needs npm registry): pack → extract → `npm ci --omit=dev` → doctor → dev → SIGKILL mid-sleep → restart → complete → `npm install <tgz>` + `workflows --version`, all on a PATH without the MoonBit toolchain.
