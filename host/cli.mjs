@@ -1,6 +1,12 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
 import { WorkflowRuntime } from "./engine.mjs";
+import { runDoctor, formatDoctorReport } from "./doctor.mjs";
 import { startWorkflowHttpServer } from "./server.mjs";
+
+const pkg = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+);
 
 function parse(argv) {
   const positionals = [];
@@ -22,20 +28,37 @@ function parse(argv) {
   return { positionals, flags };
 }
 
-function usage() {
-  console.error(`Usage:
+function usage(stream = console.error) {
+  stream(`Usage:
   workflows dev --config wrangler.jsonc [--env <name>] [--host 127.0.0.1] [--port 8787] [--no-http]
+  workflows doctor --config wrangler.jsonc [--env <name>] [--storage <sqlite-path>] [--json]
   workflows trigger <workflow> --params '{"name":"Alice"}' [--id <id>]
   workflows status <workflow> <instance-id>
   workflows event <workflow> <instance-id> <type> --payload '{"approved":true}'
   workflows pause|resume|terminate <workflow> <instance-id>
   workflows restart <workflow> <instance-id> [--from <name>] [--count 2] [--type do]
+  workflows --version | --help
 Common options: --config <wrangler.jsonc> --env <name> --storage <sqlite-path>`);
 }
 
 const { positionals, flags } = parse(process.argv.slice(2));
 const [command, workflowName, instanceId, extra] = positionals;
-if (!command) {
+
+if (flags.help === true || command === "help") {
+  usage((line) => console.log(line));
+} else if (flags.version === true || command === "version") {
+  console.log(`${pkg.name} ${pkg.version}`);
+} else if (command === "doctor") {
+  const report = await runDoctor({
+    configPath: flags.config ?? "wrangler.jsonc",
+    storagePath: flags.storage === true ? undefined : flags.storage,
+    buildDir: flags["build-dir"] === true ? undefined : flags["build-dir"],
+    envName: flags.env === true ? undefined : flags.env,
+  });
+  if (flags.json === true) console.log(JSON.stringify(report, null, 2));
+  else console.log(formatDoctorReport(report));
+  if (!report.ok) process.exitCode = 1;
+} else if (!command) {
   usage();
   process.exitCode = 2;
 } else {

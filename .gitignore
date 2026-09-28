@@ -10,3 +10,4 @@ dist/
 .env*
 compat-results/
 compat/probes/.wrangler/
+npm-shrinkwrap.json

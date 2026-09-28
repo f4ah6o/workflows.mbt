@@ -25,6 +25,43 @@ After:  workflows dev --config wrangler.jsonc
 
 The workflow source itself should not need a migration rewrite.
 
+## Install
+
+The runtime ships as an npm-package tarball with a **prebuilt kernel** — a
+consumer machine needs only Node.js >= 22; no MoonBit toolchain and no
+repository checkout are required.
+
+From a release artifact (`v*` GitHub Releases publish
+`f4ah6o-workflows-mbt-<version>.tgz`):
+
+```bash
+tar -xzf f4ah6o-workflows-mbt-<version>.tgz
+cd package
+npm ci --omit=dev        # deterministic — resolved from the packaged npm-shrinkwrap.json
+node host/cli.mjs doctor --config /path/to/project/wrangler.jsonc
+node host/cli.mjs dev    --config /path/to/project/wrangler.jsonc
+```
+
+Or install the tarball into an existing project, which also puts the
+`workflows` bin on `npx`/PATH:
+
+```bash
+npm install ./f4ah6o-workflows-mbt-<version>.tgz   # or a release download URL
+npx workflows doctor --config wrangler.jsonc
+npx workflows dev --config wrangler.jsonc
+```
+
+The same tarball is produced locally with `npm pack` (runs `build:core` if
+needed). From a repository checkout, develop with:
+
+```bash
+npm install
+npm run build:core       # requires the pinned MoonBit toolchain
+```
+
+`scripts/install-toolchain.mjs` installs the pinned MoonBit toolchain from
+this repository's vendored release assets.
+
 ## Architecture
 
 ```text
@@ -146,6 +183,20 @@ Run a project:
 node host/cli.mjs dev --config fixtures/cloudflare-basic/wrangler.jsonc
 ```
 
+(installed consumers use `workflows dev --config wrangler.jsonc` — the `bin`
+entry points at `host/cli.mjs`)
+
+Preflight a project before routing traffic to it:
+
+```bash
+node host/cli.mjs doctor --config wrangler.jsonc
+```
+
+`doctor` checks that the config parses, required secrets resolve, storage
+opens, the prebuilt kernel loads, the source bundles unmodified, the
+configured Workflow classes export, and declared binding adapters construct —
+exit code is non-zero on failure, `--json` prints a machine-readable report.
+
 Trigger and inspect instances:
 
 ```bash
@@ -160,7 +211,9 @@ node host/cli.mjs event my-workflow <instance-id> approved \
   --payload '{"approved":true}'
 ```
 
-`pause`, `resume`, `restart`, and `terminate` commands are also available.
+`pause`, `resume`, `restart`, and `terminate` commands are also available;
+`workflows --help` prints the full surface and `workflows --version` prints
+the package version.
 
 By default `workflows dev` also listens on `127.0.0.1:8787`. It dispatches
 ordinary requests to an unchanged default Worker `fetch` export and exposes the
@@ -190,8 +243,15 @@ npm run check:moon
 npm run build:core
 npm run test:moon
 npm run test:host
+npm run test:compat
 npm run test:e2e
+npm run test:consumer
 ```
+
+`test:consumer` is the clean-machine journey: `npm pack`, extract to a temp
+dir, `npm ci --omit=dev`, `doctor`, `dev`, an instance killed with `SIGKILL`
+mid-sleep and completed after restart, then an `npm install <tarball>` bin
+check — all with a PATH that excludes the MoonBit toolchain.
 
 The E2E suite includes real child runtime processes that are killed with
 `SIGKILL`, then restarted against the same SQLite database. Coverage includes
@@ -241,25 +301,23 @@ Cloudflare canary is implemented but credential-gated and deferred; see
 ## Scope
 
 The current runtime is deliberately single-machine. It does not require Redis,
-Kafka, Kubernetes, distributed consensus, or a multi-node scheduler. Do not point
-multiple executor processes at the same SQLite database until the planned
-instance lease/claim boundary is implemented.
+Kafka, Kubernetes, distributed consensus, or a multi-node scheduler. Executor
+processes on one machine may share a SQLite database — instances are claimed by
+a lease (`lease_owner`/`lease_expires_at`) with heartbeat renewal and
+commit-time fencing, so a crashed executor's work is reclaimed without
+duplicating committed steps.
 
-Cloudflare service bindings such as D1, KV, R2, Queues, Workers AI, Durable
-Objects, and Service Bindings are not emulated. User-provided values/adapters can
-be injected into `this.env`; service-specific adapters are future work.
+KV, D1, R2, Queue producers, and Service Bindings have local adapters (configure
+`adapters` in `workflows.mbt.json`; see `host/adapters.mjs`). Workers AI and
+Durable Objects are not emulated.
 
 
 ## Compatibility status
 
 The tested surface is intended as a **broad Cloudflare Workflows-compatible local
-runtime**, not a full Workers platform clone.
-
-Notable current differences include persisted `ReadableStream<Uint8Array>`
-outputs, the complete Workers RpcSerializable universe, Cloudflare account-plan
-default retention, multi-process executor leases, Cloudflare service-binding
-emulators, and the REST subscription streaming transport.
-
-See [COMPATIBILITY.md](./COMPATIBILITY.md) and
-[compat/cloudflare/VERSION.md](./compat/cloudflare/VERSION.md) for the tested
-surface and oracle.
+runtime**, not a full Workers platform clone. The intentional differences are
+maintained in one place — see [COMPATIBILITY.md](./COMPATIBILITY.md) "Known
+differences" and the machine-readable matrix in
+[compat/capabilities.json](./compat/capabilities.json) — and
+[compat/cloudflare/VERSION.md](./compat/cloudflare/VERSION.md) for the oracle
+basis.

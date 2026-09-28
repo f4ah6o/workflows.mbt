@@ -2,9 +2,27 @@
   "name": "@f4ah6o/workflows-mbt",
   "version": "0.1.0",
   "private": true,
+  "description": "Local durable-execution runtime compatible with Cloudflare Workflows — dependency insurance and fallback execution for existing workflow source.",
   "type": "module",
   "bin": {
     "workflows": "./host/cli.mjs"
+  },
+  "files": [
+    "dist",
+    "host",
+    "compat",
+    "fixtures",
+    "docs",
+    "examples",
+    "scripts",
+    "src",
+    "moon.mod.json",
+    ".moonbit-toolchain.json",
+    "npm-shrinkwrap.json"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/f4ah6o/workflows.mbt.git"
   },
   "scripts": {
     "check:moon": "moon check --target js",
@@ -13,13 +31,16 @@
     "test:host": "node --test tests/host.test.mjs",
     "test:e2e": "node --test tests/e2e.test.mjs",
     "test": "npm run check:moon && npm run build:core && npm run test:moon && npm run test:host && npm run test:compat && npm run test:e2e",
+    "test:consumer": "node scripts/consumer-smoke.mjs",
     "compat:typecheck": "tsc -p compat/typecheck/tsconfig.json",
     "compat:pinned": "npm run compat:typecheck && node compat/oracle/check.mjs --mode pinned && node compat/run-differential.mjs --oracle pinned && node compat/check-capabilities.mjs --require-pinned",
     "compat:latest": "node compat/run-latest.mjs && node compat/check-capabilities.mjs --require-latest",
     "compat:report": "node compat/report.mjs",
     "compat:drill": "node compat/run-drill.mjs",
     "check:toolchain": "node scripts/check-toolchain.mjs",
-    "test:compat": "node --test tests/compat-probe-client.test.mjs tests/release-pin.test.mjs"
+    "test:compat": "node --test tests/compat-probe-client.test.mjs tests/release-pin.test.mjs",
+    "prepack": "node scripts/prepare-pack.mjs",
+    "postpack": "node scripts/prepare-pack.mjs --cleanup"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.1",

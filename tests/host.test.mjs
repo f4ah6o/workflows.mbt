@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createServer as createTcpServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { loadProjectConfig } from "../host/config.mjs";
+import { runDoctor } from "../host/doctor.mjs";
 import { loadLocalDevEnv } from "../host/env.mjs";
 import { connectSocket } from "../host/socket.mjs";
 import { matchesCron } from "../host/cron.mjs";
@@ -16,6 +18,8 @@ import {
   normalizeDurableValue,
   SerializationError,
 } from "../host/serialization.mjs";
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 test("duration compatibility accepts numbers and Cloudflare-style units", () => {
   assert.equal(parseDuration(5000), 5000);
@@ -522,4 +526,75 @@ test("connect() startTls requires secureTransport=starttls and neuters the old s
       chunk.toString("utf8").includes("plain before upgrade"),
     ),
   );
+});
+
+function writeConsumerProject(dir, { workflows, secrets, source } = {}) {
+  mkdirSync(join(dir, "src"), { recursive: true });
+  writeFileSync(
+    join(dir, "src/index.ts"),
+    source ?? 'export class App extends Object {}\nexport default {};\n',
+  );
+  writeFileSync(
+    join(dir, "wrangler.jsonc"),
+    JSON.stringify({
+      name: "doctor-test",
+      main: "src/index.ts",
+      workflows: workflows ?? [
+        { name: "wf", binding: "WF", class_name: "App" },
+      ],
+      ...(secrets ? { secrets } : {}),
+    }),
+  );
+  return join(dir, "wrangler.jsonc");
+}
+
+test("doctor fails loudly on an unreadable config and skips dependent checks", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "workflows-mbt-doctor-"));
+  const report = await runDoctor({
+    configPath: join(dir, "missing-wrangler.jsonc"),
+    storagePath: join(dir, "wf.sqlite"),
+  });
+  assert.equal(report.ok, false);
+  assert.equal(report.checks[0].name, "config");
+  assert.equal(report.checks[0].ok, false);
+  for (const check of report.checks.slice(1)) {
+    assert.equal(check.skipped, true, `${check.name} should be skipped`);
+  }
+});
+
+test("doctor flags missing required secrets and unexported Workflow classes", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "workflows-mbt-doctor-"));
+  const configPath = writeConsumerProject(dir, {
+    secrets: { required: ["DEFINITELY_MISSING_SECRET"] },
+    workflows: [{ name: "wf", binding: "WF", class_name: "MissingClass" }],
+  });
+  const report = await runDoctor({
+    configPath,
+    storagePath: join(dir, "wf.sqlite"),
+    buildDir: join(dir, "bundles"),
+  });
+  const byName = Object.fromEntries(
+    report.checks.map((check) => [check.name, check]),
+  );
+  assert.equal(report.ok, false);
+  assert.match(byName.secrets.error, /DEFINITELY_MISSING_SECRET/);
+  assert.equal(byName.bundle.ok, true);
+  assert.equal(byName.module.ok, false);
+  assert.match(byName.module.error, /MissingClass/);
+});
+
+test("doctor passes end to end on a minimal consumer project", async (t) => {
+  if (!existsSync(join(repoRoot, "dist/workflows_core.mjs"))) {
+    t.skip("requires the built kernel (npm run build:core)");
+    return;
+  }
+  const dir = mkdtempSync(join(tmpdir(), "workflows-mbt-doctor-"));
+  const configPath = writeConsumerProject(dir, {});
+  const report = await runDoctor({
+    configPath,
+    storagePath: join(dir, "wf.sqlite"),
+    buildDir: join(dir, "bundles"),
+  });
+  assert.equal(report.ok, true, JSON.stringify(report.checks));
+  assert.ok(report.checks.every((check) => check.ok));
 });

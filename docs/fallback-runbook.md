@@ -27,18 +27,43 @@ state-migration claim.
 
 ## 1. Start the prepared fallback runtime
 
-From a release artifact or a clean checkout:
+From a **release artifact** (recommended — the kernel is prebuilt; Node.js
+>= 22 is the only requirement, no MoonBit toolchain):
+
+```bash
+tar -xzf f4ah6o-workflows-mbt-<version>.tgz
+cd package
+npm ci --omit=dev        # deterministic — packaged npm-shrinkwrap.json
+```
+
+or install it into the application project (`npm install <artifact.tgz>`
+provides the `workflows` bin).
+
+From a **checkout** (development — requires the pinned MoonBit toolchain):
 
 ```bash
 npm ci                 # deterministic install from the committed lockfile
 npm run build:core     # build the MoonBit durable kernel
-node host/cli.mjs dev --config wrangler.jsonc --port 8787 --storage ./workflows.sqlite
 ```
 
 `--config` accepts the same `wrangler.jsonc` the application already uses —
 no source edit is required. Point `--storage` at a durable filesystem path.
 
-Smoke-check before routing traffic:
+**Preflight before routing any traffic** — config parse, required secrets,
+storage writability, prebuilt kernel, unmodified source bundling, Workflow
+class exports, and adapter construction:
+
+```bash
+node host/cli.mjs doctor --config wrangler.jsonc --storage ./workflows.sqlite
+```
+
+Start the runtime:
+
+```bash
+node host/cli.mjs dev --config wrangler.jsonc --port 8787 --storage ./workflows.sqlite
+```
+
+Smoke-check end to end:
 
 ```bash
 node host/cli.mjs trigger <workflow-name> --params '{}' --config wrangler.jsonc --storage ./workflows.sqlite
@@ -102,14 +127,18 @@ Cloudflare-side history stays distinguishable during reconciliation.
 See `COMPATIBILITY.md` "Known differences" and `compat/capabilities.json`
 (`intentionally_unsupported` rows). Currently relevant:
 
-- BigInt step output aborts the upstream isolate; locally it round-trips —
-  code relying on the upstream crash semantics does not exist.
-- `ReadableStream` step output fails explicitly (both sides reject; upstream
-  crashes the isolate uncatchably, local raises a catchable error).
-- Account-plan default retention is not emulated; local retention defaults to
-  unlimited.
-- Multi-process executor lease is not implemented — run **one** executor
-  process per storage file.
+- BigInt step output aborts the upstream isolate uncatchably; locally it
+  round-trips — code relying on the upstream crash semantics does not exist.
+- The complete Workers RpcSerializable surface is not claimed; unsupported
+  values (functions, symbols, custom prototypes, `WritableStream`) fail
+  explicitly at the serialize boundary.
+- Account-plan default retention is opt-in via `workflows.mbt.json`
+  `retention.plan`; without it, unspecified retention stays unlimited.
+- Multiple executor processes on one machine may share a storage file
+  (instances are claimed by lease with commit fencing), but the runtime is
+  single-machine: no cross-host shared storage or multi-region scheduling.
+- Workers AI and Durable Objects are not emulated; KV/D1/R2/Queue/Service
+  bindings run through local adapters (`workflows.mbt.json` `adapters`).
 
 ## Verification status
 
