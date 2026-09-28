@@ -39,29 +39,43 @@ jobs:
       - name: Host tests
         run: npm run test:host
 
+      # The tarball is named and versioned from package.json, not the tag —
+      # fail here if a forgotten version bump would publish e.g. v0.2.0
+      # containing @f4ah6o/workflows-mbt@0.1.0.
+      - name: Verify tag matches package version
+        run: node scripts/check-release-tag.mjs "$GITHUB_REF_NAME"
+
+      # The artifact is the `npm pack` tarball — the exact file a consumer
+      # installs. `files` in package.json whitelists the runtime contents;
+      # prepack stages npm-shrinkwrap.json so extracted consumers can run
+      # `npm ci --omit=dev` deterministically.
       - name: Package emergency artifact
         run: |
           mkdir -p release
-          tar -czf "release/workflows-mbt-${GITHUB_REF_NAME}.tgz" \
-            package.json package-lock.json moon.mod.json .moonbit-toolchain.json \
-            README.md COMPATIBILITY.md \
-            host dist compat fixtures docs scripts
+          npm pack --pack-destination release
           ls -la release/
 
-      # Smoke-test the artifact itself: extract to a clean directory, install
-      # production deps from the committed lockfile, and run the fallback
-      # drill (SIGKILL mid-suspension, restart from persisted state) from the
-      # extracted tree — not from the checkout.
+      # Verify the artifact the way a consumer uses it: clean directory,
+      # production deps, no MoonBit toolchain, doctor + dev + SIGKILL
+      # mid-suspension + restart from persisted state, plus an
+      # `npm install <tarball>` bin check. See scripts/consumer-smoke.mjs.
+      - name: Verify artifact with clean-consumer smoke test
+        run: node scripts/consumer-smoke.mjs --tarball release/*.tgz
+
+      # Keep the fallback drill record against the extracted artifact so the
+      # release metadata carries a drill provenance record.
       - name: Verify artifact with fallback drill
         run: |
           mkdir -p /tmp/artifact-verify
-          tar -xzf "release/workflows-mbt-${GITHUB_REF_NAME}.tgz" -C /tmp/artifact-verify
-          cd /tmp/artifact-verify
+          tar -xzf release/*.tgz -C /tmp/artifact-verify
+          cd /tmp/artifact-verify/package
           npm ci --omit=dev --no-audit --no-fund
           node compat/run-drill.mjs --skip-cloudflare
-          cd "$GITHUB_WORKSPACE"
+
+      - name: Write release metadata
+        run: |
           node scripts/write-release-metadata.mjs \
-            --drill /tmp/artifact-verify/compat-results/drill-latest.json \
+            --drill /tmp/artifact-verify/package/compat-results/drill-latest.json \
             > release/metadata.json
 
       - name: Publish GitHub Release
@@ -69,7 +83,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${GITHUB_REF_NAME}" \
-            "release/workflows-mbt-${GITHUB_REF_NAME}.tgz" \
+            release/*.tgz \
             release/metadata.json \
             --title "workflows.mbt ${GITHUB_REF_NAME}" \
             --notes-file release/metadata.json

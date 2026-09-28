@@ -52,6 +52,12 @@ jobs:
 
       - name: Durable process E2E
         run: npm run test:e2e
+
+      # The packaged artifact must work on a clean consumer machine: no
+      # checkout, no MoonBit toolchain, production deps only.
+      - name: Clean-consumer artifact smoke test
+        run: npm run test:consumer
+
       - name: Pinned Cloudflare compatibility oracle
         run: npm run compat:pinned
 

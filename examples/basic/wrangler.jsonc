@@ -1,0 +1,14 @@
+{
+  // An ordinary Cloudflare Workflows project config — this file works
+  // unchanged under `npx wrangler dev` and under `workflows dev`.
+  "name": "workflows-mbt-basic-example",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-26",
+  "workflows": [
+    {
+      "name": "order-workflow",
+      "binding": "ORDER_WORKFLOW",
+      "class_name": "OrderWorkflow"
+    }
+  ]
+}

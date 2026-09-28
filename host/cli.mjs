@@ -1,12 +1,22 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
 import { WorkflowRuntime } from "./engine.mjs";
+import { runDoctor, formatDoctorReport } from "./doctor.mjs";
 import { startWorkflowHttpServer } from "./server.mjs";
+
+const pkg = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+);
 
 function parse(argv) {
   const positionals = [];
   const flags = {};
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
+    if (arg === "-h") {
+      flags.help = true;
+      continue;
+    }
     if (!arg.startsWith("--")) {
       positionals.push(arg);
       continue;
@@ -22,20 +32,48 @@ function parse(argv) {
   return { positionals, flags };
 }
 
-function usage() {
-  console.error(`Usage:
+function usage(stream = console.error) {
+  stream(`Usage:
   workflows dev --config wrangler.jsonc [--env <name>] [--host 127.0.0.1] [--port 8787] [--no-http]
+  workflows doctor --config wrangler.jsonc [--env <name>] [--storage <sqlite-path>] [--json]
   workflows trigger <workflow> --params '{"name":"Alice"}' [--id <id>]
   workflows status <workflow> <instance-id>
   workflows event <workflow> <instance-id> <type> --payload '{"approved":true}'
   workflows pause|resume|terminate <workflow> <instance-id>
   workflows restart <workflow> <instance-id> [--from <name>] [--count 2] [--type do]
+  workflows --version | --help | -h
 Common options: --config <wrangler.jsonc> --env <name> --storage <sqlite-path>`);
 }
 
+const COMMANDS = new Set([
+  "dev",
+  "trigger",
+  "status",
+  "event",
+  "pause",
+  "resume",
+  "restart",
+  "terminate",
+]);
+
 const { positionals, flags } = parse(process.argv.slice(2));
 const [command, workflowName, instanceId, extra] = positionals;
-if (!command) {
+
+if (flags.help === true || command === "help") {
+  usage((line) => console.log(line));
+} else if (flags.version === true || command === "version") {
+  console.log(`${pkg.name} ${pkg.version}`);
+} else if (command === "doctor") {
+  const report = await runDoctor({
+    configPath: flags.config ?? "wrangler.jsonc",
+    storagePath: flags.storage === true ? undefined : flags.storage,
+    buildDir: flags["build-dir"] === true ? undefined : flags["build-dir"],
+    envName: flags.env === true ? undefined : flags.env,
+  });
+  if (flags.json === true) console.log(JSON.stringify(report, null, 2));
+  else console.log(formatDoctorReport(report));
+  if (!report.ok) process.exitCode = 1;
+} else if (!command || !COMMANDS.has(command)) {
   usage();
   process.exitCode = 2;
 } else {
@@ -51,12 +89,19 @@ if (!command) {
       const stop = () => controller.abort();
       process.once("SIGINT", stop);
       process.once("SIGTERM", stop);
+      const httpHost = flags.host === true ? "127.0.0.1" : (flags.host ?? "127.0.0.1");
+      const httpPort = Number(flags.port === true ? 8787 : (flags.port ?? 8787));
       const server = flags["no-http"] === true
         ? null
         : await startWorkflowHttpServer(runtime, {
-            host: flags.host === true ? "127.0.0.1" : (flags.host ?? "127.0.0.1"),
-            port: Number(flags.port === true ? 8787 : (flags.port ?? 8787)),
+            host: httpHost,
+            port: httpPort,
           });
+      console.log(
+        server
+          ? `workflows dev listening on http://${httpHost}:${httpPort}`
+          : "workflows dev running (HTTP disabled via --no-http)",
+      );
       try {
         await runtime.dev({
           pollMs: Number(flags["poll-ms"] ?? 100),
@@ -118,9 +163,6 @@ if (!command) {
       } else if (command === "terminate") {
         await instance.terminate();
         console.log(JSON.stringify(await instance.status()));
-      } else {
-        usage();
-        process.exitCode = 2;
       }
     }
   } finally {
