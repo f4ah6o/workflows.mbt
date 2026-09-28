@@ -26,11 +26,15 @@ jobs:
       - name: Setup MoonBit
         uses: hustcer/setup-moonbit@v1
         with:
-          # pinned toolchain — see .moonbit-toolchain.json
-          version: "0.1.20260920"
-          core-version: "0.10.14+7d59c7ec9"
+          # binaries CDN only serves channel names; check:toolchain enforces
+          # the pin recorded in .moonbit-toolchain.json
+          version: "latest"
+          core-version: "latest"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify toolchain pin
+        run: npm run check:toolchain
 
       - name: Install dependencies
         run: npm ci --no-audit --no-fund

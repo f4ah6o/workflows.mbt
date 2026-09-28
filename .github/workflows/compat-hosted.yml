@@ -38,10 +38,16 @@ jobs:
         if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
         uses: hustcer/setup-moonbit@v1
         with:
-          version: "0.1.20260920"
-          core-version: "0.10.14+7d59c7ec9"
+          # binaries CDN only serves channel names; check-toolchain enforces
+          # the pin recorded in .moonbit-toolchain.json
+          version: "latest"
+          core-version: "latest"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify toolchain pin
+        if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        run: npm run check:toolchain
 
       - name: Install dependencies
         if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''

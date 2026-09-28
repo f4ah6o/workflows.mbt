@@ -17,7 +17,8 @@
     "compat:pinned": "npm run compat:typecheck && node compat/oracle/check.mjs --mode pinned && node compat/run-differential.mjs --oracle pinned && node compat/check-capabilities.mjs",
     "compat:latest": "node compat/run-latest.mjs && node compat/check-capabilities.mjs",
     "compat:report": "node compat/report.mjs",
-    "compat:drill": "node compat/run-drill.mjs"
+    "compat:drill": "node compat/run-drill.mjs",
+    "check:toolchain": "node scripts/check-toolchain.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.1",
