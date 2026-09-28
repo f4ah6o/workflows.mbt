@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer as createTcpServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -597,4 +598,45 @@ test("doctor passes end to end on a minimal consumer project", async (t) => {
   });
   assert.equal(report.ok, true, JSON.stringify(report.checks));
   assert.ok(report.checks.every((check) => check.ok));
+});
+
+const cliPath = join(repoRoot, "host", "cli.mjs");
+
+function runCli(args) {
+  // Run from an empty dir: no wrangler.jsonc exists, so any code path that
+  // opens the runtime would fail with ENOENT instead of the expected result.
+  return spawnSync(process.execPath, [cliPath, ...args], {
+    cwd: mkdtempSync(join(tmpdir(), "workflows-mbt-cli-")),
+    encoding: "utf8",
+  });
+}
+
+test("cli -h prints usage to stdout and exits 0", () => {
+  for (const args of [["-h"], ["--help"], ["help"]]) {
+    const result = runCli(args);
+    assert.equal(result.status, 0, `args=${args} stderr=${result.stderr}`);
+    assert.match(result.stdout, /Usage:/);
+  }
+});
+
+test("cli unknown commands exit 2 with usage instead of opening the runtime", () => {
+  for (const args of [
+    ["bogus"],
+    ["bogus", "some-workflow"],
+    ["bogus", "some-workflow", "some-instance"],
+  ]) {
+    const result = runCli(args);
+    assert.equal(result.status, 2, `args=${args} stderr=${result.stderr}`);
+    assert.match(result.stderr, /Usage:/);
+  }
+});
+
+test("check-release-tag fails when the tag differs from package.json version", () => {
+  const script = join(repoRoot, "scripts", "check-release-tag.mjs");
+  const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
+  const match = spawnSync(process.execPath, [script, `v${pkg.version}`], { encoding: "utf8" });
+  assert.equal(match.status, 0, match.stderr);
+  const mismatch = spawnSync(process.execPath, [script, "v0.0.0-never"], { encoding: "utf8" });
+  assert.equal(mismatch.status, 1);
+  assert.match(mismatch.stderr, /does not match/);
 });

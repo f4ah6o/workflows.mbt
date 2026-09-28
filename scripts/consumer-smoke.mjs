@@ -176,6 +176,21 @@ try {
   for (const excluded of ["tests", "issues", ".github", "node_modules"]) {
     assert(!existsSync(join(pkgDir, excluded)), `artifact must not contain ${excluded}`);
   }
+  // `files` negations must keep gitignored runtime state (SQLite instance DBs,
+  // wrangler caches, local secrets) out of the tarball even when a developer
+  // ran `doctor`/`dev` in the checkout before packing.
+  const leakedState = run("find", [
+    pkgDir,
+    "-name", ".workflows",
+    "-o", "-name", ".wrangler",
+    "-o", "-name", "*.db",
+    "-o", "-name", ".dev.vars*",
+    "-o", "-name", ".env*",
+  ]).trim();
+  assert(
+    leakedState === "",
+    `artifact must not ship runtime state:\n${leakedState}`,
+  );
   console.log("[consumer] artifact contents ok (prebuilt kernel present, dev files absent)");
 
   run("npm", ["ci", "--omit=dev", "--no-audit", "--no-fund"], { cwd: pkgDir });

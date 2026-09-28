@@ -18,7 +18,18 @@
     "src",
     "moon.mod.json",
     ".moonbit-toolchain.json",
-    "npm-shrinkwrap.json"
+    "npm-shrinkwrap.json",
+    "!**/.workflows",
+    "!**/.workflows/**",
+    "!**/.wrangler",
+    "!**/.wrangler/**",
+    "!**/*.db",
+    "!**/*.db-shm",
+    "!**/*.db-wal",
+    "!**/.dev.vars*",
+    "!**/.env*",
+    "!**/compat-results",
+    "!**/compat-results/**"
   ],
   "repository": {
     "type": "git",

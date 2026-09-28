@@ -39,6 +39,12 @@ jobs:
       - name: Host tests
         run: npm run test:host
 
+      # The tarball is named and versioned from package.json, not the tag —
+      # fail here if a forgotten version bump would publish e.g. v0.2.0
+      # containing @f4ah6o/workflows-mbt@0.1.0.
+      - name: Verify tag matches package version
+        run: node scripts/check-release-tag.mjs "$GITHUB_REF_NAME"
+
       # The artifact is the `npm pack` tarball — the exact file a consumer
       # installs. `files` in package.json whitelists the runtime contents;
       # prepack stages npm-shrinkwrap.json so extracted consumers can run
