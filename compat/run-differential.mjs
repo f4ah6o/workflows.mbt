@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { diffTrace, normalizeTrace } from "./normalize.mjs";
+import { collectTraces, diffRun } from "./probe-client.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const resultsDir = join(root, "compat-results");
@@ -100,31 +100,6 @@ async function waitReady(port, child, label) {
   throw new Error(label + " did not become ready\n" + child.oracleOutput().slice(-8000));
 }
 
-async function runProbe(port, runtime, probe) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 90000);
-  try {
-    const response = await fetch("http://127.0.0.1:" + port + "/run", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        probe,
-        id: "oracle-" + runtime + "-" + probe + "-" + Date.now() + "-" + Math.random().toString(16).slice(2),
-      }),
-      signal: controller.signal,
-    });
-    const text = await response.text();
-    if (!response.ok) throw new Error(runtime + "/" + probe + ": HTTP " + response.status + ": " + text);
-    console.error(`[${runtime}] ${probe} done`);
-    return normalizeTrace(JSON.parse(text));
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith(runtime + "/")) throw error;
-    throw new Error(`${runtime}/${probe}: ${error?.name ?? "Error"}: ${error?.message ?? error}`);
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 // A crashed or timed-out run can leave dev servers behind on a port; always
 // bind a fresh free port so we never silently talk to a stale bundle.
 function freePort() {
@@ -150,9 +125,11 @@ async function collectWorkflowsMbt() {
   ], "workflows.mbt");
   try {
     await waitReady(port, child, "workflows.mbt");
-    const traces = {};
-    for (const probe of probes) traces[probe] = await runProbe(port, "workflows-mbt", probe);
-    return traces;
+    return await collectTraces(`http://127.0.0.1:${port}`, "workflows-mbt", probes, { log: (m) => console.error(m) });
+  } catch (error) {
+    // Runtime never came up or died — still produce a result file so the
+    // drift record can act on it.
+    return { traces: {}, probeErrors: {}, error: error?.message ?? String(error) };
   } finally {
     await stop(child);
   }
@@ -171,34 +148,40 @@ async function collectCloudflare() {
   ], "cloudflare/" + oracle);
   try {
     await waitReady(port, child, "cloudflare/" + oracle);
-    const traces = {};
-    for (const probe of probes) traces[probe] = await runProbe(port, "cloudflare", probe);
-    return traces;
+    return await collectTraces(`http://127.0.0.1:${port}`, "cloudflare", probes, { log: (m) => console.error(m) });
+  } catch (error) {
+    return { traces: {}, probeErrors: {}, error: error?.message ?? String(error) };
   } finally {
     await stop(child);
   }
 }
 
 try {
-  const results = await Promise.all([collectCloudflare(), collectWorkflowsMbt()]);
-  const cloudflare = results[0];
-  const workflowsMbt = results[1];
-  const differences = {};
-  for (const probe of probes) {
-    const diff = diffTrace(cloudflare[probe], workflowsMbt[probe]);
-    if (diff) differences[probe] = diff;
-  }
+  const [cloudflare, workflowsMbt] = await Promise.all([collectCloudflare(), collectWorkflowsMbt()]);
+  const { differences, probeErrors, pass } = diffRun(cloudflare, workflowsMbt, probes);
   const result = {
     oracle,
     checkedAt: new Date().toISOString(),
     probes,
-    cloudflare,
-    workflowsMbt,
+    cloudflare: cloudflare.traces,
+    workflowsMbt: workflowsMbt.traces,
     differences,
-    pass: Object.keys(differences).length === 0,
+    probeErrors,
+    sideErrors: {
+      cloudflare: cloudflare.error ?? null,
+      workflowsMbt: workflowsMbt.error ?? null,
+    },
+    pass,
   };
   writeFileSync(join(resultsDir, "differential-" + oracle + ".json"), JSON.stringify(result, null, 2) + "\n");
-  console.log(JSON.stringify({ oracle, probes, pass: result.pass, differences: Object.keys(differences) }, null, 2));
+  console.log(JSON.stringify({
+    oracle,
+    probes,
+    pass: result.pass,
+    differences: Object.keys(differences),
+    probeErrors: Object.keys(probeErrors),
+    sideErrors: result.sideErrors,
+  }, null, 2));
   if (!result.pass) process.exitCode = 1;
 } finally {
   rmSync(temp, { recursive: true, force: true });

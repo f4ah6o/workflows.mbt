@@ -45,9 +45,18 @@ const differential = load(`differential-${oracle}.json`);
 const manifest = JSON.parse(readFileSync(join(root, "compat/oracle/manifest.json"), "utf8"));
 
 const contractDrift = drift && !drift.pass ? drift.drift : null;
+// Semantic failures cover both trace diffs and probe execution errors —
+// a probe that returns non-2xx, times out, or whose side never started is
+// drift (or missing evidence), not a silent skip.
+const diffProbes = new Set(Object.keys(differential?.differences ?? {}));
+const errorProbes = new Set(Object.keys(differential?.probeErrors ?? {}));
 const semanticFailures = differential && !differential.pass
-  ? Object.keys(differential.differences ?? {}).sort()
+  ? [...new Set([...diffProbes, ...errorProbes])].sort()
+      .map((p) => (errorProbes.has(p) ? `${p} (execution error)` : p))
   : [];
+const sideErrors = Object.entries(differential?.sideErrors ?? {})
+  .filter(([, value]) => value)
+  .map(([side, value]) => `${side}: ${value}`);
 
 if (!contractDrift && semanticFailures.length === 0) {
   console.log(`no ${oracle}-oracle drift — no record written`);
@@ -110,6 +119,10 @@ const lines = [
   "## Semantic probe failures",
   "",
   ...(semanticFailures.length ? semanticFailures.map((p) => "- " + p) : ["- none"]),
+  "",
+  "## Side errors",
+  "",
+  ...(sideErrors.length ? sideErrors.map((e) => "- " + e) : ["- none"]),
   "",
   "## Reproduce",
   "",

@@ -19,7 +19,7 @@ import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { diffTrace, normalizeTrace } from "./normalize.mjs";
+import { collectTraces, diffRun } from "./probe-client.mjs";
 
 const execFileP = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -54,20 +54,6 @@ function freePort() {
   });
 }
 
-async function runProbe(baseUrl, runtime, probe) {
-  const response = await fetch(baseUrl + "/run", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      probe,
-      id: "canary-" + runtime + "-" + probe + "-" + Date.now() + "-" + Math.random().toString(16).slice(2),
-    }),
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error(runtime + "/" + probe + ": HTTP " + response.status + ": " + text);
-  return normalizeTrace(JSON.parse(text));
-}
-
 async function collectLocal() {
   const port = await freePort();
   const detached = process.platform !== "win32";
@@ -88,9 +74,9 @@ async function collectLocal() {
       } catch {}
       await delay(100);
     }
-    const traces = {};
-    for (const probe of probes) traces[probe] = await runProbe("http://127.0.0.1:" + port, "workflows-mbt", probe);
-    return traces;
+    return await collectTraces("http://127.0.0.1:" + port, "workflows-mbt", probes, { log: (m) => console.error(m) });
+  } catch (error) {
+    return { traces: {}, probeErrors: {}, error: error?.message ?? String(error) };
   } finally {
     if (detached && child.pid != null) {
       try { process.kill(-child.pid, "SIGTERM"); } catch {}
@@ -142,17 +128,20 @@ try {
   deployed = true;
   const canaryUrl = resolveCanaryUrl(String(stdout) + "\n" + String(stderr));
   console.log("canary deployed at " + canaryUrl);
-  await waitDeployed(canaryUrl);
 
-  const hosted = {};
-  for (const probe of probes) hosted[probe] = await runProbe(canaryUrl, "hosted", probe);
+  // A hosted side that never comes up, or probes that fail over HTTP, are
+  // drift evidence — record them into the result file rather than aborting
+  // before one is written.
+  let hostedSide;
+  try {
+    await waitDeployed(canaryUrl);
+    hostedSide = await collectTraces(canaryUrl, "hosted", probes, { log: (m) => console.error(m) });
+  } catch (error) {
+    hostedSide = { traces: {}, probeErrors: {}, error: error?.message ?? String(error) };
+  }
   const local = await collectLocal();
 
-  const differences = {};
-  for (const probe of probes) {
-    const diff = diffTrace(hosted[probe], local[probe]);
-    if (diff) differences[probe] = diff;
-  }
+  const { differences, probeErrors, pass } = diffRun(hostedSide, local, probes, { upstreamName: "hosted" });
   let wranglerVersion = null;
   try {
     wranglerVersion = (await execFileP(wrangler, ["--version"], { cwd: root })).stdout.trim().replace(/^.*\s/, "");
@@ -162,13 +151,24 @@ try {
     checkedAt: new Date().toISOString(),
     versions: { wrangler: wranglerVersion },
     probes,
-    hosted,
-    workflowsMbt: local,
+    hosted: hostedSide.traces,
+    workflowsMbt: local.traces,
     differences,
-    pass: Object.keys(differences).length === 0,
+    probeErrors,
+    sideErrors: {
+      hosted: hostedSide.error ?? null,
+      workflowsMbt: local.error ?? null,
+    },
+    pass,
   };
   writeFileSync(join(resultsDir, "differential-hosted.json"), JSON.stringify(result, null, 2) + "\n");
-  console.log(JSON.stringify({ oracle: "hosted", pass: result.pass, differences: Object.keys(differences) }, null, 2));
+  console.log(JSON.stringify({
+    oracle: "hosted",
+    pass: result.pass,
+    differences: Object.keys(differences),
+    probeErrors: Object.keys(probeErrors),
+    sideErrors: result.sideErrors,
+  }, null, 2));
   if (!result.pass) process.exitCode = 1;
 } finally {
   if (deployed) {

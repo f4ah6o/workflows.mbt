@@ -124,10 +124,14 @@ for (const row of matrix.capabilities ?? []) {
       }
       continue;
     }
+    // A probe counts as clean evidence only when it ran and matched —
+    // trace differences and per-probe execution errors both disqualify it.
     const covered =
       (row.probes ?? []).length > 0 &&
       row.probes.every(
-        (probe) => result.probes.includes(probe) && !result.differences?.[probe],
+        (probe) => result.probes.includes(probe)
+          && !result.differences?.[probe]
+          && !result.probeErrors?.[probe],
       );
     if (evidence[flag] && !covered) {
       fail(row.id + ": claims " + flag + " but differential-" + oracle + " did not pass cleanly for " + JSON.stringify(row.probes ?? []));
