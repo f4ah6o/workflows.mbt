@@ -197,3 +197,30 @@ adapter rather than silently choosing a Cloudflare plan.
 This follow-up may be closed incrementally. Each checked compatibility behavior
 must have a fixture or test; operational claims such as multi-process safety must
 not be made before the corresponding failure/recovery tests exist.
+
+## Progress — 2026-09-28
+
+Partially advanced by the dependency-insurance implementation (see
+`issues/closed/20260926-cloudflare-dependency-insurance.md`):
+
+- **Error compatibility audit** — several stable error surfaces are now
+  upstream-differential-verified rather than undocumented: terminal
+  `NonRetryableError` emits `WorkflowFatalError` on the event stream and a
+  plain-named `Error` to `run()`; `waitForEvent` timeout rejects with
+  `Execution timed out after <ms>ms`; duplicate `create()` rejects with a
+  plain-named `Error`; `deleteBatch` on a missing id reports `code: 10400`;
+  cyclic step output rejects fast with a catchable `TypeError`. Still open:
+  a consolidated table for every row above plus REST error codes.
+- **Serialization audit** — `ser-*` probes now diff Error round-trips
+  (own-properties dropped upstream), cyclic values, and structured/binary/
+  collection types against upstream. `ser-bigint` and `ser-unsupported` are
+  catalogued `differential:false`: upstream aborts the isolate uncatchably,
+  so the intentional difference is documented in the matrix rather than
+  hidden.
+- **Fallback drill** — `compat/run-drill.mjs` exercises durable step +
+  suspension + SIGKILL restart from persisted state.
+
+Not advanced: persisted ReadableStream output, RpcSerializable universe,
+timeout durability audit, multi-process executor lease, PostgreSQL storage
+proof, REST optional transports, Wrangler env overlays, service-binding
+adapters, account-plan retention adapter.

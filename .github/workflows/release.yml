@@ -1,0 +1,75 @@
+name: release
+
+# Versioned, reproducible emergency artifact. Tag `v*` builds the runtime from
+# the committed lockfile + pinned MoonBit toolchain, verifies it with the
+# fallback drill, and publishes a GitHub Release whose metadata identifies the
+# commit, toolchain, oracle date, upstream versions, and known differences.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Release verification consumes the vendored toolchain release, not the
+      # moving `latest` channel: install-toolchain.mjs downloads the tarballs
+      # recorded in .moonbit-toolchain.json from this repo's toolchain/* tag
+      # and verifies their sha256 before extracting.
+      - name: Install pinned MoonBit toolchain
+        run: node scripts/install-toolchain.mjs
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build MoonBit JS kernel
+        run: npm run build:core
+
+      - name: Host tests
+        run: npm run test:host
+
+      - name: Package emergency artifact
+        run: |
+          mkdir -p release
+          tar -czf "release/workflows-mbt-${GITHUB_REF_NAME}.tgz" \
+            package.json package-lock.json moon.mod.json .moonbit-toolchain.json \
+            README.md COMPATIBILITY.md \
+            host dist compat fixtures docs scripts
+          ls -la release/
+
+      # Smoke-test the artifact itself: extract to a clean directory, install
+      # production deps from the committed lockfile, and run the fallback
+      # drill (SIGKILL mid-suspension, restart from persisted state) from the
+      # extracted tree — not from the checkout.
+      - name: Verify artifact with fallback drill
+        run: |
+          mkdir -p /tmp/artifact-verify
+          tar -xzf "release/workflows-mbt-${GITHUB_REF_NAME}.tgz" -C /tmp/artifact-verify
+          cd /tmp/artifact-verify
+          npm ci --omit=dev --no-audit --no-fund
+          node compat/run-drill.mjs --skip-cloudflare
+          cd "$GITHUB_WORKSPACE"
+          node scripts/write-release-metadata.mjs \
+            --drill /tmp/artifact-verify/compat-results/drill-latest.json \
+            > release/metadata.json
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            "release/workflows-mbt-${GITHUB_REF_NAME}.tgz" \
+            release/metadata.json \
+            --title "workflows.mbt ${GITHUB_REF_NAME}" \
+            --notes-file release/metadata.json

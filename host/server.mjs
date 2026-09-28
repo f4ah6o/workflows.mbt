@@ -28,7 +28,11 @@ async function writeResponse(res, response) {
     res.end();
     return;
   }
-  await pipeline(Readable.fromWeb(response.body), res);
+  try {
+    await pipeline(Readable.fromWeb(response.body), res);
+  } catch {
+    res.destroy();
+  }
 }
 
 export async function startWorkflowHttpServer(
@@ -36,6 +40,8 @@ export async function startWorkflowHttpServer(
   { host = "127.0.0.1", port = 8787 } = {},
 ) {
   const server = createServer(async (req, res) => {
+    req.on("error", () => {});
+    res.on("error", () => {});
     try {
       const request = await nodeRequest(req, host, port);
       const response =
@@ -56,6 +62,7 @@ export async function startWorkflowHttpServer(
       );
     }
   });
+  server.on("clientError", (_error, socket) => socket.destroy());
   await new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(port, host, () => {

@@ -1,10 +1,11 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { diffTrace, normalizeTrace } from "./normalize.mjs";
+import { collectTraces, diffRun } from "./probe-client.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const resultsDir = join(root, "compat-results");
@@ -13,14 +14,20 @@ const oracleIndex = process.argv.indexOf("--oracle");
 const oracle = oracleIndex >= 0 ? process.argv[oracleIndex + 1] : "pinned";
 if (!["pinned", "latest"].includes(oracle)) throw new Error("oracle must be pinned or latest");
 
-const probes = [
-  "basic",
-  "retry",
-  "sleep",
-  "wait-for-event",
-  "rollback",
-  "entrypoint-ctx",
-];
+const catalog = JSON.parse(
+  readFileSync(join(root, "compat/probes/catalog.json"), "utf8"),
+);
+const probeIndex = process.argv.indexOf("--probe");
+const onlyProbe = probeIndex >= 0 ? process.argv[probeIndex + 1] : null;
+// Probes with `differential: false` document behavior that cannot be diffed —
+// e.g. upstream aborts the isolate on BigInt step output — so they are kept in
+// the catalog (and capability matrix) but skipped by the differential runner.
+const probes = onlyProbe
+  ? [onlyProbe]
+  : catalog.probes.filter((entry) => entry.differential !== false).map((entry) => entry.id);
+if (onlyProbe && !catalog.probes.some((entry) => entry.id === onlyProbe)) {
+  throw new Error("unknown probe: " + onlyProbe);
+}
 const fixture = join(root, "compat/probes/wrangler.jsonc");
 const temp = mkdtempSync(join(tmpdir(), "workflows-mbt-diff-"));
 
@@ -93,29 +100,21 @@ async function waitReady(port, child, label) {
   throw new Error(label + " did not become ready\n" + child.oracleOutput().slice(-8000));
 }
 
-async function runProbe(port, runtime, probe) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
-  try {
-    const response = await fetch("http://127.0.0.1:" + port + "/run", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        probe,
-        id: "oracle-" + runtime + "-" + probe + "-" + Date.now() + "-" + Math.random().toString(16).slice(2),
-      }),
-      signal: controller.signal,
+// A crashed or timed-out run can leave dev servers behind on a port; always
+// bind a fresh free port so we never silently talk to a stale bundle.
+function freePort() {
+  return new Promise((resolvePort, rejectPort) => {
+    const server = createServer();
+    server.once("error", rejectPort);
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address();
+      server.close(() => resolvePort(port));
     });
-    const text = await response.text();
-    if (!response.ok) throw new Error(runtime + "/" + probe + ": HTTP " + response.status + ": " + text);
-    return normalizeTrace(JSON.parse(text));
-  } finally {
-    clearTimeout(timeout);
-  }
+  });
 }
 
 async function collectWorkflowsMbt() {
-  const port = 8790;
+  const port = await freePort();
   const child = start(process.execPath, [
     "host/cli.mjs", "dev",
     "--config", fixture,
@@ -126,16 +125,18 @@ async function collectWorkflowsMbt() {
   ], "workflows.mbt");
   try {
     await waitReady(port, child, "workflows.mbt");
-    const traces = {};
-    for (const probe of probes) traces[probe] = await runProbe(port, "workflows-mbt", probe);
-    return traces;
+    return await collectTraces(`http://127.0.0.1:${port}`, "workflows-mbt", probes, { log: (m) => console.error(m) });
+  } catch (error) {
+    // Runtime never came up or died — still produce a result file so the
+    // drift record can act on it.
+    return { traces: {}, probeErrors: {}, error: error?.message ?? String(error) };
   } finally {
     await stop(child);
   }
 }
 
 async function collectCloudflare() {
-  const port = 8791;
+  const port = await freePort();
   const wrangler = wranglerCommand();
   const child = start(wrangler.command, [
     ...wrangler.args,
@@ -147,34 +148,40 @@ async function collectCloudflare() {
   ], "cloudflare/" + oracle);
   try {
     await waitReady(port, child, "cloudflare/" + oracle);
-    const traces = {};
-    for (const probe of probes) traces[probe] = await runProbe(port, "cloudflare", probe);
-    return traces;
+    return await collectTraces(`http://127.0.0.1:${port}`, "cloudflare", probes, { log: (m) => console.error(m) });
+  } catch (error) {
+    return { traces: {}, probeErrors: {}, error: error?.message ?? String(error) };
   } finally {
     await stop(child);
   }
 }
 
 try {
-  const results = await Promise.all([collectCloudflare(), collectWorkflowsMbt()]);
-  const cloudflare = results[0];
-  const workflowsMbt = results[1];
-  const differences = {};
-  for (const probe of probes) {
-    const diff = diffTrace(cloudflare[probe], workflowsMbt[probe]);
-    if (diff) differences[probe] = diff;
-  }
+  const [cloudflare, workflowsMbt] = await Promise.all([collectCloudflare(), collectWorkflowsMbt()]);
+  const { differences, probeErrors, pass } = diffRun(cloudflare, workflowsMbt, probes);
   const result = {
     oracle,
     checkedAt: new Date().toISOString(),
     probes,
-    cloudflare,
-    workflowsMbt,
+    cloudflare: cloudflare.traces,
+    workflowsMbt: workflowsMbt.traces,
     differences,
-    pass: Object.keys(differences).length === 0,
+    probeErrors,
+    sideErrors: {
+      cloudflare: cloudflare.error ?? null,
+      workflowsMbt: workflowsMbt.error ?? null,
+    },
+    pass,
   };
   writeFileSync(join(resultsDir, "differential-" + oracle + ".json"), JSON.stringify(result, null, 2) + "\n");
-  console.log(JSON.stringify({ oracle, probes, pass: result.pass, differences: Object.keys(differences) }, null, 2));
+  console.log(JSON.stringify({
+    oracle,
+    probes,
+    pass: result.pass,
+    differences: Object.keys(differences),
+    probeErrors: Object.keys(probeErrors),
+    sideErrors: result.sideErrors,
+  }, null, 2));
   if (!result.pass) process.exitCode = 1;
 } finally {
   rmSync(temp, { recursive: true, force: true });

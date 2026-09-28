@@ -197,7 +197,9 @@ export class SQLiteStorage extends Storage {
   }) {
     if (this.getInstanceByPublic(workflowName, id)) {
       const error = new Error(`Workflow instance already exists: ${id}`);
-      error.name = "WorkflowInstanceAlreadyExistsError";
+      // Cloudflare reports duplicate create() as a plain Error; the
+      // alreadyExists flag keeps it identifiable internally.
+      error.alreadyExists = true;
       throw error;
     }
     let storageId = id;
@@ -521,17 +523,39 @@ export class SQLiteStorage extends Storage {
     })();
   }
 
-  finishDoStepTerminal(identity, attempt, error, rollback = null) {
+  // `error` is the event/attempt-surface error; `stepError` is what replay
+  // rethrows to run() — they differ for terminal NonRetryableError failures,
+  // which Cloudflare reports as WorkflowFatalError while the rejection seen by
+  // workflow code is a plain Error.
+  finishDoStepTerminal(identity, attempt, error, rollback = null, stepError = null) {
     this.db.transaction(() => {
       this.finishAttempt(identity, attempt, "failed", error);
       this.updateStep(identity, {
-        state: "failed", error, completed_at: Date.now(),
+        state: "failed", error: stepError ?? error, completed_at: Date.now(),
       });
       this.log(
         identity.instanceId,
         "step.errored",
         JSON.stringify({ name: `${identity.name}-${identity.count}`, error }),
       );
+      if (rollback) {
+        this.registerRollback(
+          identity, identity.ordinal, rollback.config, null, error,
+        );
+      }
+      this.deleteTimer(identity, "retry");
+    })();
+  }
+
+  // Output-serialization failures complete the attempt (the work ran fine —
+  // the result could not be persisted) and fail the step without a
+  // step.errored event, matching Cloudflare's event surface.
+  failDoStepSerialization(identity, attempt, error, rollback = null) {
+    this.db.transaction(() => {
+      this.finishAttempt(identity, attempt, "completed", null);
+      this.updateStep(identity, {
+        state: "failed", error, completed_at: Date.now(),
+      });
       if (rollback) {
         this.registerRollback(
           identity, identity.ordinal, rollback.config, null, error,

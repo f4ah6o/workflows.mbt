@@ -21,11 +21,19 @@ jobs:
 
       - name: Setup MoonBit
         uses: hustcer/setup-moonbit@v1
+        with:
+          # binaries CDN only serves channel names; check:toolchain enforces
+          # the pin recorded in .moonbit-toolchain.json
+          version: "latest"
+          core-version: "latest"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify toolchain pin
+        run: npm run check:toolchain
+
       - name: Install host dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: MoonBit check
         run: npm run check:moon
@@ -38,6 +46,9 @@ jobs:
 
       - name: Compatibility host tests
         run: npm run test:host
+
+      - name: Compatibility probe-client tests
+        run: npm run test:compat
 
       - name: Durable process E2E
         run: npm run test:e2e

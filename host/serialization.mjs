@@ -29,7 +29,9 @@ function encodeNode(value, path, seen) {
     throw new SerializationError(path + " contains unsupported " + type);
   }
 
-  if (seen.has(value)) throw new SerializationError(path + " contains a cycle");
+  // Cycles surface as TypeError — the name Cloudflare's durable serializer
+  // (structuredClone) reports for a cyclic object value.
+  if (seen.has(value)) throw new TypeError(path + " contains a cycle");
   seen.add(value);
   try {
     if (value instanceof Date) {
@@ -153,9 +155,13 @@ function decodeNode(node) {
     case "object": return Object.fromEntries(node.v.map(([key, value]) => [key, decodeNode(value)]));
     case "error": {
       const error = new Error(node.m, node.c ? { cause: decodeNode(node.c) } : undefined);
-      error.name = node.n;
+      // Non-enumerable name so revived Errors JSON.stringify to {} like
+      // upstream's structured-clone round-trip; custom own-properties are
+      // intentionally not restored.
+      Object.defineProperty(error, "name", {
+        value: node.n, writable: true, configurable: true,
+      });
       if (node.s) error.stack = node.s;
-      for (const [key, value] of Object.entries(node.p ?? {})) error[key] = decodeNode(value);
       return error;
     }
     default:

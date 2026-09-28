@@ -64,7 +64,7 @@ export class WorkflowBinding {
         } else {
           outcome = {
             ok: false,
-            error: { id, code: 404, message: "Workflow instance not found" },
+            error: { id, code: 10400, message: "Workflow instance not found" },
           };
         }
         outcomes.set(id, outcome);

@@ -13,6 +13,9 @@ mkdirSync(resultsDir, { recursive: true });
 const modeIndex = process.argv.indexOf("--mode");
 const mode = modeIndex >= 0 ? process.argv[modeIndex + 1] : "pinned";
 if (!["pinned", "latest"].includes(mode)) throw new Error("mode must be pinned or latest");
+// --write re-bases the committed API snapshot from the currently installed
+// pinned packages instead of diffing. Review the resulting diff in git.
+const writeSnapshot = process.argv.includes("--write");
 
 const manifest = JSON.parse(readFileSync(join(root, "compat/oracle/manifest.json"), "utf8"));
 const expectedApi = JSON.parse(readFileSync(join(root, "compat/oracle/api-surface.json"), "utf8"));
@@ -78,19 +81,126 @@ function topLevelNames(block) {
   return [...names].sort();
 }
 
+// Declarations tracked as normalized-hash + top-level member set. Nested
+// object types, option bags, callback shapes and discriminated-union payloads
+// are hashed whole so a changed field/optionality/signature reports as a
+// changed symbol even when its member names stay the same.
+const API_MARKERS = {
+  Workflow: /declare\s+abstract\s+class\s+Workflow\b/,
+  WorkflowInstance: /declare\s+abstract\s+class\s+WorkflowInstance\b/,
+  WorkflowInstanceCreateOptions: /interface\s+WorkflowInstanceCreateOptions\b/,
+  InstanceStatus: /type\s+InstanceStatus\b/,
+  WorkflowInstanceSubscribeOptions: /type\s+WorkflowInstanceSubscribeOptions\b/,
+  WorkflowInstanceSubscription: /interface\s+WorkflowInstanceSubscription\b/,
+  WorkflowInstanceTerminateOptions: /interface\s+WorkflowInstanceTerminateOptions\b/,
+  WorkflowInstanceRestartOptions: /interface\s+WorkflowInstanceRestartOptions\b/,
+  WorkflowInstanceLocationHint: /type\s+WorkflowInstanceLocationHint\b/,
+  WorkflowError: /interface\s+WorkflowError\b/,
+  WorkflowStep: /(?:export\s+|declare\s+)?abstract\s+class\s+WorkflowStep\b/,
+  WorkflowEntrypoint: /(?:export\s+|declare\s+)?abstract\s+class\s+WorkflowEntrypoint\b/,
+  ExecutionContext: /interface\s+ExecutionContext\b/,
+  WorkflowEvent: /type\s+WorkflowEvent</,
+  WorkflowStepEvent: /type\s+WorkflowStepEvent</,
+  WorkflowStepContext: /type\s+WorkflowStepContext</,
+  WorkflowStepConfig: /type\s+WorkflowStepConfig\b/,
+  WorkflowStepRollbackConfig: /type\s+WorkflowStepRollbackConfig\b/,
+  WorkflowStepRollbackOptions: /type\s+WorkflowStepRollbackOptions\b/,
+  WorkflowRollbackContext: /type\s+WorkflowRollbackContext\b/,
+  WorkflowRollbackHandler: /type\s+WorkflowRollbackHandler\b/,
+  WorkflowDynamicDelayContext: /type\s+WorkflowDynamicDelayContext\b/,
+  WorkflowDelayFunction: /type\s+WorkflowDelayFunction\b/,
+  WorkflowCronSchedule: /type\s+WorkflowCronSchedule\b/,
+  NonRetryableError: /class\s+NonRetryableError\b/,
+};
+
+// Single-statement scalar/literal union aliases tracked by normalized text
+// hash. Covers discriminant-value and literal-option changes.
+const API_LITERAL_TYPES = [
+  "WorkflowBackoff",
+  "WorkflowSleepDuration",
+  "WorkflowTimeoutDuration",
+  "WorkflowRetentionDuration",
+  "WorkflowStepSensitivity",
+  "WorkflowDurationLabel",
+];
+
+const API_MEMBER_TRACKED = [
+  "Workflow",
+  "WorkflowInstance",
+  "WorkflowInstanceCreateOptions",
+  "WorkflowInstanceSubscribeOptions",
+  "WorkflowInstanceSubscription",
+  "WorkflowInstanceTerminateOptions",
+  "WorkflowInstanceRestartOptions",
+  "WorkflowError",
+  "WorkflowStep",
+  "WorkflowEntrypoint",
+  "ExecutionContext",
+  "WorkflowEvent",
+  "WorkflowStepEvent",
+  "WorkflowStepContext",
+  "WorkflowStepConfig",
+  "WorkflowStepRollbackConfig",
+  "WorkflowStepRollbackOptions",
+  "WorkflowRollbackContext",
+  "WorkflowDynamicDelayContext",
+  "WorkflowCronSchedule",
+];
+
+// Variant payload shapes of the WorkflowInstanceEvent discriminated union:
+// per event type, the top-level field names plus a normalized hash of the
+// whole variant (so nested config changes are caught too).
+function eventVariantShapes(eventText) {
+  const shapes = {};
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < eventText.length; i += 1) {
+    const char = eventText[i];
+    if (char === "{") {
+      if (depth === 0) start = i;
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        const variant = eventText.slice(start, i + 1);
+        const match = variant.match(/type:\s*["']([^"']+)["']/);
+        if (match) {
+          const name = match[1];
+          const variantStart = variant.indexOf("{");
+          const body = variantStart >= 0 ? variant.slice(variantStart + 1, -1) : variant;
+          const fields = new Set();
+          let inner = 0;
+          for (const line of stripComments(body).split("\n")) {
+            if (inner === 0) {
+              const field = line.match(/^\s*(?:readonly\s+)?([A-Za-z_$][\w$]*)\s*[?:]/);
+              if (field) fields.add(field[1]);
+            }
+            for (const c of line) {
+              if (c === "{") inner += 1;
+              else if (c === "}") inner -= 1;
+            }
+          }
+          shapes[name] = {
+            fields: [...fields].sort(),
+            hash: fnv1a(normalizeDeclaration(variant)),
+          };
+        }
+        start = -1;
+      }
+    }
+  }
+  return shapes;
+}
+
+function literalUnionHash(text, name) {
+  const match = text.match(new RegExp("type\\s+" + name + "\\b\\s*=\\s*([^;]+);"));
+  if (!match) throw new Error("Could not locate Cloudflare literal type: " + name);
+  return fnv1a(normalizeDeclaration(match[1]));
+}
+
 function extractApiSurface(text) {
-  const markers = {
-    Workflow: /declare\s+abstract\s+class\s+Workflow\b/,
-    WorkflowInstance: /declare\s+abstract\s+class\s+WorkflowInstance\b/,
-    WorkflowInstanceCreateOptions: /interface\s+WorkflowInstanceCreateOptions\b/,
-    InstanceStatus: /type\s+InstanceStatus\b/,
-    WorkflowInstanceSubscribeOptions: /type\s+WorkflowInstanceSubscribeOptions\b/,
-    WorkflowStep: /(?:export\s+|declare\s+)?abstract\s+class\s+WorkflowStep\b/,
-    WorkflowEntrypoint: /(?:export\s+|declare\s+)?abstract\s+class\s+WorkflowEntrypoint\b/,
-    ExecutionContext: /interface\s+ExecutionContext\b/,
-  };
   const blocks = Object.fromEntries(
-    Object.entries(markers).map(([name, marker]) => [name, extractBlock(text, marker)]),
+    Object.entries(API_MARKERS).map(([name, marker]) => [name, extractBlock(text, marker)]),
   );
   for (const [name, block] of Object.entries(blocks)) {
     if (!block) throw new Error("Could not locate Cloudflare declaration: " + name);
@@ -98,21 +208,25 @@ function extractApiSurface(text) {
   const eventStart = text.search(/type\s+WorkflowInstanceEvent\b/);
   const eventEnd = text.search(/type\s+WorkflowInstanceEventType\b/);
   const eventText = eventStart >= 0 && eventEnd > eventStart ? text.slice(eventStart, eventEnd) : "";
+  const eventShapes = eventVariantShapes(eventText);
   return {
     hashes: Object.fromEntries(
       Object.entries(blocks).map(([name, block]) => [name, fnv1a(normalizeDeclaration(block))]),
     ),
-    members: {
-      Workflow: topLevelNames(blocks.Workflow),
-      WorkflowInstance: topLevelNames(blocks.WorkflowInstance),
-      WorkflowInstanceCreateOptions: topLevelNames(blocks.WorkflowInstanceCreateOptions),
-      WorkflowInstanceSubscribeOptions: topLevelNames(blocks.WorkflowInstanceSubscribeOptions),
-      WorkflowStep: topLevelNames(blocks.WorkflowStep),
-      WorkflowEntrypoint: topLevelNames(blocks.WorkflowEntrypoint),
-      ExecutionContext: topLevelNames(blocks.ExecutionContext),
-    },
+    literalHashes: Object.fromEntries(
+      API_LITERAL_TYPES.map((name) => [name, literalUnionHash(text, name)]),
+    ),
+    members: Object.fromEntries(
+      API_MEMBER_TRACKED.map((name) => [name, topLevelNames(blocks[name])]),
+    ),
     instanceStatusValues: [...new Set([...blocks.InstanceStatus.matchAll(/\|\s*[\'"]([^\'"]+)[\'"]/g)].map((match) => match[1]))].sort(),
-    eventTypes: [...new Set([...eventText.matchAll(/type:\s*[\'"]([^\'"]+)[\'"]/g)].map((match) => match[1]))].sort(),
+    eventTypes: Object.keys(eventShapes).sort(),
+    eventFields: Object.fromEntries(
+      Object.entries(eventShapes).map(([name, shape]) => [name, shape.fields]),
+    ),
+    eventHashes: Object.fromEntries(
+      Object.entries(eventShapes).map(([name, shape]) => [name, shape.hash]),
+    ),
   };
 }
 
@@ -246,15 +360,27 @@ try {
   if (!existsSync(schemaPath)) throw new Error("Missing " + schemaPath);
 
   const api = extractApiSurface(readFileSync(typesPath, "utf8"));
+  if (!writeSnapshot) {
   const schema = extractSchemaSurface(JSON.parse(readFileSync(schemaPath, "utf8")));
   const drift = { added: [], removed: [], changed: [] };
   for (const [name, expectedMembers] of Object.entries(expectedApi.members)) compareSet(name, expectedMembers, api.members[name] ?? [], drift);
   compareSet("InstanceStatus", expectedApi.instanceStatusValues, api.instanceStatusValues, drift);
   compareSet("WorkflowInstanceEvent", expectedApi.eventTypes, api.eventTypes, drift);
+  for (const [name, expectedFields] of Object.entries(expectedApi.eventFields ?? {})) {
+    compareSet("WorkflowInstanceEvent." + name, expectedFields, api.eventFields[name] ?? [], drift);
+  }
+  for (const [name, expectedHash] of Object.entries(expectedApi.eventHashes ?? {})) {
+    const actualHash = api.eventHashes?.[name];
+    if (actualHash !== expectedHash) drift.changed.push("WorkflowInstanceEvent." + name + ": " + expectedHash + " -> " + actualHash);
+  }
   compareSet("Wrangler.workflows[]", expectedSchema.workflowBindingKeys, schema.workflowBindingKeys, drift);
 
   for (const [name, expectedHash] of Object.entries(expectedApi.hashes)) {
     const actualHash = api.hashes[name];
+    if (actualHash !== expectedHash) drift.changed.push(name + ": " + expectedHash + " -> " + actualHash);
+  }
+  for (const [name, expectedHash] of Object.entries(expectedApi.literalHashes ?? {})) {
+    const actualHash = api.literalHashes?.[name];
     if (actualHash !== expectedHash) drift.changed.push(name + ": " + expectedHash + " -> " + actualHash);
   }
   for (const [key, expectedKind] of Object.entries(expectedSchema.trackedKinds)) {
@@ -283,6 +409,11 @@ try {
   writeFileSync(join(resultsDir, "drift-" + mode + ".json"), JSON.stringify(result, null, 2) + "\n");
   console.log(JSON.stringify(result, null, 2));
   if (!result.pass) process.exitCode = 1;
+  } else {
+    const snapshot = { formatVersion: expectedApi.formatVersion ?? 1, source: expectedApi.source, ...api };
+    writeFileSync(join(root, "compat/oracle/api-surface.json"), JSON.stringify(snapshot, null, 2) + "\n");
+    console.log("wrote compat/oracle/api-surface.json");
+  }
 } finally {
   roots.cleanup();
 }

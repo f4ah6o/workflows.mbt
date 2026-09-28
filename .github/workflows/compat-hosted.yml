@@ -1,0 +1,81 @@
+name: compatibility-hosted
+
+# Credential-gated hosted Cloudflare canary. Deferred until CF_API_TOKEN and
+# CF_ACCOUNT_ID repository secrets are provisioned — see docs/hosted-canary.md.
+# Secrets map to job env so the gate is testable in `if` conditions.
+
+on:
+  schedule:
+    - cron: "41 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  hosted-canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+      CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+      CF_ACCOUNT_SUBDOMAIN: ${{ secrets.CF_ACCOUNT_SUBDOMAIN }}
+      CF_CANARY_URL: ${{ secrets.CF_CANARY_URL }}
+    steps:
+      - name: Report deferral
+        if: env.CF_API_TOKEN == '' || env.CF_ACCOUNT_ID == ''
+        run: echo "hosted canary deferred — see docs/hosted-canary.md"
+
+      - uses: actions/checkout@v4
+        if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+
+      - uses: actions/setup-node@v4
+        if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        with:
+          node-version: 22
+
+      - name: Setup MoonBit
+        if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        uses: hustcer/setup-moonbit@v1
+        with:
+          # binaries CDN only serves channel names; check-toolchain enforces
+          # the pin recorded in .moonbit-toolchain.json
+          version: "latest"
+          core-version: "latest"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify toolchain pin
+        if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        run: npm run check:toolchain
+
+      - name: Install dependencies
+        if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        run: npm ci --no-audit --no-fund
+
+      - name: Build MoonBit JS kernel
+        if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        run: npm run build:core
+
+      - name: Run hosted canary probes
+        if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        run: node compat/canary.mjs
+
+      # Hosted drift must become a durable actionable record, not just a red
+      # scheduled run: upsert one deduplicated GitHub issue per drift
+      # fingerprint (same dedup scheme as compat-latest, keyed on oracle +
+      # upstream versions + failing probes).
+      - name: Record actionable drift
+        if: always() && env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node compat/drift-record.mjs --oracle hosted --publish
+
+      - name: Upload canary artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compatibility-hosted
+          path: compat-results/

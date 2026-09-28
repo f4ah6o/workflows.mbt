@@ -1,0 +1,291 @@
+{
+  "formatVersion": 1,
+  "notes": "Machine-readable compatibility matrix. Evidence flags are verified by compat/check-capabilities.mjs: a differential flag may only be set when the corresponding compat-results run covered every probe mapped to the row and reported no difference. repository_tested is a declared flag for repository regression/E2E coverage (tests/); it is not upstream evidence. intentionally_unsupported rows record documented, accepted differences.",
+  "categories": [
+    "lifecycle",
+    "binding",
+    "step",
+    "promise",
+    "subscription",
+    "schedule",
+    "serialization",
+    "worker",
+    "durability",
+    "rest"
+  ],
+  "capabilities": [
+    {
+      "id": "step.do",
+      "category": "step",
+      "title": "step.do executes a durable named step",
+      "probes": ["basic"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "step.retry",
+      "category": "step",
+      "title": "step retries with limit, delay and backoff",
+      "probes": ["retry"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "step.sleep",
+      "category": "step",
+      "title": "step.sleep relative timer",
+      "probes": ["sleep"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "step.sleep-until",
+      "category": "step",
+      "title": "step.sleepUntil absolute timer",
+      "probes": ["sleep-until"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "step.wait-for-event",
+      "category": "step",
+      "title": "step.waitForEvent delivers sendEvent payloads",
+      "probes": ["wait-for-event"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "step.wait-timeout",
+      "category": "step",
+      "title": "waitForEvent timeout rejects with Execution timed out error",
+      "probes": ["wait-timeout"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "step.non-retryable-error",
+      "category": "step",
+      "title": "NonRetryableError fails the instance immediately (WorkflowFatalError event surface)",
+      "probes": ["nonretryable"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "step.identity",
+      "category": "step",
+      "title": "repeated step names get counted identities (name-1, name-2)",
+      "probes": ["duplicate-names"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "step.context",
+      "category": "step",
+      "title": "step callback ctx.step/ctx.attempt/ctx.config surface",
+      "probes": ["step-context"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "step.dynamic-delay",
+      "category": "step",
+      "title": "retries.delay callback; function leaf absent from ctx.config",
+      "probes": ["dynamic-delay"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "promise.all",
+      "category": "promise",
+      "title": "Promise.all over durable steps",
+      "probes": ["promise-all"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "promise.allsettled",
+      "category": "promise",
+      "title": "Promise.allSettled over durable steps",
+      "probes": ["promise-allsettled"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "promise.race",
+      "category": "promise",
+      "title": "Promise.race winner/loser durable behavior",
+      "probes": ["promise-race"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "promise.any",
+      "category": "promise",
+      "title": "Promise.any resolution",
+      "probes": ["promise-any"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "promise.concurrent-retry",
+      "category": "promise",
+      "title": "retry inside one concurrent branch",
+      "probes": ["retry-in-branch"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "promise.wrapped-race",
+      "category": "promise",
+      "title": "wrapped durable race winner behavior",
+      "probes": ["wrapped-race"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "promise.mixed-durable-event",
+      "category": "promise",
+      "title": "durable operation mixed with event wait",
+      "probes": ["durable-with-event"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "rollback.auto",
+      "category": "lifecycle",
+      "title": "registered rollback handlers run on terminal failure",
+      "probes": ["rollback"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "lifecycle.pause-resume",
+      "category": "lifecycle",
+      "title": "pause and resume an instance via binding",
+      "probes": ["pause-resume"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "lifecycle.terminate-rollback",
+      "category": "lifecycle",
+      "title": "terminate with rollback executes registered handlers",
+      "probes": ["terminate-rollback"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "lifecycle.restart-from",
+      "category": "lifecycle",
+      "title": "restart({from:{name}}) re-executes the named step",
+      "probes": ["restart-from"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false },
+      "knownDifference": "A fresh subscription created after restart replays pre-restart history locally; Cloudflare replays it too. Post-restart events are identified by timestamp in both traces."
+    },
+    {
+      "id": "lifecycle.delete",
+      "category": "lifecycle",
+      "title": "delete removes instance state; create on deleted id works",
+      "probes": ["delete-instance"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "binding.crud",
+      "category": "binding",
+      "title": "binding create/get/createBatch/deleteBatch, duplicate-id error shape, missing-id code 10400",
+      "probes": ["binding-crud"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "binding.retention",
+      "category": "binding",
+      "title": "per-instance retention options and Workflow default_retention",
+      "probes": [],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": false, "latest_differential": false, "hosted_differential": false, "intentionally_unsupported": false },
+      "knownDifference": "Cloudflare applies account-plan defaults when no retention is configured; local runtime has no account-plan context and retains indefinitely."
+    },
+    {
+      "id": "subscribe.filter-cursor",
+      "category": "subscription",
+      "title": "subscription event filters and cursor resume",
+      "probes": ["subscribe-filter"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "subscribe.sensitive-redaction",
+      "category": "subscription",
+      "title": "sensitive: 'output' redacts step output from event stream",
+      "probes": ["sensitive"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "serialization.structured",
+      "category": "serialization",
+      "title": "Date, RegExp, nested structured step values round-trip",
+      "probes": ["ser-structured"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "serialization.collections",
+      "category": "serialization",
+      "title": "Map and Set step values round-trip",
+      "probes": ["ser-collections"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "serialization.binary",
+      "category": "serialization",
+      "title": "ArrayBuffer, DataView and typed-array step values round-trip",
+      "probes": ["ser-binary"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "serialization.error",
+      "category": "serialization",
+      "title": "Error step values round-trip with name/message/cause; custom own-properties dropped",
+      "probes": ["ser-error"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "serialization.unsupported",
+      "category": "serialization",
+      "title": "cyclic step output rejects with catchable TypeError",
+      "probes": ["ser-cyclic"],
+      "skippedProbes": ["ser-unsupported"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false },
+      "knownDifference": "Unserializable (function-valued) step output aborts the upstream isolate uncatchably; workflows.mbt rejects with a catchable error. ser-unsupported is catalogued differential:false."
+    },
+    {
+      "id": "serialization.durable-values",
+      "category": "serialization",
+      "title": "BigInt step output",
+      "probes": [],
+      "skippedProbes": ["ser-bigint"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": false, "latest_differential": false, "hosted_differential": false, "intentionally_unsupported": true },
+      "knownDifference": "Upstream aborts the isolate on BigInt step output (uncatchable, no trace); workflows.mbt serializes bigint natively. Local behavior is a strict superset — recorded as an intentional difference."
+    },
+    {
+      "id": "worker.entrypoint-ctx",
+      "category": "worker",
+      "title": "WorkflowEntrypoint ctx/env surface inside run()",
+      "probes": ["entrypoint-ctx"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "worker.http",
+      "category": "worker",
+      "title": "default Worker fetch binding creation through env",
+      "probes": ["worker-fetch"],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "worker.wait-until",
+      "category": "worker",
+      "title": "ctx.waitUntil tasks drain before runtime close",
+      "probes": [],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": false, "latest_differential": false, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "schedule.cron",
+      "category": "schedule",
+      "title": "cron schedules fire WorkflowEntrypoint with schedule metadata",
+      "probes": [],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": false, "latest_differential": false, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "durability.replay-restart",
+      "category": "durability",
+      "title": "SIGKILL/restart replays persisted steps without re-executing",
+      "probes": [],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": false, "latest_differential": false, "hosted_differential": false, "intentionally_unsupported": false }
+    },
+    {
+      "id": "rest.core",
+      "category": "rest",
+      "title": "core REST facade for instance operations",
+      "probes": [],
+      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": false, "latest_differential": false, "hosted_differential": false, "intentionally_unsupported": false },
+      "knownDifference": "REST subscription streaming transport and step-output endpoint are optional transports not yet implemented."
+    }
+  ]
+}

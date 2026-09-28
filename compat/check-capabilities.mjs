@@ -1,0 +1,175 @@
+// Validates compat/capabilities.json against the probe catalog and the
+// differential results actually produced. The matrix is the source of truth
+// for evidence state; this script makes it impossible to claim differential
+// coverage a run did not deliver.
+//
+//   node compat/check-capabilities.mjs [--require-pinned] [--require-latest] [--require-hosted]
+//
+// A result file that is present but shows failed probes is always a violation.
+// A missing result file makes the corresponding evidence flags unverifiable
+// for this run — it is a violation only when the oracle is --require-ed
+// (the job claiming to have run it). A job that ran only the pinned oracle
+// cannot prove latest_differential — those flags are reported as
+// "previously verified, not re-verified" notes.
+
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const resultsDir = join(root, "compat-results");
+const requiredOracles = ["pinned", "latest", "hosted"]
+  .filter((oracle) => process.argv.includes("--require-" + oracle));
+
+const catalog = JSON.parse(readFileSync(join(root, "compat/probes/catalog.json"), "utf8"));
+const matrix = JSON.parse(readFileSync(join(root, "compat/capabilities.json"), "utf8"));
+
+function loadResult(name) {
+  const path = join(resultsDir, name);
+  return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
+}
+const differential = {
+  pinned: loadResult("differential-pinned.json"),
+  latest: loadResult("differential-latest.json"),
+  hosted: loadResult("differential-hosted.json"),
+};
+const driftPinned = loadResult("drift-pinned.json");
+const driftLatest = loadResult("drift-latest.json");
+const manifest = JSON.parse(readFileSync(join(root, "compat/oracle/manifest.json"), "utf8"));
+
+const errors = [];
+const fail = (message) => errors.push(message);
+
+// Catalog -> matrix coverage: every probe capability resolves to a row, and
+// each row's probes/skippedProbes lists are exactly the catalog probes mapped
+// to it.
+const capabilityToProbes = new Map();
+const capabilityToSkipped = new Map();
+for (const probe of catalog.probes) {
+  for (const capability of probe.capabilities ?? []) {
+    const target = probe.differential === false ? capabilityToSkipped : capabilityToProbes;
+    if (!target.has(capability)) target.set(capability, []);
+    target.get(capability).push(probe.id);
+  }
+}
+
+const rowById = new Map();
+for (const row of matrix.capabilities ?? []) {
+  if (!row.id || typeof row.id !== "string") fail("capability row missing id: " + JSON.stringify(row));
+  if (rowById.has(row.id)) fail("duplicate capability id: " + row.id);
+  rowById.set(row.id, row);
+  if (!matrix.categories?.includes(row.category)) fail(row.id + ": unknown category " + row.category);
+  if (!Array.isArray(row.probes)) fail(row.id + ": probes must be an array");
+  if (row.evidence?.intentionally_unsupported && !row.knownDifference) {
+    fail(row.id + ": intentionally_unsupported requires a knownDifference note");
+  }
+}
+
+for (const [capability, probes] of capabilityToProbes) {
+  const row = rowById.get(capability);
+  if (!row) { fail("catalog capability has no matrix row: " + capability); continue; }
+  const expected = [...probes].sort();
+  const actual = [...(row.probes ?? [])].sort();
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    fail(capability + ": row probes " + JSON.stringify(actual) + " != catalog " + JSON.stringify(expected));
+  }
+}
+for (const [capability, skipped] of capabilityToSkipped) {
+  const row = rowById.get(capability);
+  if (!row) continue;
+  const expected = [...skipped].sort();
+  const actual = [...(row.skippedProbes ?? [])].sort();
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    fail(capability + ": row skippedProbes " + JSON.stringify(actual) + " != catalog " + JSON.stringify(expected));
+  }
+}
+for (const row of matrix.capabilities ?? []) {
+  for (const probeId of [...(row.probes ?? []), ...(row.skippedProbes ?? [])]) {
+    if (!catalog.probes.some((probe) => probe.id === probeId)) {
+      fail(row.id + ": lists unknown probe " + probeId);
+    }
+  }
+}
+
+// A differential run must cover the whole differential-eligible catalog; a
+// partial/stale file is not evidence for any row.
+const catalogDifferentialProbes = catalog.probes
+  .filter((probe) => probe.differential !== false)
+  .map((probe) => probe.id)
+  .sort();
+for (const [oracle, result] of Object.entries(differential)) {
+  if (!result) continue;
+  const covered = [...(result.probes ?? [])].sort();
+  if (JSON.stringify(covered) !== JSON.stringify(catalogDifferentialProbes)) {
+    fail("differential-" + oracle + ".json covers " + covered.length + "/" + catalogDifferentialProbes.length + " catalog probes — stale or partial result");
+  }
+}
+
+// Evidence flags must match what the result files actually contain.
+const resolved = [];
+const notes = [];
+for (const oracle of ["pinned", "latest", "hosted"]) {
+  if (requiredOracles.includes(oracle) && !differential[oracle]) {
+    fail("differential-" + oracle + ".json missing (--require-" + oracle + " given)");
+  }
+}
+for (const row of matrix.capabilities ?? []) {
+  const evidence = { ...row.evidence };
+  for (const oracle of ["pinned", "latest", "hosted"]) {
+    const flag = oracle + "_differential";
+    const result = differential[oracle];
+    if (!result) {
+      if (evidence[flag] && (row.probes ?? []).length > 0) {
+        notes.push(row.id + ": " + flag + " claimed but not re-verified (no result file)");
+      }
+      continue;
+    }
+    // A probe counts as clean evidence only when it ran and matched —
+    // trace differences and per-probe execution errors both disqualify it.
+    const covered =
+      (row.probes ?? []).length > 0 &&
+      row.probes.every(
+        (probe) => result.probes.includes(probe)
+          && !result.differences?.[probe]
+          && !result.probeErrors?.[probe],
+      );
+    if (evidence[flag] && !covered) {
+      fail(row.id + ": claims " + flag + " but differential-" + oracle + " did not pass cleanly for " + JSON.stringify(row.probes ?? []));
+    }
+    if (!evidence[flag] && covered && result.pass) {
+      fail(row.id + ": " + flag + " is supported by results but the flag is not set");
+    }
+  }
+  resolved.push(row);
+}
+
+const resolvedMatrix = {
+  formatVersion: matrix.formatVersion,
+  generatedAt: new Date().toISOString(),
+  upstream: {
+    pinned: driftPinned?.versions ?? {
+      wrangler: manifest.wrangler,
+      workersTypes: manifest.workersTypes,
+      workerd: manifest.workerd,
+    },
+    latest: driftLatest?.versions ?? null,
+  },
+  verifiedAt: {
+    pinned: differential.pinned?.checkedAt ?? null,
+    latest: differential.latest?.checkedAt ?? null,
+    hosted: differential.hosted?.checkedAt ?? null,
+  },
+  capabilities: resolved,
+};
+mkdirSync(resultsDir, { recursive: true });
+writeFileSync(join(resultsDir, "capabilities.json"), JSON.stringify(resolvedMatrix, null, 2) + "\n");
+
+if (notes.length) {
+  for (const note of notes) console.error("note: " + note);
+}
+if (errors.length) {
+  console.error("capability matrix violations:");
+  for (const error of errors) console.error("- " + error);
+  process.exit(1);
+}
+console.log("capability matrix OK: " + resolved.length + " capabilities, " + catalog.probes.length + " catalog probes");

@@ -12,11 +12,14 @@
     "test:moon": "moon test --target js",
     "test:host": "node --test tests/host.test.mjs",
     "test:e2e": "node --test tests/e2e.test.mjs",
-    "test": "npm run check:moon && npm run build:core && npm run test:moon && npm run test:host && npm run test:e2e",
+    "test": "npm run check:moon && npm run build:core && npm run test:moon && npm run test:host && npm run test:compat && npm run test:e2e",
     "compat:typecheck": "tsc -p compat/typecheck/tsconfig.json",
-    "compat:pinned": "npm run compat:typecheck && node compat/oracle/check.mjs --mode pinned && node compat/run-differential.mjs --oracle pinned",
-    "compat:latest": "node compat/run-latest.mjs",
-    "compat:report": "node compat/report.mjs"
+    "compat:pinned": "npm run compat:typecheck && node compat/oracle/check.mjs --mode pinned && node compat/run-differential.mjs --oracle pinned && node compat/check-capabilities.mjs --require-pinned",
+    "compat:latest": "node compat/run-latest.mjs && node compat/check-capabilities.mjs --require-latest",
+    "compat:report": "node compat/report.mjs",
+    "compat:drill": "node compat/run-drill.mjs",
+    "check:toolchain": "node scripts/check-toolchain.mjs",
+    "test:compat": "node --test tests/compat-probe-client.test.mjs tests/release-pin.test.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.1",

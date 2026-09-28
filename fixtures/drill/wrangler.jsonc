@@ -1,0 +1,12 @@
+{
+  "name": "workflows-mbt-fallback-drill",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-26",
+  "workflows": [
+    {
+      "name": "drill",
+      "binding": "DRILL",
+      "class_name": "DrillWorkflow"
+    }
+  ]
+}

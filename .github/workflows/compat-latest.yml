@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   compat-latest:
@@ -27,17 +28,35 @@ jobs:
 
       - name: Setup MoonBit
         uses: hustcer/setup-moonbit@v1
+        with:
+          # binaries CDN only serves channel names; check:toolchain enforces
+          # the pin recorded in .moonbit-toolchain.json
+          version: "latest"
+          core-version: "latest"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify toolchain pin
+        run: npm run check:toolchain
+
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Build MoonBit JS kernel
         run: npm run build:core
 
       - name: Check latest Cloudflare oracle
         run: npm run compat:latest
+
+      # Records/upsets one deduplicated drift record (file artifact always,
+      # GitHub issue when the run produced drift). Keyed by upstream version
+      # tuple + drift fingerprint so repeats update the same record.
+      - name: Record actionable drift
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node compat/drift-record.mjs --publish
 
       - name: Generate compatibility report
         if: always()

@@ -1,7 +1,8 @@
 # Cloudflare dependency insurance and compatibility maintenance
 
-Status: open  
+Status: closed  
 Created: 2026-09-26  
+Closed: 2026-09-28  
 Target: `main`
 
 
@@ -696,3 +697,84 @@ Closure does not mean "fully Cloudflare compatible".
 
 It means the project provides a maintained, continuously tested escape path that
 makes normal dependency on Cloudflare Workflows materially safer.
+
+## Implementation — 2026-09-28
+
+All definition-of-done items satisfied. Pinned oracle: contract clean + all 32
+differential probes pass. Latest oracle (wrangler 4.142.0 / workers-types
+5.20260928.1 / workerd 1.20260928.1): contract clean + probes pass — no drift.
+
+1. **Positioning** — README states the safety-net framing and non-goals;
+   `docs/fallback-runbook.md` carries the DR contract.
+2. **Evidence matrix** — `compat/capabilities.json` (38 capability rows) with
+   per-flag evidence; `compat/check-capabilities.mjs` fails the run when a
+   differential flag is claimed without a covering clean result, or when a
+   catalog probe is unmapped.
+3. **Semantic catalog** — `compat/probes/catalog.json` covers lifecycle
+   (pause/resume, terminate+rollback, restart-from, delete), binding
+   (create/get/batch, duplicate-id shape, missing-id code 10400), step
+   (do/retry/sleep/sleepUntil/waitForEvent/timeout/NonRetryable/identity/
+   context/dynamic-delay), subscriptions (filter/cursor/sensitive redaction),
+   serialization (structured/collections/binary/error/cyclic; BigInt and
+   unserializable-output are `differential:false` — upstream aborts the
+   isolate uncatchably, local is a strict superset), Promise concurrency
+   (all/allSettled/race/any/concurrent-retry/wrapped-race/mixed-event), and
+   Worker fetch. Schedule surface is repository_tested (no local hosted cron
+   oracle to diff against).
+4. **Type drift** — `compat/oracle/api-surface.json` regenerated via
+   `check.mjs --write`: 25 hashed declarations (incl. WorkflowStepContext,
+   WorkflowStepConfig, rollback context/options, delay types, NonRetryableError),
+   6 literal-union hashes, and per-variant field sets + hashes for all 29
+   `WorkflowInstanceEvent` types.
+5. **Durable drift records** — `compat/drift-record.mjs` writes
+   `compat-results/drift-<key>.md` keyed on upstream-version+drift fingerprint
+   and upserts one `compat-drift` GitHub issue per key when run with
+   `--publish` (wired into `compatibility-latest`).
+6. **Hosted canary** — implemented in `compat/canary.mjs` (disposable deploy,
+   bounded catalog, hosted-vs-local normalized diff, cleanup on both paths);
+   deferred pending credentials per `docs/hosted-canary.md`; the
+   `compatibility-hosted` workflow stays inert until `CF_API_TOKEN`/
+   `CF_ACCOUNT_ID` secrets exist.
+7. **Fallback drill** — `node compat/run-drill.mjs`: `fixtures/drill` runs
+   unmodified under `wrangler dev` and `workflows.mbt`, the local runtime is
+   SIGKILLed mid-`step.sleep`, restarts from persisted SQLite state, and must
+   produce identical output. Records land in `compat-results/drill-*.json`.
+8. **Emergency artifact** — `package-lock.json` committed; CI uses `npm ci`;
+   MoonBit pinned via `.moonbit-toolchain.json` (moon 0.1.20260920, moonc
+   0.10.14+7d59c7ec9): monitoring workflows install `latest` + assert equality
+   with the pin (upstream releases surface as explicit drift), while the
+   release workflow installs the exact sha256-verified tarballs vendored as
+   assets on the repo's own immutable `toolchain/0.1.20260920` release via
+   `scripts/install-toolchain.mjs` — independent of upstream channel movement;
+   tag `v*` builds
+   `.github/workflows/release.yml`, which packages the runtime tarball,
+   extracts it to a clean directory, runs the drill from the extracted tree,
+   and publishes a GitHub Release whose `metadata.json` records commit,
+   toolchain, oracle date, upstream tuple, drill result, and the
+   known-differences summary.
+9. **DR contract** — runbook §"Supported disaster-recovery model": new
+   invocations switch; in-flight Cloudflare instances are reconciled
+   separately — no state-portability claim.
+10. **Claims scoping** — version/date tuples in `manifest.json`, report, and
+    release metadata; known differences in COMPATIBILITY.md + matrix
+    `intentionally_unsupported` rows.
+11. **Validation gate** (all executed 2026-09-28): `npm test` 40/40 e2e + host
+    suite pass; `npm run compat:pinned` pass; `npm run compat:latest` pass;
+    `npm run compat:report` generated; drill passed from repo checkout and
+    from the extracted release artifact (`--skip-cloudflare` in the artifact
+    path — the oracle side is covered by compat:pinned). Hosted canary not
+    executed — credentials not provisioned (deferred, see docs).
+12. **Report ↔ matrix** — `compat:report` re-validates the matrix and renders
+    its rows; contract and semantic outcomes are reported as distinct axes per
+    oracle.
+
+Engine-level parity fixes driven by the expanded catalog: terminal
+NonRetryableError event shape (`WorkflowFatalError` + replayable plain-Error),
+`waitForEvent` timeout error surface (`Execution timed out after <ms>ms`),
+`ctx.config` drops function-valued leaves, step results are
+serialize-then-deserialize round-trips (Error own-props dropped, `name`
+non-enumerable), cyclic step output is a fast catchable `TypeError` with
+`attempt_completed` and no `step_errored`, duplicate `create()` surfaces a
+plain-named `Error`, `deleteBatch` missing id reports code 10400, and
+`durationMs` is normalized with ±100ms tolerance (wall-clock emit-time jitter,
+documented in `compat/normalize.mjs`).
