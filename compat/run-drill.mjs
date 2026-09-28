@@ -19,6 +19,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { candidateUsable, loadCandidate, resultsDirFor } from "./candidate.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const resultsDir = join(root, "compat-results");
@@ -28,6 +29,13 @@ const oracleIndex = process.argv.indexOf("--oracle");
 const oracle = oracleIndex >= 0 ? process.argv[oracleIndex + 1] : "pinned";
 if (!["pinned", "latest"].includes(oracle)) throw new Error("oracle must be pinned or latest");
 const skipCloudflare = process.argv.includes("--skip-cloudflare");
+const candidateIndex = process.argv.indexOf("--candidate");
+const candidateArg = candidateIndex >= 0 ? process.argv[candidateIndex + 1] : null;
+const resultsDirOverride = process.env.WORKFLOWS_MBT_RESULTS_DIR ? resolve(process.env.WORKFLOWS_MBT_RESULTS_DIR) : resultsDir;
+const candidate = await loadCandidate(oracle, { candidatePath: candidateArg, resultsDir: resultsDirOverride });
+if (!candidateUsable(candidate) && !skipCloudflare) {
+  throw new Error("upstream candidate unusable: " + (candidate.error ?? "unknown") + " — not a drill result");
+}
 
 const fixture = join(root, "fixtures/drill/wrangler.jsonc");
 const sourceDigest = createHash("sha256")
@@ -126,13 +134,10 @@ async function waitStatus(port, id, wanted, timeoutMs = 30000) {
 }
 
 function wranglerCommand() {
-  if (oracle === "latest") {
-    return { command: process.platform === "win32" ? "npx.cmd" : "npx", args: ["--yes", "wrangler@latest"] };
-  }
-  return {
-    command: process.platform === "win32" ? join(root, "node_modules/.bin/wrangler.cmd") : join(root, "node_modules/.bin/wrangler"),
-    args: [],
-  };
+  const bin = process.platform === "win32" && candidate.paths.wranglerBin.endsWith("/wrangler")
+    ? candidate.paths.wranglerBin + ".cmd"
+    : candidate.paths.wranglerBin;
+  return { command: bin, args: [] };
 }
 
 const drillId = "drill-" + Date.now();
@@ -207,9 +212,11 @@ try {
     artifactVersion: pkg.version,
     oracle: {
       mode: oracle,
-      wrangler: manifest.wrangler,
-      workersTypes: manifest.workersTypes,
-      workerd: manifest.workerd,
+      candidateId: candidate.id,
+      wrangler: candidate.versions?.wrangler ?? null,
+      workersTypes: candidate.versions?.workersTypes ?? null,
+      workerd: candidate.versions?.workerd ?? null,
+      runtime: candidate.runtime ?? null,
       compatibilityDate: manifest.compatibilityDate,
       skipped: skipCloudflare,
     },

@@ -13,6 +13,10 @@ permissions:
   contents: read
   issues: write
 
+concurrency:
+  group: compat-hosted
+  cancel-in-progress: false
+
 jobs:
   hosted-canary:
     runs-on: ubuntu-latest
@@ -54,18 +58,36 @@ jobs:
         if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
         run: npm ci --no-audit --no-fund
 
+      # Same cross-run state restore as compatibility-latest — hosted drift
+      # records share the drift-state.json keyspace per oracle.
+      - name: Restore upstream-ops state
+        if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: compat-results/drift-state.json
+          key: drift-state-hosted-${{ github.run_id }}
+          restore-keys: drift-state-hosted-
+
       - name: Build MoonBit JS kernel
         if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
         run: npm run build:core
 
       - name: Run hosted canary probes
         if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        env:
+          WORKFLOWS_MBT_RUN_ID: hosted-${{ github.run_id }}
         run: node compat/canary.mjs
 
+      # Classify the canary result — hosted-without-evidence becomes
+      # hosted-not-performed, never compatible.
+      - name: Verdict
+        if: always() && env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        run: node compat/verdict.mjs --oracle hosted
+
       # Hosted drift must become a durable actionable record, not just a red
-      # scheduled run: upsert one deduplicated GitHub issue per drift
-      # fingerprint (same dedup scheme as compat-latest, keyed on oracle +
-      # upstream versions + failing probes).
+      # scheduled run: upsert one deduplicated GitHub issue per problem
+      # fingerprint (keyed on oracle + failing probes, never the version
+      # tuple — a new upstream release recurs the same record).
       - name: Record actionable drift
         if: always() && env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
         env:
@@ -73,9 +95,21 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node compat/drift-record.mjs --oracle hosted --publish
 
+      - name: Ensure state file exists
+        if: always() && env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        run: mkdir -p compat-results && [ -f compat-results/drift-state.json ] || echo '{"keys":{}}' > compat-results/drift-state.json
+
+      - name: Save upstream-ops state
+        if: always() && env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        uses: actions/cache/save@v4
+        with:
+          path: compat-results/drift-state.json
+          key: drift-state-hosted-${{ github.run_id }}
+
       - name: Upload canary artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: compatibility-hosted
           path: compat-results/
+          retention-days: 30

@@ -1,0 +1,62 @@
+{
+  "checkedAt": "2026-09-28T09:04:38.577Z",
+  "sourceFile": "compat/cloudflare/VERSION.md",
+  "sources": [
+    {
+      "url": "https://developers.cloudflare.com/workflows/build/workers-api/",
+      "sha256": "3df5919d61e3ed10deeb4c0195778d12c6edae442c0ea0f5f7e2a4d620fa3282"
+    },
+    {
+      "url": "https://developers.cloudflare.com/workflows/build/sleeping-and-retrying/",
+      "sha256": "f50f7323ef7c298cf4c660a24f1337c0b26512032b2ca513908f9cb0481a5ba3"
+    },
+    {
+      "url": "https://developers.cloudflare.com/workflows/build/step-context/",
+      "sha256": "a452d746c42ab74659e64167b5315b3c4a3720552ff10eb9ef4f473776fe9603"
+    },
+    {
+      "url": "https://developers.cloudflare.com/workflows/build/events-and-parameters/",
+      "sha256": "b6dc819d1237a6279ad66f65bf3df5279da64798d7a0993bb1bfc0d56b2222b3"
+    },
+    {
+      "url": "https://developers.cloudflare.com/workflows/build/rules-of-workflows/",
+      "sha256": "52ec3d9cf2b2d1e59ac5abe75b8d7a209755480f4c2ad958ee186858808f9237"
+    },
+    {
+      "url": "https://developers.cloudflare.com/workflows/build/trigger-workflows/",
+      "sha256": "71a5fdca9e23dcac81568888d77217faa56bf8c854bd224eb4673431fe2adc0b"
+    },
+    {
+      "url": "https://developers.cloudflare.com/workflows/build/subscribe-to-instance-events/",
+      "sha256": "9d9ebfb0e0867a3daeacba7784826f8dc86d189919a244d558b83a6bdcab1414"
+    },
+    {
+      "url": "https://developers.cloudflare.com/workers/wrangler/configuration/",
+      "sha256": "1f2262655238d9d0af176320fa0d7ef611900c99e871a93fe23de97230b6d010"
+    },
+    {
+      "url": "https://developers.cloudflare.com/workflows/reference/limits/",
+      "sha256": "f3937f4b6b2d24aae60c7bb16ba37e21566b10fd53f4e6be701e9fa8959df67b"
+    },
+    {
+      "url": "https://developers.cloudflare.com/workflows/reference/pricing/",
+      "sha256": "f6303bc2bb91482677065d18b59cf58f24f0a7ca81abd0012df9bccb3c8ccd64"
+    },
+    {
+      "url": "https://developers.cloudflare.com/api/resources/workflows/",
+      "sha256": "ac10cd1939fc996a7936ab44a8b70c4e7dc56c74ce5637df05409f07bd4ee3ae"
+    },
+    {
+      "url": "https://developers.cloudflare.com/workers/runtime-apis/context/",
+      "sha256": "6f391519c7df06d3406987c740ad5b95ca1d5ee372be6cad46186b5100c5579c"
+    },
+    {
+      "url": "https://developers.cloudflare.com/workers/runtime-apis/streams/",
+      "sha256": "80f35257b518006f57084282f8f93bc38b26f476eac14401b4044ed1beda0b68"
+    },
+    {
+      "url": "https://developers.cloudflare.com/workers/runtime-apis/response/",
+      "sha256": "5bb3ab85bd352c348e0c96c2d75f23f807476c44ca854a12e7207550e22ffe3e"
+    }
+  ]
+}

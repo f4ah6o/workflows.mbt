@@ -438,10 +438,20 @@ exports — without casts, via `Cloudflare.GlobalProps.mainModule`
 augmentation (the wrangler-generated pattern).
 
 `npm run compat:latest` is intentionally outside required PR CI. The scheduled
-`compatibility-latest` workflow resolves current upstream packages, classifies
+`compatibility-latest` workflow resolves the current upstream tuple **once**
+into a shared candidate (exact versions, registry integrity, and the real
+transitive miniflare/workerd the run executed), then typechecks the contract
+fixture against the candidate's `@cloudflare/workers-types`, classifies
 meaningful surface drift as `added`, `removed`, or `changed`, and runs the same
-differential probes against the latest local Wrangler runtime. Reports and raw
-traces are retained as Actions artifacts even when a check fails.
+differential probes against the candidate's wrangler binary. The run ends in a
+machine-readable verdict (`compatible`, `contract-drift`, `semantic-drift`,
+`upstream-acquisition-failure`, `upstream-execution-failure`,
+`local-runtime-failure`, `incomplete-evidence`, or `hosted-not-performed`) —
+an upstream outage, a missing/malformed/stale result file, or a partial probe
+run is never reported as compatibility. Reports, phase results, the verdict,
+and deduplicated drift response packets are retained as Actions artifacts even
+when a check fails. See `docs/upstream-tracking.md` for the operating
+procedure (verdict taxonomy, response packets, verified update candidates).
 
 `npm run compat:report` renders the current verification summary into
 `compat-results/report.md` without replacing the human-maintained compatibility

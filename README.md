@@ -278,18 +278,32 @@ TypeScript probe source under both Cloudflare `wrangler dev` and `workflows.mbt`
 The resulting observable traces are normalized before comparison.
 
 `compat:latest` is intentionally separated into the scheduled/manual
-`compatibility-latest` workflow. It resolves current upstream packages and
-classifies contract drift as `added`, `removed`, or `changed` before running the
-same local differential probes. A new upstream release therefore does not block
+`compatibility-latest` workflow. It resolves current upstream packages
+**once** into a shared candidate manifest — exact versions, registry
+integrity hashes, the real transitive miniflare/workerd the run executed —
+and every phase (candidate-scoped typecheck, contract, differential,
+docs-watch, verdict, response, update-candidate) consumes that one candidate
+under a single run id. The run ends in a machine-readable verdict
+(`compatible` / `contract-drift` / `semantic-drift` /
+`upstream-acquisition-failure` / `upstream-execution-failure` /
+`local-runtime-failure` / `incomplete-evidence` / `hosted-not-performed`), so
+an upstream outage, a missing result file, or a stale record can never be
+reported as compatibility. A new upstream release therefore does not block
 unrelated pull requests just because a version number changed.
 
 The pinned versions live in `compat/oracle/manifest.json`. Machine-readable
 results and `compat-results/report.md` are uploaded as GitHub Actions artifacts.
 The evidence matrix is `compat/capabilities.json` (validated by
-`compat/check-capabilities.mjs`, rendered into the report); contract drift and
-semantic probe results are reported as distinct outcomes. Latest-oracle drift
-produces deduplicated durable records via `compat/drift-record.mjs` (one
-`compat-drift` GitHub issue per drift fingerprint).
+`compat/check-capabilities.mjs`, rendered into the report). Latest-oracle
+drift produces deduplicated response packets via `compat/drift-record.mjs`
+— one record per problem identity (a new upstream version recurs the same
+record, it never spawns a duplicate), written into `issues/open/` following
+the repository's md-issue convention; publishing to GitHub Issues happens
+only behind `--publish` and records its real outcome. A `compatible` verdict
+emits `compat-results/proposed-manifest.json` — a verified update candidate
+whose application is manual (see
+[docs/upstream-tracking.md](./docs/upstream-tracking.md) for the full
+operating procedure).
 
 `node compat/run-drill.mjs` runs the source-unmodified fallback drill — the
 fixture under `fixtures/drill/` executes under `wrangler dev` and
@@ -297,6 +311,15 @@ fixture under `fixtures/drill/` executes under `wrangler dev` and
 instance must complete from persisted state with identical output. A hosted
 Cloudflare canary is implemented but credential-gated and deferred; see
 `docs/hosted-canary.md`.
+
+`npm run test:scenario` runs the practical consumer scenario
+(`scripts/consumer-scenario.mjs` against `examples/scenario/`): an ordinary
+Cloudflare Workflow performs an external HTTP side effect behind a retry
+policy, the runtime is SIGKILLed after the downstream effect was applied but
+before the step result committed (at-least-once delivery; the business
+idempotency key dedups the replay — exactly-once external effects are not
+claimed), SIGKILLed again while parked on `waitForEvent`, then restarted and
+completed. Evidence lands in `compat-results/scenario-consumer.json`.
 
 ## Scope
 

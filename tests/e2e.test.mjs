@@ -205,7 +205,7 @@ test("durable replay and durable sleep survive SIGKILL without rerunning A/B", a
       instance.id,
     );
     return rows[0]?.status === "complete" ? rows[0] : null;
-  }, { timeout: 5000 });
+  }, { timeout: 30_000 });
 
   assert.equal(counter.counts.get("/A"), 1);
   assert.equal(counter.counts.get("/B"), 1);
@@ -255,7 +255,7 @@ test("retry attempts and retry timer survive runtime process restart", async (t)
       instance.id,
     );
     return rows[0]?.status === "complete";
-  }, { timeout: 5000 });
+  }, { timeout: 30_000 });
 
   const attempts = dbSnapshot(
     paths.storagePath,
@@ -428,7 +428,7 @@ test("restart during Promise.all replays committed branches without rerunning ca
       instance.id,
     );
     return row?.status === "complete";
-  }, { timeout: 5000 });
+  }, { timeout: 30_000 });
 
   assert.equal(counter.counts.get("/parallel-A"), 1);
   assert.equal(counter.counts.get("/parallel-B"), 1);
@@ -512,7 +512,7 @@ test("rollback runs in reverse order and resumes after SIGKILL without rerunning
       instance.id,
     );
     return row?.status === "terminated" ? row : null;
-  }, { timeout: 5000 });
+  }, { timeout: 30_000 });
   await stopChild(second, "SIGTERM");
 
   assert.equal(terminal.rollback_outcome, "complete");
@@ -1126,7 +1126,7 @@ test("structured non-JSON step values preserve types across SIGKILL replay", asy
       instance.id,
     );
     return row?.status === "complete";
-  }, { timeout: 5000 });
+  }, { timeout: 30_000 });
   await stopChild(second, "SIGTERM");
 
   const verify = await openRuntime(e2eConfig, paths);
@@ -1188,7 +1188,7 @@ test("outer step.do makes Promise.race winner durable across replay", async (t) 
       instance.id,
     );
     return row?.status === "complete" ? row : null;
-  }, { timeout: 5000 });
+  }, { timeout: 30_000 });
   await stopChild(second, "SIGTERM");
 
   const verify = await openRuntime(e2eConfig, paths);

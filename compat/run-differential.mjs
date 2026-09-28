@@ -1,18 +1,35 @@
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { candidateUsable, loadCandidate, resultsDirFor } from "./candidate.mjs";
 import { collectTraces, diffRun } from "./probe-client.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const resultsDir = join(root, "compat-results");
+const resultsDir = resultsDirFor(root);
 mkdirSync(resultsDir, { recursive: true });
 const oracleIndex = process.argv.indexOf("--oracle");
 const oracle = oracleIndex >= 0 ? process.argv[oracleIndex + 1] : "pinned";
 if (!["pinned", "latest"].includes(oracle)) throw new Error("oracle must be pinned or latest");
+const candidateIndex = process.argv.indexOf("--candidate");
+const candidateArg = candidateIndex >= 0 ? process.argv[candidateIndex + 1] : null;
+const runId = process.env.WORKFLOWS_MBT_RUN_ID ?? "differential-" + oracle + "-" + Date.now();
+
+function sha256File(path) {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function gitCommit() {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  } catch {
+    return null;
+  }
+}
 
 const catalog = JSON.parse(
   readFileSync(join(root, "compat/probes/catalog.json"), "utf8"),
@@ -31,14 +48,37 @@ if (onlyProbe && !catalog.probes.some((entry) => entry.id === onlyProbe)) {
 const fixture = join(root, "compat/probes/wrangler.jsonc");
 const temp = mkdtempSync(join(tmpdir(), "workflows-mbt-diff-"));
 
+// The upstream side runs the shared run candidate — for `latest` that is the
+// isolated install resolved once at run entry, never a fresh `npx wrangler@latest`.
+const candidate = await loadCandidate(oracle, { candidatePath: candidateArg, resultsDir });
+
 function wranglerCommand() {
-  if (oracle === "latest") {
-    return { command: process.platform === "win32" ? "npx.cmd" : "npx", args: ["--yes", "wrangler@latest"] };
-  }
-  return {
-    command: process.platform === "win32" ? join(root, "node_modules/.bin/wrangler.cmd") : join(root, "node_modules/.bin/wrangler"),
-    args: [],
+  const bin = process.platform === "win32" && candidate.paths.wranglerBin.endsWith("/wrangler")
+    ? candidate.paths.wranglerBin + ".cmd"
+    : candidate.paths.wranglerBin;
+  return { command: bin, args: [] };
+}
+
+if (!candidateUsable(candidate)) {
+  const result = {
+    oracle,
+    runId,
+    checkedAt: new Date().toISOString(),
+    commit: gitCommit(),
+    candidateId: candidate.id ?? null,
+    phaseStatus: "upstream-acquisition-failure",
+    error: candidate.error ?? "candidate not usable",
+    probes: [],
+    cloudflare: {},
+    workflowsMbt: {},
+    differences: {},
+    probeErrors: {},
+    sideErrors: { cloudflare: "acquisition-failure", workflowsMbt: null },
+    pass: false,
   };
+  writeFileSync(join(resultsDir, "differential-" + oracle + ".json"), JSON.stringify(result, null, 2) + "\n");
+  console.log(JSON.stringify(result, null, 2));
+  process.exit(1);
 }
 
 function start(command, args, label) {
@@ -161,7 +201,14 @@ try {
   const { differences, probeErrors, pass } = diffRun(cloudflare, workflowsMbt, probes);
   const result = {
     oracle,
+    runId,
     checkedAt: new Date().toISOString(),
+    commit: gitCommit(),
+    candidateId: candidate.id,
+    versions: candidate.versions,
+    runtime: candidate.runtime ?? null,
+    probeSourceHash: "sha256:" + sha256File(join(root, "compat/probes/src/index.ts")),
+    catalogHash: "sha256:" + sha256File(join(root, "compat/probes/catalog.json")),
     probes,
     cloudflare: cloudflare.traces,
     workflowsMbt: workflowsMbt.traces,

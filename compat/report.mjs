@@ -23,6 +23,11 @@ const differentialPinned = load("differential-pinned.json");
 const differentialLatest = load("differential-latest.json");
 const driftPinned = load("drift-pinned.json");
 const driftLatest = load("drift-latest.json");
+const verdictLatest = load("verdict-latest.json");
+const verdictHosted = load("verdict-hosted.json");
+const updateCandidate = load("update-candidate-latest.json");
+const docsWatch = load("docs-watch.json");
+const scenario = load("scenario-consumer.json");
 const capabilities = load("capabilities.json");
 const compatibility = readFileSync(join(root, "COMPATIBILITY.md"), "utf8");
 const known = compatibility.split("## Known differences")[1]?.split("## Compatibility claim")[0]?.trim() ?? "See COMPATIBILITY.md";
@@ -72,7 +77,29 @@ const lines = [
   "## Outcome",
   "",
   "- pinned oracle: " + oracleOutcome(driftPinned, differentialPinned),
-  "- latest oracle: " + oracleOutcome(driftLatest, differentialLatest),
+  "- latest oracle: " + (verdictLatest
+      ? `verdict **${verdictLatest.verdict}** (run ${verdictLatest.runId ?? "?"}, candidate ${verdictLatest.candidate?.id ?? "?"})`
+      : oracleOutcome(driftLatest, differentialLatest) + " — no verdict file"),
+  "- hosted oracle: " + (verdictHosted
+      ? `verdict **${verdictHosted.verdict}**`
+      : "no verdict (credential-gated canary has not run)"),
+  ...(updateCandidate ? [
+    "- update candidate: " + updateCandidate.status
+      + (updateCandidate.status === "proposed"
+        ? ` — ${updateCandidate.current?.wrangler} -> ${updateCandidate.proposed?.wrangler} (proposal: ${updateCandidate.proposalFile}; apply is manual)`
+        : updateCandidate.status === "blocked"
+          ? " — requiresImplementationChange (see drift packet)"
+          : updateCandidate.reason ? ` — ${updateCandidate.reason}` : ""),
+  ] : []),
+  ...(docsWatch ? [
+    "- docs watch: " + (docsWatch.changed?.length
+      ? `${docsWatch.changed.length} source(s) changed — investigation trigger`
+      : "unchanged"),
+  ] : []),
+  ...(scenario ? [
+    "- practical scenario: " + scenario.finalStatus
+      + ` (charge calls: ${scenario.observations?.chargeCalls}, applied: ${scenario.observations?.chargeAppliedRecords}, kill points: ${(scenario.killPoints ?? []).map((k) => k.at).join(", ")})`,
+  ] : []),
   "",
   "## Differential probes",
   "",

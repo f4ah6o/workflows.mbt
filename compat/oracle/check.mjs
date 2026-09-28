@@ -1,13 +1,12 @@
-import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
+import { candidateUsable, loadCandidate, resultsDirFor } from "../candidate.mjs";
 
-const execFileP = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const resultsDir = join(root, "compat-results");
+const resultsDir = resultsDirFor(root);
 mkdirSync(resultsDir, { recursive: true });
 
 const modeIndex = process.argv.indexOf("--mode");
@@ -16,6 +15,21 @@ if (!["pinned", "latest"].includes(mode)) throw new Error("mode must be pinned o
 // --write re-bases the committed API snapshot from the currently installed
 // pinned packages instead of diffing. Review the resulting diff in git.
 const writeSnapshot = process.argv.includes("--write");
+const candidateIndex = process.argv.indexOf("--candidate");
+const candidateArg = candidateIndex >= 0 ? process.argv[candidateIndex + 1] : null;
+const runId = process.env.WORKFLOWS_MBT_RUN_ID ?? "contract-" + mode + "-" + Date.now();
+
+function sha256File(path) {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function gitCommit() {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  } catch {
+    return null;
+  }
+}
 
 const manifest = JSON.parse(readFileSync(join(root, "compat/oracle/manifest.json"), "utf8"));
 const expectedApi = JSON.parse(readFileSync(join(root, "compat/oracle/api-surface.json"), "utf8"));
@@ -303,59 +317,46 @@ function localClassMembers(path, className) {
   return names;
 }
 
-function packageVersion(path) {
-  return JSON.parse(readFileSync(path, "utf8")).version;
-}
 
-async function packPackage(pkg, spec, destination) {
-  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-  const packed = await execFileP(npm, ["pack", pkg + "@" + spec, "--json", "--pack-destination", destination], {
-    cwd: root,
-    maxBuffer: 8 * 1024 * 1024,
-  });
-  const parsed = JSON.parse(packed.stdout);
-  const filename = parsed.at(-1)?.filename;
-  if (!filename) throw new Error("npm pack returned no filename for " + pkg + "@" + spec);
-  const archive = join(destination, filename);
-  const output = join(destination, pkg.replaceAll("/", "_").replaceAll("@", "") + "-" + spec);
-  mkdirSync(output, { recursive: true });
-  await execFileP("tar", ["-xzf", archive, "-C", output], { maxBuffer: 8 * 1024 * 1024 });
-  return join(output, "package");
-}
+// The verification target is the shared run candidate, resolved once at the
+// run entry (compat/candidate.mjs). This phase never re-resolves @latest.
+const candidate = await loadCandidate(mode, { candidatePath: candidateArg, resultsDir });
 
-async function packageRoots() {
-  if (mode === "pinned") {
-    return {
-      wrangler: join(root, "node_modules/wrangler"),
-      workersTypes: join(root, "node_modules/@cloudflare/workers-types"),
-      workerd: join(root, "node_modules/workerd"),
-      cleanup() {},
-    };
-  }
-  const temp = mkdtempSync(join(tmpdir(), "workflows-mbt-oracle-"));
-  const roots = await Promise.all([
-    packPackage("wrangler", "latest", temp),
-    packPackage("@cloudflare/workers-types", "latest", temp),
-    packPackage("workerd", "latest", temp),
-  ]);
-  return { wrangler: roots[0], workersTypes: roots[1], workerd: roots[2], cleanup: () => rmSync(temp, { recursive: true, force: true }) };
-}
-
-const roots = await packageRoots();
-try {
-  const versions = {
-    wrangler: packageVersion(join(roots.wrangler, "package.json")),
-    workersTypes: packageVersion(join(roots.workersTypes, "package.json")),
-    workerd: packageVersion(join(roots.workerd, "package.json")),
+if (!candidateUsable(candidate)) {
+  // Acquisition failure is a phase result, not a crash: write the marker file
+  // so the run verdict can classify it and no stale file masquerades as fresh
+  // evidence.
+  const result = {
+    mode,
+    runId,
+    checkedAt: new Date().toISOString(),
+    commit: gitCommit(),
+    candidateId: candidate.id ?? null,
+    phaseStatus: "upstream-acquisition-failure",
+    error: candidate.error ?? "candidate not usable",
+    pass: false,
   };
+  writeFileSync(join(resultsDir, "drift-" + mode + ".json"), JSON.stringify(result, null, 2) + "\n");
+  console.log(JSON.stringify(result, null, 2));
+  process.exit(1);
+}
+
+const roots = {
+  wrangler: candidate.paths.wranglerPkg,
+  workersTypes: candidate.paths.workersTypesPkg,
+  workerd: candidate.paths.workerdPkg,
+  cleanup() {},
+};
+try {
+  const versions = candidate.versions;
   if (mode === "pinned") {
     for (const [key, expected] of Object.entries({ wrangler: manifest.wrangler, workersTypes: manifest.workersTypes, workerd: manifest.workerd })) {
       if (versions[key] !== expected) throw new Error("Pinned " + key + " version mismatch: expected " + expected + ", got " + versions[key]);
     }
   }
 
-  const typesPath = join(roots.workersTypes, "index.d.ts");
-  const schemaPath = join(roots.wrangler, "config-schema.json");
+  const typesPath = candidate.paths.typesPath;
+  const schemaPath = candidate.paths.schemaPath;
   if (!existsSync(typesPath)) throw new Error("Missing " + typesPath);
   if (!existsSync(schemaPath)) throw new Error("Missing " + schemaPath);
 
@@ -399,9 +400,14 @@ try {
 
   const result = {
     mode,
+    runId,
     checkedAt: new Date().toISOString(),
+    commit: gitCommit(),
+    candidateId: candidate.id,
     compatibilityDate: manifest.compatibilityDate,
     versions,
+    runtime: candidate.runtime ?? null,
+    baselineHash: "sha256:" + sha256File(join(root, "compat/oracle/api-surface.json")),
     localSurface,
     drift,
     pass: drift.added.length === 0 && drift.removed.length === 0 && drift.changed.length === 0,

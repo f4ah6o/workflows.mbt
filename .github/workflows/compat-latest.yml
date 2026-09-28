@@ -15,6 +15,13 @@ permissions:
   contents: read
   issues: write
 
+# The drift-state cache is a shared state machine: overlapping runs (push
+# racing a schedule, two dispatches) would restore the same prior state,
+# race findIssue/createIssue, and save divergent run-id caches. Serialize.
+concurrency:
+  group: compat-latest
+  cancel-in-progress: false
+
 jobs:
   compat-latest:
     runs-on: ubuntu-latest
@@ -36,21 +43,42 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Toolchain pin drift must not block upstream verification — the oracle
+      # check is about npm upstream, and a moon mismatch still produces
+      # complete evidence (build failure surfaces as local-runtime-failure).
       - name: Verify toolchain pin
+        continue-on-error: true
         run: npm run check:toolchain
 
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
+      # drift-state.json carries dedup/recur history + publish outcomes
+      # (issue numbers). A fresh checkout has none — restore the previous
+      # run's state so open records are not re-created/re-commented. The
+      # committed issues/open packet footers remain the rebuild fallback.
+      - name: Restore upstream-ops state
+        uses: actions/cache/restore@v4
+        with:
+          path: compat-results/drift-state.json
+          key: drift-state-latest-${{ github.run_id }}
+          restore-keys: drift-state-latest-
+
       - name: Build MoonBit JS kernel
         run: npm run build:core
 
+      # Resolves @latest once into a shared candidate, then runs typecheck,
+      # contract, differential, docs-watch, verdict, drift record and the
+      # update-candidate generator — all under one run id. Exit code reflects
+      # the verdict: a non-zero verdict marks the run red (the signal), while
+      # the `if: always()` steps below still leave the full evidence trail.
       - name: Check latest Cloudflare oracle
         run: npm run compat:latest
 
-      # Records/upsets one deduplicated drift record (file artifact always,
-      # GitHub issue when the run produced drift). Keyed by upstream version
-      # tuple + drift fingerprint so repeats update the same record.
+      # Publishes the drift packet behind the explicit gate. The publisher
+      # prechecks GitHub Issues availability and records the real outcome
+      # (created/commented/skipped/failed) in publish-*.json — an unavailable
+      # destination is never reported as a notification success.
       - name: Record actionable drift
         if: always()
         env:
@@ -62,9 +90,36 @@ jobs:
         if: always()
         run: npm run compat:report
 
+      - name: Write run summary
+        if: always()
+        run: |
+          echo "# compatibility-latest run" >> "$GITHUB_STEP_SUMMARY"
+          for f in compat-results/verdict-latest.json compat-results/update-candidate-latest.json; do
+            [ -f "$f" ] && echo "## $f" >> "$GITHUB_STEP_SUMMARY" && echo '```json' >> "$GITHUB_STEP_SUMMARY" && cat "$f" >> "$GITHUB_STEP_SUMMARY" && echo '```' >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      # Persist the dedup state for the next scheduled run — the artifact
+      # upload below is evidence; this cache is the cross-run state store
+      # (fresh checkouts cannot rebuild state from packets nobody committed).
+      - name: Ensure state file exists
+        if: always()
+        run: mkdir -p compat-results && [ -f compat-results/drift-state.json ] || echo '{"keys":{}}' > compat-results/drift-state.json
+
+      - name: Save upstream-ops state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: compat-results/drift-state.json
+          key: drift-state-latest-${{ github.run_id }}
+
+      # compat-results/ holds every evidence artifact: candidate manifest,
+      # phase results, verdict, drift packets, publish outcomes, proposed
+      # manifest. Retention is bounded — the drift packet (and its GitHub
+      # issue when publishing is available) is the durable record.
       - name: Upload compatibility artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: compatibility-latest
           path: compat-results/
+          retention-days: 30
