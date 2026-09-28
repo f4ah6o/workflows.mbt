@@ -3,11 +3,14 @@
 // for evidence state; this script makes it impossible to claim differential
 // coverage a run did not deliver.
 //
-//   node compat/check-capabilities.mjs [--strict]
+//   node compat/check-capabilities.mjs [--require-pinned] [--require-latest] [--require-hosted]
 //
-// --strict also fails when pinned/latest result files are missing entirely.
-// Without it, a missing result file only forces the corresponding evidence
-// flags off (it records "not executed" rather than failing).
+// A result file that is present but shows failed probes is always a violation.
+// A missing result file makes the corresponding evidence flags unverifiable
+// for this run — it is a violation only when the oracle is --require-ed
+// (the job claiming to have run it). A job that ran only the pinned oracle
+// cannot prove latest_differential — those flags are reported as
+// "previously verified, not re-verified" notes.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -15,7 +18,8 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const resultsDir = join(root, "compat-results");
-const strict = process.argv.includes("--strict");
+const requiredOracles = ["pinned", "latest", "hosted"]
+  .filter((oracle) => process.argv.includes("--require-" + oracle));
 
 const catalog = JSON.parse(readFileSync(join(root, "compat/probes/catalog.json"), "utf8"));
 const matrix = JSON.parse(readFileSync(join(root, "compat/capabilities.json"), "utf8"));
@@ -103,13 +107,24 @@ for (const [oracle, result] of Object.entries(differential)) {
 
 // Evidence flags must match what the result files actually contain.
 const resolved = [];
+const notes = [];
+for (const oracle of ["pinned", "latest", "hosted"]) {
+  if (requiredOracles.includes(oracle) && !differential[oracle]) {
+    fail("differential-" + oracle + ".json missing (--require-" + oracle + " given)");
+  }
+}
 for (const row of matrix.capabilities ?? []) {
   const evidence = { ...row.evidence };
   for (const oracle of ["pinned", "latest", "hosted"]) {
     const flag = oracle + "_differential";
     const result = differential[oracle];
+    if (!result) {
+      if (evidence[flag] && (row.probes ?? []).length > 0) {
+        notes.push(row.id + ": " + flag + " claimed but not re-verified (no result file)");
+      }
+      continue;
+    }
     const covered =
-      result &&
       (row.probes ?? []).length > 0 &&
       row.probes.every(
         (probe) => result.probes.includes(probe) && !result.differences?.[probe],
@@ -121,7 +136,6 @@ for (const row of matrix.capabilities ?? []) {
       fail(row.id + ": " + flag + " is supported by results but the flag is not set");
     }
   }
-  if (strict && !differential.pinned) fail("differential-pinned.json missing");
   resolved.push(row);
 }
 
@@ -146,6 +160,9 @@ const resolvedMatrix = {
 mkdirSync(resultsDir, { recursive: true });
 writeFileSync(join(resultsDir, "capabilities.json"), JSON.stringify(resolvedMatrix, null, 2) + "\n");
 
+if (notes.length) {
+  for (const note of notes) console.error("note: " + note);
+}
 if (errors.length) {
   console.error("capability matrix violations:");
   for (const error of errors) console.error("- " + error);
