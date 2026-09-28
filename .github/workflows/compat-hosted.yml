@@ -54,6 +54,16 @@ jobs:
         if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
         run: npm ci --no-audit --no-fund
 
+      # Same cross-run state restore as compatibility-latest — hosted drift
+      # records share the drift-state.json keyspace per oracle.
+      - name: Restore upstream-ops state
+        if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: compat-results/drift-state.json
+          key: drift-state-hosted-${{ github.run_id }}
+          restore-keys: drift-state-hosted-
+
       - name: Build MoonBit JS kernel
         if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
         run: npm run build:core
@@ -80,6 +90,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node compat/drift-record.mjs --oracle hosted --publish
+
+      - name: Ensure state file exists
+        if: always() && env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        run: mkdir -p compat-results && [ -f compat-results/drift-state.json ] || echo '{"keys":{}}' > compat-results/drift-state.json
+
+      - name: Save upstream-ops state
+        if: always() && env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        uses: actions/cache/save@v4
+        with:
+          path: compat-results/drift-state.json
+          key: drift-state-hosted-${{ github.run_id }}
 
       - name: Upload canary artifacts
         if: always()

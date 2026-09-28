@@ -46,6 +46,17 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
+      # drift-state.json carries dedup/recur history + publish outcomes
+      # (issue numbers). A fresh checkout has none — restore the previous
+      # run's state so open records are not re-created/re-commented. The
+      # committed issues/open packet footers remain the rebuild fallback.
+      - name: Restore upstream-ops state
+        uses: actions/cache/restore@v4
+        with:
+          path: compat-results/drift-state.json
+          key: drift-state-latest-${{ github.run_id }}
+          restore-keys: drift-state-latest-
+
       - name: Build MoonBit JS kernel
         run: npm run build:core
 
@@ -80,11 +91,24 @@ jobs:
             [ -f "$f" ] && echo "## $f" >> "$GITHUB_STEP_SUMMARY" && echo '```json' >> "$GITHUB_STEP_SUMMARY" && cat "$f" >> "$GITHUB_STEP_SUMMARY" && echo '```' >> "$GITHUB_STEP_SUMMARY"
           done
 
+      # Persist the dedup state for the next scheduled run — the artifact
+      # upload below is evidence; this cache is the cross-run state store
+      # (fresh checkouts cannot rebuild state from packets nobody committed).
+      - name: Ensure state file exists
+        if: always()
+        run: mkdir -p compat-results && [ -f compat-results/drift-state.json ] || echo '{"keys":{}}' > compat-results/drift-state.json
+
+      - name: Save upstream-ops state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: compat-results/drift-state.json
+          key: drift-state-latest-${{ github.run_id }}
+
       # compat-results/ holds every evidence artifact: candidate manifest,
       # phase results, verdict, drift packets, publish outcomes, proposed
-      # manifest. Retention is bounded — but the committed issues/open/*.md
-      # packet is the durable record: its drift-state footer lets the next
-      # run rebuild versionsSeen and resolve/recur state from scratch.
+      # manifest. Retention is bounded — the drift packet (and its GitHub
+      # issue when publishing is available) is the durable record.
       - name: Upload compatibility artifacts
         if: always()
         uses: actions/upload-artifact@v4

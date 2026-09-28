@@ -34,7 +34,6 @@
 // observations never re-comment.
 
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -72,8 +71,6 @@ function fnv1a(text) {
   return hash.toString(16).padStart(8, "0");
 }
 
-const sha = (text) => createHash("sha256").update(text).digest("hex").slice(0, 16);
-
 const verdict = load(`verdict-${oracle}.json`);
 const drift = load(`drift-${oracle}.json`);
 const differential = load(`differential-${oracle}.json`);
@@ -99,10 +96,16 @@ const versionsTuple = versions
   ? `${versions.wrangler}/${versions.workersTypes ?? versions["@cloudflare/workers-types"]}/${versions.workerd}`
   : "unknown";
 const runId = differential?.runId ?? drift?.runId ?? typecheck?.runId ?? verdict?.runId ?? null;
+const runUrl = process.env.GITHUB_RUN_ID && process.env.GITHUB_REPOSITORY
+  ? `${process.env.GITHUB_SERVER_URL ?? "https://github.com"}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
+  : null;
 
 // ---- state sidecar -------------------------------------------------------
 const statePath = join(resultsDir, "drift-state.json");
-const state = existsSync(statePath) ? JSON.parse(readFileSync(statePath, "utf8")) : { keys: {} };
+const state = (() => {
+  if (!existsSync(statePath)) return { keys: {} };
+  try { return JSON.parse(readFileSync(statePath, "utf8")); } catch { return { keys: {} }; }
+})();
 state.keys ??= {};
 
 const hasDrift = Boolean(contractDrift) || semanticFailures.length > 0;
@@ -154,7 +157,12 @@ function rebuildStateFromIssues() {
   return rebuilt;
 }
 function stateFooterFor(stateEntry) {
-  const { github: _github, ...rest } = stateEntry;
+  // Persist the issue number (needed to find the issue again) but never
+  // lastCommentHash — a hash of the record cannot live inside the hashed
+  // record. Comment dedup instead derives from the issue's comment history.
+  const rest = { ...stateEntry };
+  if (rest.github?.issue) rest.github = { issue: rest.github.issue };
+  else delete rest.github;
   return `\n${FOOTER_PREFIX}${JSON.stringify(rest)} -->\n`;
 }
 function stripFooter(text) {
@@ -202,6 +210,27 @@ if (!hasDrift) {
   } else {
     console.log(`no ${oracle}-oracle drift — no record written`);
   }
+  // A resolution is a material transition — when publishing is requested,
+  // route it through the same GitHub path (comment + close) instead of
+  // exiting silently. resolutionPublishedAt marks terminal outcomes only:
+  // failed/skipped/no-destination retries on the next invocation.
+  if (!publish) process.exit(0);
+  const resolutionOutcomes = {};
+  for (const [k, e] of Object.entries(state.keys)) {
+    if (e.oracle !== oracle || e.status !== "resolved" || e.resolutionPublishedAt != null) continue;
+    const outcome = publishResolution(k, e);
+    resolutionOutcomes[k] = outcome;
+    if (outcome.status === "resolved-posted" || outcome.status === "closed-already") {
+      e.resolutionPublishedAt = now;
+    }
+    writeFileSync(join(resultsDir, `publish-${k}.json`), JSON.stringify({
+      key: k, oracle, at: now, requested: true, dryRun,
+      destinations: { github: outcome },
+    }, null, 2) + "\n");
+  }
+  writeFileSync(statePath, JSON.stringify(state, null, 2) + "\n");
+  console.log("resolution publish: " + (Object.keys(resolutionOutcomes).length
+    ? JSON.stringify(resolutionOutcomes) : "nothing pending"));
   process.exit(0);
 }
 
@@ -230,9 +259,6 @@ const isNewVersion = !entry.versionsSeen.includes(versionsTuple);
 if (isNewVersion) entry.versionsSeen.push(versionsTuple);
 
 // ---- response packet -----------------------------------------------------
-const runUrl = process.env.GITHUB_RUN_ID && process.env.GITHUB_REPOSITORY
-  ? `${process.env.GITHUB_SERVER_URL ?? "https://github.com"}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
-  : null;
 
 const capabilityRows = capabilities?.capabilities ?? [];
 const affected = semanticFailures.map((p) => {
@@ -388,6 +414,13 @@ if (!publish) {
 } else {
   publishOutcome.destinations.github = publishToGitHub();
 }
+// The publish may have learned the issue number — rewrite both packets so
+// the durable file's footer carries it forward.
+if (entry.github?.issue) {
+  const finalRecord = stripFooter(record) + stateFooterFor(entry);
+  writeFileSync(recordPath, finalRecord);
+  writeFileSync(issuePath, finalRecord);
+}
 writeFileSync(statePath, JSON.stringify(state, null, 2) + "\n");
 writeFileSync(join(resultsDir, `publish-${key}.json`), JSON.stringify(publishOutcome, null, 2) + "\n");
 console.log("publish outcome: " + JSON.stringify(publishOutcome.destinations));
@@ -402,11 +435,12 @@ function ghOrNull(args) {
   return result.stdout;
 }
 
-function publishToGitHub() {
+function githubPrecheck() {
   const repo = process.env.GITHUB_REPOSITORY;
-  const hasGh = spawnSync("gh", ["--version"], { stdio: "ignore" }).status === 0;
   if (!repo) return { status: "skipped", reason: "GITHUB_REPOSITORY unset" };
-  if (!hasGh) return { status: "skipped", reason: "gh CLI unavailable" };
+  if (spawnSync("gh", ["--version"], { stdio: "ignore" }).status !== 0) {
+    return { status: "skipped", reason: "gh CLI unavailable" };
+  }
   if (!process.env.GH_TOKEN && !process.env.GITHUB_TOKEN) {
     return { status: "skipped", reason: "no GH_TOKEN/GITHUB_TOKEN" };
   }
@@ -415,35 +449,107 @@ function publishToGitHub() {
   const meta = ghOrNull(["api", `repos/${repo}`, "--jq", ".has_issues"]);
   if (meta == null) return { status: "failed", reason: "gh api repos/<repo> failed (auth/permissions?)" };
   if (meta.trim() !== "true") return { status: "skipped", reason: "GitHub Issues disabled on " + repo };
+  return { status: "ok", repo };
+}
+
+function resolutionBody(problemKey, stateEntry) {
+  return [
+    `Resolved under ${versionsTuple}.`,
+    `run: ${runId ?? "n/a"}` + (runUrl ? ` (${runUrl})` : ""),
+    `resolved at: ${stateEntry.resolvedAt ?? now}`,
+    `problem key: ${problemKey}`,
+  ].join("\n");
+}
+
+// A resolved record's publish: comment on the issue, then close it.
+function publishResolution(problemKey, stateEntry) {
+  if (dryRun) return { status: "dry-run", issue: stateEntry.github?.issue ?? null };
+  if (mockDir) {
+    mkdirSync(mockDir, { recursive: true });
+    writeFileSync(join(mockDir, problemKey + ".resolution.json"), JSON.stringify({
+      action: "resolve",
+      issue: stateEntry.github?.issue ?? null,
+      close: true,
+      body: resolutionBody(problemKey, stateEntry),
+    }, null, 2) + "\n");
+    return { status: "resolved-posted", issue: stateEntry.github?.issue ?? null, mocked: mockDir };
+  }
+  const check = githubPrecheck();
+  if (check.status !== "ok") return check;
+  const repo = check.repo;
+  try {
+    let issue = stateEntry.github?.issue ?? null;
+    if (!issue) {
+      const found = ghOrNull([
+        "issue", "list", "--repo", repo, "--label", "compat-drift",
+        "--state", "all", "--search", problemKey, "--json", "number,state",
+      ]);
+      if (found == null) return { status: "failed", reason: "gh issue list failed" };
+      issue = JSON.parse(found)[0]?.number ?? null;
+    }
+    if (!issue) return { status: "skipped", reason: "no matching drift issue found" };
+    const view = ghOrNull(["issue", "view", String(issue), "--repo", repo, "--json", "state"]);
+    if (view == null) return { status: "failed", reason: "gh issue view failed", issue };
+    if (JSON.parse(view).state === "CLOSED") {
+      stateEntry.github = { ...(stateEntry.github ?? {}), issue };
+      return { status: "closed-already", issue };
+    }
+    const body = resolutionBody(problemKey, stateEntry);
+    if (ghOrNull(["issue", "comment", String(issue), "--repo", repo, "--body", body]) == null) {
+      return { status: "failed", reason: "gh issue comment failed", issue };
+    }
+    ghOrNull(["issue", "close", String(issue), "--repo", repo]);
+    stateEntry.github = { ...(stateEntry.github ?? {}), issue };
+    return { status: "resolved-posted", issue };
+  } catch (error) {
+    return { status: "failed", reason: String(error?.message ?? error) };
+  }
+}
+
+function publishToGitHub() {
+  const check = githubPrecheck();
+  if (check.status !== "ok") return check;
+  const repo = check.repo;
 
   try {
     ghOrNull(["label", "create", "compat-drift", "--repo", repo, "--force"]);
-    const found = ghOrNull([
-      "issue", "list", "--repo", repo, "--label", "compat-drift",
-      "--state", "all", "--search", key, "--json", "number,state",
-    ]);
-    if (found == null) return { status: "failed", reason: "gh issue list failed" };
-    const issues = JSON.parse(found);
-    const existing = issues[0] ?? null;
-    const recordHash = sha(record);
+    let existing = entry.github?.issue ? { number: entry.github.issue } : null;
+    if (!existing) {
+      const found = ghOrNull([
+        "issue", "list", "--repo", repo, "--label", "compat-drift",
+        "--state", "all", "--search", key, "--json", "number,state",
+      ]);
+      if (found == null) return { status: "failed", reason: "gh issue list failed" };
+      existing = JSON.parse(found)[0] ?? null;
+    }
     const title = issueTitle() + " (" + versionsTuple + ")";
-    const shouldComment = !existing || isNewVersion || transition != null
-      || entry.github?.lastCommentHash !== recordHash;
     if (!existing) {
       const out = ghOrNull(["issue", "create", "--repo", repo, "--label", "compat-drift",
         "--title", title, "--body", record]);
       if (out == null) return { status: "failed", reason: "gh issue create failed" };
       const num = Number(out.trim().split("/").pop());
-      entry.github = { issue: num || null, lastCommentHash: recordHash };
+      entry.github = { issue: num || null };
       return { status: "created", issue: num || null };
     }
-    entry.github = { issue: existing.number, lastCommentHash: entry.github?.lastCommentHash ?? null };
+    // No-spam dedup derived from the issue itself: if the latest comment
+    // already is this packet (footer stripped — state noise doesn't count),
+    // an identical observation posts nothing. Works across runs even when
+    // the local state sidecar was lost.
+    const bodyKey = stripFooter(record).trim();
+    const commentsJson = ghOrNull([
+      "api", `repos/${repo}/issues/${existing.number}/comments?per_page=1&direction=desc`,
+    ]);
+    if (commentsJson == null) return { status: "failed", reason: "gh api comments failed", issue: existing.number };
+    let lastBody = null;
+    try { lastBody = JSON.parse(commentsJson)[0]?.body ?? null; } catch {}
+    const shouldComment = isNewVersion || transition != null
+      || stripFooter(lastBody ?? "").trim() !== bodyKey;
+    entry.github = { ...(entry.github ?? {}), issue: existing.number };
     if (!shouldComment) {
       return { status: "skipped", reason: "identical observation already recorded", issue: existing.number };
     }
     const out = ghOrNull(["issue", "comment", String(existing.number), "--repo", repo, "--body", record]);
     if (out == null) return { status: "failed", reason: "gh issue comment failed", issue: existing.number };
-    entry.github.lastCommentHash = recordHash;
     return { status: "commented", issue: existing.number };
   } catch (error) {
     return { status: "failed", reason: String(error?.message ?? error) };

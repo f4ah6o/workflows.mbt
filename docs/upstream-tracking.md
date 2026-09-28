@@ -71,15 +71,20 @@ minimal-fix candidates, unconfirmed items, and artifact refs.
   failing probe ids only. The same root cause under a new upstream release
   appends the tuple to `versionsSeen` on the same record — it never spawns a
   second one.
-- **State**: the durable source of truth is the committed packet itself —
-  every `issues/open/<date>-<key>.md` carries a machine
-  `<!-- drift-state:{...} -->` footer (status, firstSeen, versionsSeen,
-  recurCount, resolvedAt/Under). Each run rebuilds `drift-state.json` keys
-  from those footers, so a fresh CI checkout loses nothing: the sidecar in
-  compat-results is only a cache. Status flows `open` → `resolved` (flipped
-  only by complete positive evidence; a `recurred` record resolves again)
+- **State, across runs**: two layers. CI restores `drift-state.json` via
+  `actions/cache` (keyed per workflow, saved every run) — that sidecar
+  carries dedup history *and* publish outcomes (issue numbers,
+  `resolutionPublishedAt`). Independently, every committed
+  `issues/open/<date>-<key>.md` carries a `<!-- drift-state:{...} -->`
+  footer (status, firstSeen, versionsSeen, recurCount, resolvedAt/Under,
+  `github.issue`) that rebuilds the same keys on any fresh checkout or
+  local run — the footer is the durable truth, the cache/sidecar only
+  saves a re-derivation. Status flows `open` → `resolved` (flipped only
+  by complete positive evidence; a `recurred` record resolves again)
   → `recurred`. Resolution also flips `Status:` and the footer on the
-  committed packet.
+  committed packet — and routes through `--publish` as comment + close,
+  marked by `resolutionPublishedAt` so the two-invocation workflow shape
+  posts it exactly once.
 - **Destinations**: the packet is always written twice —
   `compat-results/drift-<key>.md` (CI artifact, 30-day retention) and
   `issues/open/<yyyymmdd>-<key>.md`, the repository's durable md-issue
@@ -93,10 +98,13 @@ minimal-fix candidates, unconfirmed items, and artifact refs.
   as a notification success. Test without an API via `--dry-run` or
   `--mock-dir <dir>`; override the issues dir via
   `--issues-dir`/`WORKFLOWS_MBT_ISSUES_DIR`.
-- **No notification spam**: one issue per problem identity. A comment is
-  posted only on material change — a new observed tuple or a status
-  transition (open → resolved → recurred). Identical re-observations do not
-  re-comment.
+- **No notification spam**: one issue per problem identity, derived from
+  the issue itself — the footer persists `github.issue`, and comment dedup
+  compares the packet body (footer stripped) against the issue's latest
+  comment. A comment posts only on material change — new observed tuple,
+  a status transition (open → resolved → recurred), or a body that
+  differs. Identical re-observations post nothing even after the sidecar
+  is lost. Resolutions post a comment and close the issue.
 
 ## Applying an update candidate
 

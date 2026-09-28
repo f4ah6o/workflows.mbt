@@ -282,6 +282,62 @@ test("drift records dedup by problem identity, not version", () => {
   rmSync(d, { recursive: true, force: true });
 });
 
+test("resolutions reach the publish path in the two-invocation shape", () => {
+  const d = dir();
+  const mock = join(d, "mock");
+  // 1) drift observed and recorded (run-latest's response phase).
+  seedPassing(d, { overrides: { differential: { pass: false, differences: { basic: {} } } } });
+  write(d, "verdict-latest.json", { oracle: "latest", verdict: "semantic-drift", pass: false, runId: "run-a" });
+  run("compat/drift-record.mjs", ["--oracle", "latest"], d);
+  const key = Object.keys(read(d, "drift-state.json").keys)[0];
+
+  // 2) compatible run resolves it — the record invocation exits without
+  // publishing, but the transition must survive to the --publish call.
+  seedPassing(d, { runId: "run-b" });
+  write(d, "verdict-latest.json", { oracle: "latest", verdict: "compatible", pass: true, runId: "run-b" });
+  run("compat/drift-record.mjs", ["--oracle", "latest"], d);
+  assert.equal(read(d, "drift-state.json").keys[key].status, "resolved");
+
+  // 3) the workflow's --publish invocation still delivers the transition:
+  // comment + close payload via the mock destination.
+  const r = run("compat/drift-record.mjs", ["--oracle", "latest", "--publish", "--mock-dir", mock], d);
+  assert.equal(r.status, 0, r.stderr);
+  const payload = JSON.parse(readFileSync(join(mock, key + ".resolution.json"), "utf8"));
+  assert.equal(payload.action, "resolve");
+  assert.equal(payload.close, true);
+  assert.match(payload.body, /Resolved under 4\.142\.0\/5\.20260928\.1\/1\.20260928\.1/);
+  assert.equal(read(d, "drift-state.json").keys[key].resolutionPublishedAt != null, true,
+    "a delivered resolution is marked so repeats post nothing");
+  rmSync(d, { recursive: true, force: true });
+});
+
+test("the durable footer carries the issue number across runs", () => {
+  const d = dir();
+  const mock = join(d, "mock");
+  seedPassing(d, { overrides: { differential: { pass: false, differences: { basic: {} } } } });
+  write(d, "verdict-latest.json", { oracle: "latest", verdict: "semantic-drift", pass: false, runId: "run-a" });
+  run("compat/drift-record.mjs", ["--oracle", "latest", "--publish", "--mock-dir", mock], d);
+  const key = Object.keys(read(d, "drift-state.json").keys)[0];
+
+  // Simulate the publish having learned the issue: patch the packet footer
+  // with github.issue, then drop the sidecar — the rebuild must restore it.
+  const issueFile = join(d, "issues-open", readdirSync(join(d, "issues-open"))[0]);
+  const text = readFileSync(issueFile, "utf8");
+  const footer = JSON.parse(text.match(/<!-- drift-state:(.*?)-->/s)[1]);
+  footer.github = { issue: 42 };
+  writeFileSync(issueFile, text.replace(/<!-- drift-state:[\s\S]*?-->/,
+    "<!-- drift-state:" + JSON.stringify(footer) + " -->"));
+  rmSync(join(d, "drift-state.json"));
+
+  // Same drift re-observed on a fresh checkout → the publish path comments
+  // the known issue instead of creating a new one.
+  run("compat/drift-record.mjs", ["--oracle", "latest", "--publish", "--mock-dir", mock], d);
+  const payload = JSON.parse(readFileSync(join(mock, key + ".issue.json"), "utf8"));
+  assert.equal(payload.action, "comment");
+  assert.equal(payload.issue, 42);
+  rmSync(d, { recursive: true, force: true });
+});
+
 test("publish never claims success without a working destination", () => {
   const d = dir();
   seedPassing(d, { overrides: {
