@@ -404,7 +404,9 @@ test("a failed close retries instead of marking the resolution delivered", () =>
   const issue = Object.values(store.issues)[0];
   assert.equal(issue.state, "CLOSED");
   assert.equal(issue.comments.length, 1, "cross-run retry does not re-post the resolution comment");
-  assert.match(issue.comments[0].body, /\nrun: run-b\n/, "the posted comment is the transition-time payload");
+  assert.equal(issue.comments[0].body.includes("run: run-b"), true,
+    "the posted comment is the transition-time payload");
+  assert.equal(issue.comments[0].body.includes("run-b-later"), false);
   rmSync(d, { recursive: true, force: true });
 });
 
