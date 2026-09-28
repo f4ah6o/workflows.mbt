@@ -13,6 +13,10 @@ permissions:
   contents: read
   issues: write
 
+concurrency:
+  group: compat-hosted
+  cancel-in-progress: false
+
 jobs:
   hosted-canary:
     runs-on: ubuntu-latest

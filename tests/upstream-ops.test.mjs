@@ -391,16 +391,20 @@ test("a failed close retries instead of marking the resolution delivered", () =>
   assert.equal(Object.values(store.issues)[0].state, "OPEN");
   assert.equal(Object.values(store.issues)[0].comments.length, 1, "comment posted before close failed");
 
-  // Retry: the already-posted resolution comment is deduplicated, close
-  // succeeds, and the marker is stamped.
+  // Retry under a DIFFERENT run id (the next scheduled run): the frozen
+  // resolutionBody — not a freshly generated one — is deduplicated against
+  // the posted comment, close succeeds, and the marker is stamped.
   rmSync(join(mock, "fail-close"));
+  seedPassing(d, { runId: "run-b-later" });
+  write(d, "verdict-latest.json", { oracle: "latest", verdict: "compatible", pass: true, runId: "run-b-later" });
   run("compat/drift-record.mjs", ["--oracle", "latest", "--publish", "--mock-dir", mock], d);
   entry = read(d, "drift-state.json").keys[key];
   assert.equal(entry.resolutionPublishedAt != null, true);
   store = JSON.parse(readFileSync(join(mock, "github-store.json"), "utf8"));
   const issue = Object.values(store.issues)[0];
   assert.equal(issue.state, "CLOSED");
-  assert.equal(issue.comments.length, 1, "retry does not re-post the resolution comment");
+  assert.equal(issue.comments.length, 1, "cross-run retry does not re-post the resolution comment");
+  assert.match(issue.comments[0].body, /\nrun: run-b\n/, "the posted comment is the transition-time payload");
   rmSync(d, { recursive: true, force: true });
 });
 

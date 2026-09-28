@@ -206,6 +206,10 @@ if (!hasDrift) {
       entry.status = "resolved";
       entry.resolvedAt = now;
       entry.resolvedUnder = versionsTuple;
+      // Freeze the notification payload at transition time — a retried
+      // close on a later run must dedup against what was posted, not a
+      // freshly generated body carrying that run's id/URL.
+      entry.resolutionBody = resolutionBody(key, entry);
       resolutions.push(key);
       // The durable packet must reflect resolution too — a fresh run
       // rebuilds state from these files.
@@ -278,6 +282,7 @@ if (entry.status === "resolved") {
   // A recurrence invalidates the delivered resolution: the next recovery
   // must comment + close again, and the publisher must reopen the issue.
   delete entry.resolutionPublishedAt;
+  delete entry.resolutionBody;
 } else if (entry.status === "recurred") {
   transition = null;
 } else {
@@ -637,7 +642,7 @@ function publishResolution(gh, problemKey, stateEntry) {
     if (view == null) return { status: "failed", reason: "issue view failed", issue };
     stateEntry.github = { ...(stateEntry.github ?? {}), issue };
     if (view.state === "CLOSED") return { status: "closed-already", issue };
-    const body = resolutionBody(problemKey, stateEntry);
+    const body = stateEntry.resolutionBody ?? resolutionBody(problemKey, stateEntry);
     const lastComment = gh.latestComment(issue);
     if (lastComment === undefined) return { status: "failed", reason: "comments read failed", issue };
     if (lastComment?.trim() !== body.trim() && !gh.comment(issue, body)) {

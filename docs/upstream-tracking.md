@@ -106,9 +106,11 @@ minimal-fix candidates, unconfirmed items, and artifact refs.
   only on material change — new observed tuple, a status transition
   (open → resolved → recurred), or a body that differs. Identical
   re-observations post nothing even after the sidecar is lost.
-  Resolutions post a comment and close the issue — a close failure is a
-  retryable partial failure, never stamped as delivered — and a
-  recurrence clears `resolutionPublishedAt` and reopens the issue, so
+  Resolutions post a comment and close the issue — the comment body is
+  frozen on the record at transition time, so a retried close on a later
+  run dedups against the posted payload; a close failure is a retryable
+  partial failure, never stamped as delivered — and a recurrence clears
+  `resolutionPublishedAt` and reopens the issue, so
   resolve → recur → resolve republishes. `--mock-dir` runs the same
   publish state machine against a file-backed issue store, which is how
   the fault-injection suite covers these transitions hermetically.

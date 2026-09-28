@@ -15,6 +15,13 @@ permissions:
   contents: read
   issues: write
 
+# The drift-state cache is a shared state machine: overlapping runs (push
+# racing a schedule, two dispatches) would restore the same prior state,
+# race findIssue/createIssue, and save divergent run-id caches. Serialize.
+concurrency:
+  group: compat-latest
+  cancel-in-progress: false
+
 jobs:
   compat-latest:
     runs-on: ubuntu-latest
