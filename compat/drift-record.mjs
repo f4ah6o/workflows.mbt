@@ -31,7 +31,11 @@
 // Notification policy: one issue per problem identity. A comment is posted
 // only when the observation materially changes (new version tuple, or a
 // status transition open -> resolved -> recurred). Repeated identical
-// observations never re-comment.
+// observations never re-comment — dedup derives from the issue itself:
+// the latest comment, or the issue body when no comments exist (the body
+// is the packet right after creation). A closed issue whose drift recurs
+// is reopened; a failed close retries on the next run instead of being
+// marked delivered.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
@@ -170,6 +174,16 @@ function stripFooter(text) {
   if (idx < 0) return text.endsWith("\n") ? text : text + "\n";
   return text.slice(0, idx).replace(/\n+$/, "\n");
 }
+// Body-compare dedup must compare the problem, not the observation
+// metadata: Last seen / Run id / Run URL change every invocation, so a
+// raw compare would treat every identical observation as new content.
+function bodyKeyOf(text) {
+  return stripFooter(text)
+    .split("\n")
+    .filter((l) => !/^(Last seen|Run id|Run): /.test(l))
+    .join("\n")
+    .trim();
+}
 for (const [k, rebuilt] of Object.entries(rebuildStateFromIssues())) {
   state.keys[k] ??= rebuilt;
 }
@@ -215,11 +229,24 @@ if (!hasDrift) {
   // exiting silently. resolutionPublishedAt marks terminal outcomes only:
   // failed/skipped/no-destination retries on the next invocation.
   if (!publish) process.exit(0);
+  const target = githubTarget();
   const resolutionOutcomes = {};
   for (const [k, e] of Object.entries(state.keys)) {
     if (e.oracle !== oracle || e.status !== "resolved" || e.resolutionPublishedAt != null) continue;
-    const outcome = publishResolution(k, e);
+    const outcome = target.ok
+      ? publishResolution(target.api, k, e)
+      : { ...target.outcome, issue: e.github?.issue ?? null };
     resolutionOutcomes[k] = outcome;
+    if (mockDir && target.ok) {
+      mkdirSync(mockDir, { recursive: true });
+      writeFileSync(join(mockDir, k + ".resolution.json"), JSON.stringify({
+        action: "resolve",
+        issue: outcome.issue ?? e.github?.issue ?? null,
+        close: true,
+        body: resolutionBody(k, e),
+        outcome,
+      }, null, 2) + "\n");
+    }
     if (outcome.status === "resolved-posted" || outcome.status === "closed-already") {
       e.resolutionPublishedAt = now;
     }
@@ -248,6 +275,9 @@ if (entry.status === "resolved") {
   entry.status = "recurred";
   entry.recurCount += 1;
   transition = "resolved->recurred";
+  // A recurrence invalidates the delivered resolution: the next recovery
+  // must comment + close again, and the publisher must reopen the issue.
+  delete entry.resolutionPublishedAt;
 } else if (entry.status === "recurred") {
   transition = null;
 } else {
@@ -399,20 +429,24 @@ const publishOutcome = {
 };
 if (!publish) {
   publishOutcome.destinations.github = { status: "not-requested" };
-} else if (dryRun) {
-  publishOutcome.destinations.github = { status: "dry-run", title: issueTitle() };
-} else if (mockDir) {
-  mkdirSync(mockDir, { recursive: true });
-  writeFileSync(join(mockDir, key + ".issue.json"), JSON.stringify({
-    action: entry.github?.issue ? "comment" : "create",
-    issue: entry.github?.issue ?? null,
-    title: issueTitle(),
-    labels: ["compat-drift"],
-    body: record,
-  }, null, 2) + "\n");
-  publishOutcome.destinations.github = { status: "mocked", dir: mockDir };
 } else {
-  publishOutcome.destinations.github = publishToGitHub();
+  const target = githubTarget();
+  const outcome = target.ok
+    ? publishToGitHub(target.api)
+    : (target.outcome.status === "dry-run" ? { ...target.outcome, title: issueTitle() } : target.outcome);
+  publishOutcome.destinations.github = outcome;
+  if (mockDir) {
+    mkdirSync(mockDir, { recursive: true });
+    writeFileSync(join(mockDir, key + ".issue.json"), JSON.stringify({
+      action: { created: "create", commented: "comment", reopened: "reopen", skipped: "skipped" }[outcome.status]
+        ?? outcome.status,
+      issue: outcome.issue ?? entry.github?.issue ?? null,
+      title: issueTitle(),
+      labels: ["compat-drift"],
+      body: record,
+      outcome,
+    }, null, 2) + "\n");
+  }
 }
 // The publish may have learned the issue number — rewrite both packets so
 // the durable file's footer carries it forward.
@@ -461,95 +495,215 @@ function resolutionBody(problemKey, stateEntry) {
   ].join("\n");
 }
 
-// A resolved record's publish: comment on the issue, then close it.
-function publishResolution(problemKey, stateEntry) {
-  if (dryRun) return { status: "dry-run", issue: stateEntry.github?.issue ?? null };
-  if (mockDir) {
-    mkdirSync(mockDir, { recursive: true });
-    writeFileSync(join(mockDir, problemKey + ".resolution.json"), JSON.stringify({
-      action: "resolve",
-      issue: stateEntry.github?.issue ?? null,
-      close: true,
-      body: resolutionBody(problemKey, stateEntry),
-    }, null, 2) + "\n");
-    return { status: "resolved-posted", issue: stateEntry.github?.issue ?? null, mocked: mockDir };
-  }
+// ---- publish adapters ------------------------------------------------------
+// The state machine below (find issue → dedup → comment/reopen/close) is
+// exercised identically by two adapters: `realGithub` shells out to gh, and
+// `mockStore` is a file-backed fake issue store under --mock-dir. Because
+// the mock runs the SAME calls, tests cover the real decision logic —
+// including create → identical-observation, resolve → recur → resolve —
+// with zero API access. `findIssue`/`latestComment` return `undefined` on
+// failure, `null` on "not found"/"no comments".
+function githubTarget() {
+  if (dryRun) return { ok: false, outcome: { status: "dry-run" } };
+  if (mockDir) return { ok: true, api: mockStore(mockDir) };
   const check = githubPrecheck();
-  if (check.status !== "ok") return check;
-  const repo = check.repo;
-  try {
-    let issue = stateEntry.github?.issue ?? null;
-    if (!issue) {
+  if (check.status !== "ok") return { ok: false, outcome: check };
+  return { ok: true, api: realGithub(check.repo) };
+}
+
+function realGithub(repo) {
+  return {
+    ensureLabel() {
+      ghOrNull(["label", "create", "compat-drift", "--repo", repo, "--force"]);
+      return true;
+    },
+    findIssue(problemKey) {
       const found = ghOrNull([
         "issue", "list", "--repo", repo, "--label", "compat-drift",
         "--state", "all", "--search", problemKey, "--json", "number,state",
       ]);
-      if (found == null) return { status: "failed", reason: "gh issue list failed" };
-      issue = JSON.parse(found)[0]?.number ?? null;
+      if (found == null) return undefined;
+      try { return JSON.parse(found)[0] ?? null; } catch { return undefined; }
+    },
+    issueView(number) {
+      const view = ghOrNull(["issue", "view", String(number), "--repo", repo, "--json", "body,state"]);
+      if (view == null) return null;
+      try { return JSON.parse(view); } catch { return null; }
+    },
+    latestComment(number) {
+      const json = ghOrNull([
+        "api", `repos/${repo}/issues/${number}/comments?per_page=1&direction=desc`,
+      ]);
+      if (json == null) return undefined;
+      try { return JSON.parse(json)[0]?.body ?? null; } catch { return undefined; }
+    },
+    createIssue(title, body) {
+      const out = ghOrNull(["issue", "create", "--repo", repo, "--label", "compat-drift",
+        "--title", title, "--body", body]);
+      if (out == null) return null;
+      return Number(out.trim().split("/").pop()) || null;
+    },
+    comment(number, body) {
+      return ghOrNull(["issue", "comment", String(number), "--repo", repo, "--body", body]) != null;
+    },
+    close(number) {
+      return ghOrNull(["issue", "close", String(number), "--repo", repo]) != null;
+    },
+    reopen(number) {
+      return ghOrNull(["issue", "reopen", String(number), "--repo", repo]) != null;
+    },
+  };
+}
+
+function mockStore(dir) {
+  const path = join(dir, "github-store.json");
+  const loadStore = () => {
+    if (!existsSync(path)) return { next: 1, issues: {} };
+    try { return JSON.parse(readFileSync(path, "utf8")); } catch { return { next: 1, issues: {} }; }
+  };
+  const saveStore = (s) => {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path, JSON.stringify(s, null, 2) + "\n");
+  };
+  // Fault injection for tests: <dir>/fail-close makes close() fail once.
+  const failClosePath = join(dir, "fail-close");
+  return {
+    ensureLabel() { return true; },
+    findIssue(problemKey) {
+      const s = loadStore();
+      for (const [num, i] of Object.entries(s.issues)) {
+        if (i.key === problemKey) return { number: Number(num), state: i.state };
+      }
+      return null;
+    },
+    issueView(number) {
+      const i = loadStore().issues[String(number)];
+      return i ? { body: i.body, state: i.state } : null;
+    },
+    latestComment(number) {
+      const i = loadStore().issues[String(number)];
+      if (!i) return undefined;
+      return i.comments.length ? i.comments[i.comments.length - 1].body : null;
+    },
+    createIssue(title, body, problemKey) {
+      const s = loadStore();
+      const n = s.next++;
+      s.issues[String(n)] = { key: problemKey, title, state: "OPEN", labels: ["compat-drift"], body, comments: [] };
+      saveStore(s);
+      return n;
+    },
+    comment(number, body) {
+      const s = loadStore();
+      const i = s.issues[String(number)];
+      if (!i) return false;
+      i.comments.push({ body });
+      saveStore(s);
+      return true;
+    },
+    close(number) {
+      const s = loadStore();
+      const i = s.issues[String(number)];
+      if (!i) return false;
+      if (existsSync(failClosePath)) return false;
+      i.state = "CLOSED";
+      saveStore(s);
+      return true;
+    },
+    reopen(number) {
+      const s = loadStore();
+      const i = s.issues[String(number)];
+      if (!i) return false;
+      i.state = "OPEN";
+      saveStore(s);
+      return true;
+    },
+  };
+}
+
+// A resolved record's publish: comment on the issue, then close it. Only
+// both succeeding marks the transition delivered — a comment that posted
+// but a close that failed is a retryable partial failure, and the retried
+// call skips the already-posted comment instead of spamming it.
+function publishResolution(gh, problemKey, stateEntry) {
+  try {
+    let issue = stateEntry.github?.issue ?? null;
+    if (!issue) {
+      const found = gh.findIssue(problemKey);
+      if (found === undefined) return { status: "failed", reason: "issue list failed" };
+      issue = found?.number ?? null;
     }
     if (!issue) return { status: "skipped", reason: "no matching drift issue found" };
-    const view = ghOrNull(["issue", "view", String(issue), "--repo", repo, "--json", "state"]);
-    if (view == null) return { status: "failed", reason: "gh issue view failed", issue };
-    if (JSON.parse(view).state === "CLOSED") {
-      stateEntry.github = { ...(stateEntry.github ?? {}), issue };
-      return { status: "closed-already", issue };
-    }
-    const body = resolutionBody(problemKey, stateEntry);
-    if (ghOrNull(["issue", "comment", String(issue), "--repo", repo, "--body", body]) == null) {
-      return { status: "failed", reason: "gh issue comment failed", issue };
-    }
-    ghOrNull(["issue", "close", String(issue), "--repo", repo]);
+    const view = gh.issueView(issue);
+    if (view == null) return { status: "failed", reason: "issue view failed", issue };
     stateEntry.github = { ...(stateEntry.github ?? {}), issue };
+    if (view.state === "CLOSED") return { status: "closed-already", issue };
+    const body = resolutionBody(problemKey, stateEntry);
+    const lastComment = gh.latestComment(issue);
+    if (lastComment === undefined) return { status: "failed", reason: "comments read failed", issue };
+    if (lastComment?.trim() !== body.trim() && !gh.comment(issue, body)) {
+      return { status: "failed", reason: "issue comment failed", issue };
+    }
+    if (!gh.close(issue)) {
+      return { status: "failed", reason: "resolution comment posted but close failed", issue, partial: true };
+    }
     return { status: "resolved-posted", issue };
   } catch (error) {
     return { status: "failed", reason: String(error?.message ?? error) };
   }
 }
 
-function publishToGitHub() {
-  const check = githubPrecheck();
-  if (check.status !== "ok") return check;
-  const repo = check.repo;
-
+function publishToGitHub(gh) {
   try {
-    ghOrNull(["label", "create", "compat-drift", "--repo", repo, "--force"]);
+    gh.ensureLabel();
     let existing = entry.github?.issue ? { number: entry.github.issue } : null;
-    if (!existing) {
-      const found = ghOrNull([
-        "issue", "list", "--repo", repo, "--label", "compat-drift",
-        "--state", "all", "--search", key, "--json", "number,state",
-      ]);
-      if (found == null) return { status: "failed", reason: "gh issue list failed" };
-      existing = JSON.parse(found)[0] ?? null;
+    let view = existing ? gh.issueView(existing.number) : null;
+    if (!view) {
+      // No pointer, or the recorded issue is gone — search as the fallback.
+      existing = gh.findIssue(key);
+      if (existing === undefined) return { status: "failed", reason: "issue list failed" };
+      view = existing ? gh.issueView(existing.number) : null;
+    }
+    if (existing && view == null) {
+      return { status: "failed", reason: "issue view failed", issue: existing.number };
     }
     const title = issueTitle() + " (" + versionsTuple + ")";
     if (!existing) {
-      const out = ghOrNull(["issue", "create", "--repo", repo, "--label", "compat-drift",
-        "--title", title, "--body", record]);
-      if (out == null) return { status: "failed", reason: "gh issue create failed" };
-      const num = Number(out.trim().split("/").pop());
-      entry.github = { issue: num || null };
-      return { status: "created", issue: num || null };
+      const num = gh.createIssue(title, record, key);
+      if (num == null) return { status: "failed", reason: "issue create failed" };
+      entry.github = { issue: num };
+      return { status: "created", issue: num };
     }
-    // No-spam dedup derived from the issue itself: if the latest comment
-    // already is this packet (footer stripped — state noise doesn't count),
-    // an identical observation posts nothing. Works across runs even when
-    // the local state sidecar was lost.
-    const bodyKey = stripFooter(record).trim();
-    const commentsJson = ghOrNull([
-      "api", `repos/${repo}/issues/${existing.number}/comments?per_page=1&direction=desc`,
-    ]);
-    if (commentsJson == null) return { status: "failed", reason: "gh api comments failed", issue: existing.number };
-    let lastBody = null;
-    try { lastBody = JSON.parse(commentsJson)[0]?.body ?? null; } catch {}
-    const shouldComment = isNewVersion || transition != null
-      || stripFooter(lastBody ?? "").trim() !== bodyKey;
+    // No-spam dedup derived from the issue itself. Baseline: the latest
+    // comment — or the issue body when there are no comments yet, which is
+    // exactly the case right after creation (the body IS the packet).
+    // Footer + per-run metadata stripped: the compare is on the problem
+    // content, not observation noise. Works across runs even when the
+    // local state sidecar was lost.
+    const lastComment = gh.latestComment(existing.number);
+    if (lastComment === undefined) {
+      return { status: "failed", reason: "comments read failed", issue: existing.number };
+    }
+    const bodyKey = bodyKeyOf(record);
+    const baseline = bodyKeyOf(lastComment ?? view.body ?? "");
+    const shouldComment = isNewVersion || transition != null || baseline !== bodyKey;
     entry.github = { ...(entry.github ?? {}), issue: existing.number };
+    // A closed issue while drift is active must reopen — issue open-ness
+    // mirrors record liveness, whether or not a comment is warranted.
+    if (view.state === "CLOSED") {
+      if (!gh.reopen(existing.number)) {
+        return { status: "failed", reason: "issue reopen failed", issue: existing.number };
+      }
+      if (shouldComment && !gh.comment(existing.number, record)) {
+        return { status: "partial", reason: "reopened but comment failed", issue: existing.number };
+      }
+      return { status: "reopened", commented: shouldComment, issue: existing.number };
+    }
     if (!shouldComment) {
       return { status: "skipped", reason: "identical observation already recorded", issue: existing.number };
     }
-    const out = ghOrNull(["issue", "comment", String(existing.number), "--repo", repo, "--body", record]);
-    if (out == null) return { status: "failed", reason: "gh issue comment failed", issue: existing.number };
+    if (!gh.comment(existing.number, record)) {
+      return { status: "failed", reason: "issue comment failed", issue: existing.number };
+    }
     return { status: "commented", issue: existing.number };
   } catch (error) {
     return { status: "failed", reason: String(error?.message ?? error) };

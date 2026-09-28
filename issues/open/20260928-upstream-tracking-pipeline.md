@@ -35,8 +35,11 @@ restored/saved via actions/cache in CI, and the committed
 fresh checkout — filenames stable per problem (first-seen date; in-place
 update). Status open → resolved → recurred, recurred resolves again, and
 resolution transitions route through `--publish` (comment + close, marked by
-`resolutionPublishedAt`). Comment dedup derives from the issue's own comment
-history — identical observations never re-post. `--publish` checks
+`resolutionPublishedAt`; a failed close stays pending and retries without
+re-commenting; recurrence clears the marker and reopens the issue). Comment
+dedup derives from the issue itself — latest comment, or the issue body when
+there are no comments — comparing footer/per-run-metadata-stripped bodies so
+identical observations never re-post. `--publish` checks
 `has_issues` and records skipped/failed/created/commented in
 `publish-<key>.json`; `--dry-run`/`--mock-dir` test without an API.
 

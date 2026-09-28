@@ -100,11 +100,18 @@ minimal-fix candidates, unconfirmed items, and artifact refs.
   `--issues-dir`/`WORKFLOWS_MBT_ISSUES_DIR`.
 - **No notification spam**: one issue per problem identity, derived from
   the issue itself — the footer persists `github.issue`, and comment dedup
-  compares the packet body (footer stripped) against the issue's latest
-  comment. A comment posts only on material change — new observed tuple,
-  a status transition (open → resolved → recurred), or a body that
-  differs. Identical re-observations post nothing even after the sidecar
-  is lost. Resolutions post a comment and close the issue.
+  compares the packet body (footer + per-run lines stripped) against the
+  issue's latest comment, falling back to the issue body when no comments
+  exist (the body IS the packet right after creation). A comment posts
+  only on material change — new observed tuple, a status transition
+  (open → resolved → recurred), or a body that differs. Identical
+  re-observations post nothing even after the sidecar is lost.
+  Resolutions post a comment and close the issue — a close failure is a
+  retryable partial failure, never stamped as delivered — and a
+  recurrence clears `resolutionPublishedAt` and reopens the issue, so
+  resolve → recur → resolve republishes. `--mock-dir` runs the same
+  publish state machine against a file-backed issue store, which is how
+  the fault-injection suite covers these transitions hermetically.
 
 ## Applying an update candidate
 

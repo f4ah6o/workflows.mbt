@@ -285,10 +285,10 @@ test("drift records dedup by problem identity, not version", () => {
 test("resolutions reach the publish path in the two-invocation shape", () => {
   const d = dir();
   const mock = join(d, "mock");
-  // 1) drift observed and recorded (run-latest's response phase).
+  // 1) drift observed, recorded, and published — the issue exists to close.
   seedPassing(d, { overrides: { differential: { pass: false, differences: { basic: {} } } } });
   write(d, "verdict-latest.json", { oracle: "latest", verdict: "semantic-drift", pass: false, runId: "run-a" });
-  run("compat/drift-record.mjs", ["--oracle", "latest"], d);
+  run("compat/drift-record.mjs", ["--oracle", "latest", "--publish", "--mock-dir", mock], d);
   const key = Object.keys(read(d, "drift-state.json").keys)[0];
 
   // 2) compatible run resolves it — the record invocation exits without
@@ -311,6 +311,99 @@ test("resolutions reach the publish path in the two-invocation shape", () => {
   rmSync(d, { recursive: true, force: true });
 });
 
+test("an identical re-observation after create posts nothing", () => {
+  const d = dir();
+  const mock = join(d, "mock");
+  seedPassing(d, { overrides: { differential: { pass: false, differences: { basic: {} } } } });
+  write(d, "verdict-latest.json", { oracle: "latest", verdict: "semantic-drift", pass: false, runId: "run-a" });
+  run("compat/drift-record.mjs", ["--oracle", "latest", "--publish", "--mock-dir", mock], d);
+  const key = Object.keys(read(d, "drift-state.json").keys)[0];
+  let payload = JSON.parse(readFileSync(join(mock, key + ".issue.json"), "utf8"));
+  assert.equal(payload.action, "create");
+
+  // Same drift, second publish: zero comments on the issue, so dedup must
+  // fall back to the issue body — otherwise it re-comments once.
+  run("compat/drift-record.mjs", ["--oracle", "latest", "--publish", "--mock-dir", mock], d);
+  payload = JSON.parse(readFileSync(join(mock, key + ".issue.json"), "utf8"));
+  assert.equal(payload.action, "skipped", "identical observation must not re-comment");
+  const store = JSON.parse(readFileSync(join(mock, "github-store.json"), "utf8"));
+  const issue = Object.values(store.issues)[0];
+  assert.equal(issue.comments.length, 0, "no comment was posted");
+  rmSync(d, { recursive: true, force: true });
+});
+
+test("resolve -> recur -> resolve drives reopen and republish", () => {
+  const d = dir();
+  const mock = join(d, "mock");
+  const seedDrift = () => {
+    seedPassing(d, { overrides: { differential: { pass: false, differences: { basic: {} } } } });
+    write(d, "verdict-latest.json", { oracle: "latest", verdict: "semantic-drift", pass: false, runId: "run-d" });
+  };
+  const seedCompatible = () => {
+    seedPassing(d, { runId: "run-c" });
+    write(d, "verdict-latest.json", { oracle: "latest", verdict: "compatible", pass: true, runId: "run-c" });
+  };
+  seedDrift();
+  run("compat/drift-record.mjs", ["--oracle", "latest", "--publish", "--mock-dir", mock], d);
+  const key = Object.keys(read(d, "drift-state.json").keys)[0];
+
+  seedCompatible();
+  run("compat/drift-record.mjs", ["--oracle", "latest", "--publish", "--mock-dir", mock], d);
+  assert.equal(read(d, "drift-state.json").keys[key].resolutionPublishedAt != null, true);
+  let store = JSON.parse(readFileSync(join(mock, "github-store.json"), "utf8"));
+  assert.equal(Object.values(store.issues)[0].state, "CLOSED");
+
+  // The drift recurs: the resolution marker must clear so the next
+  // recovery republishes, and the closed issue must reopen.
+  seedDrift();
+  run("compat/drift-record.mjs", ["--oracle", "latest", "--publish", "--mock-dir", mock], d);
+  const entry = read(d, "drift-state.json").keys[key];
+  assert.equal(entry.status, "recurred");
+  assert.equal(entry.resolutionPublishedAt == null, true, "recurrence clears the delivered marker");
+  store = JSON.parse(readFileSync(join(mock, "github-store.json"), "utf8"));
+  assert.equal(Object.values(store.issues)[0].state, "OPEN");
+
+  seedCompatible();
+  run("compat/drift-record.mjs", ["--oracle", "latest", "--publish", "--mock-dir", mock], d);
+  assert.equal(read(d, "drift-state.json").keys[key].resolutionPublishedAt != null, true,
+    "the second resolution is published, not swallowed by the first marker");
+  store = JSON.parse(readFileSync(join(mock, "github-store.json"), "utf8"));
+  assert.equal(Object.values(store.issues)[0].state, "CLOSED");
+  rmSync(d, { recursive: true, force: true });
+});
+
+test("a failed close retries instead of marking the resolution delivered", () => {
+  const d = dir();
+  const mock = join(d, "mock");
+  seedPassing(d, { overrides: { differential: { pass: false, differences: { basic: {} } } } });
+  write(d, "verdict-latest.json", { oracle: "latest", verdict: "semantic-drift", pass: false, runId: "run-a" });
+  run("compat/drift-record.mjs", ["--oracle", "latest", "--publish", "--mock-dir", mock], d);
+  const key = Object.keys(read(d, "drift-state.json").keys)[0];
+
+  seedPassing(d, { runId: "run-b" });
+  write(d, "verdict-latest.json", { oracle: "latest", verdict: "compatible", pass: true, runId: "run-b" });
+  writeFileSync(join(mock, "fail-close"), "");
+  run("compat/drift-record.mjs", ["--oracle", "latest", "--publish", "--mock-dir", mock], d);
+  let entry = read(d, "drift-state.json").keys[key];
+  assert.equal(entry.status, "resolved");
+  assert.equal(entry.resolutionPublishedAt == null, true, "partial failure stays pending");
+  let store = JSON.parse(readFileSync(join(mock, "github-store.json"), "utf8"));
+  assert.equal(Object.values(store.issues)[0].state, "OPEN");
+  assert.equal(Object.values(store.issues)[0].comments.length, 1, "comment posted before close failed");
+
+  // Retry: the already-posted resolution comment is deduplicated, close
+  // succeeds, and the marker is stamped.
+  rmSync(join(mock, "fail-close"));
+  run("compat/drift-record.mjs", ["--oracle", "latest", "--publish", "--mock-dir", mock], d);
+  entry = read(d, "drift-state.json").keys[key];
+  assert.equal(entry.resolutionPublishedAt != null, true);
+  store = JSON.parse(readFileSync(join(mock, "github-store.json"), "utf8"));
+  const issue = Object.values(store.issues)[0];
+  assert.equal(issue.state, "CLOSED");
+  assert.equal(issue.comments.length, 1, "retry does not re-post the resolution comment");
+  rmSync(d, { recursive: true, force: true });
+});
+
 test("the durable footer carries the issue number across runs", () => {
   const d = dir();
   const mock = join(d, "mock");
@@ -319,8 +412,15 @@ test("the durable footer carries the issue number across runs", () => {
   run("compat/drift-record.mjs", ["--oracle", "latest", "--publish", "--mock-dir", mock], d);
   const key = Object.keys(read(d, "drift-state.json").keys)[0];
 
-  // Simulate the publish having learned the issue: patch the packet footer
-  // with github.issue, then drop the sidecar — the rebuild must restore it.
+  // Simulate the publish having learned the issue: move the mock issue to
+  // number 42 under a non-matching key (so search-by-key cannot find it),
+  // patch the packet footer with github.issue, then drop the sidecar —
+  // only the rebuilt footer pointer can locate the issue.
+  const storePath = join(mock, "github-store.json");
+  const store = JSON.parse(readFileSync(storePath, "utf8"));
+  store.issues["42"] = { ...store.issues["1"], key: "unrelated", body: "(older observation)" };
+  delete store.issues["1"];
+  writeFileSync(storePath, JSON.stringify(store, null, 2));
   const issueFile = join(d, "issues-open", readdirSync(join(d, "issues-open"))[0]);
   const text = readFileSync(issueFile, "utf8");
   const footer = JSON.parse(text.match(/<!-- drift-state:(.*?)-->/s)[1]);
