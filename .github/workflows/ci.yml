@@ -50,6 +50,12 @@ jobs:
       - name: Compatibility probe-client tests
         run: npm run test:compat
 
+      # Fault-injection suite for the upstream-tracking machinery: shared
+      # candidate binding, verdict classification, drift dedup/state, publish
+      # outcomes, and update-candidate promotion rules — all hermetic.
+      - name: Upstream-ops fault-injection tests
+        run: npm run test:upstream-ops
+
       - name: Durable process E2E
         run: npm run test:e2e
 
@@ -57,6 +63,13 @@ jobs:
       # checkout, no MoonBit toolchain, production deps only.
       - name: Clean-consumer artifact smoke test
         run: npm run test:consumer
+
+      # The practical vertical: external side effect (retried, then killed
+      # after the effect was applied but before commit), waitForEvent
+      # (killed while parked), restart, and completion with exactly one
+      # downstream-applied record keyed by the business idempotency key.
+      - name: Clean-consumer practical scenario
+        run: npm run test:scenario
 
       - name: Pinned Cloudflare compatibility oracle
         run: npm run compat:pinned

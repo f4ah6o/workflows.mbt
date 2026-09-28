@@ -36,7 +36,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Toolchain pin drift must not block upstream verification — the oracle
+      # check is about npm upstream, and a moon mismatch still produces
+      # complete evidence (build failure surfaces as local-runtime-failure).
       - name: Verify toolchain pin
+        continue-on-error: true
         run: npm run check:toolchain
 
       - name: Install dependencies
@@ -45,12 +49,18 @@ jobs:
       - name: Build MoonBit JS kernel
         run: npm run build:core
 
+      # Resolves @latest once into a shared candidate, then runs typecheck,
+      # contract, differential, docs-watch, verdict, drift record and the
+      # update-candidate generator — all under one run id. Exit code reflects
+      # the verdict: a non-zero verdict marks the run red (the signal), while
+      # the `if: always()` steps below still leave the full evidence trail.
       - name: Check latest Cloudflare oracle
         run: npm run compat:latest
 
-      # Records/upsets one deduplicated drift record (file artifact always,
-      # GitHub issue when the run produced drift). Keyed by upstream version
-      # tuple + drift fingerprint so repeats update the same record.
+      # Publishes the drift packet behind the explicit gate. The publisher
+      # prechecks GitHub Issues availability and records the real outcome
+      # (created/commented/skipped/failed) in publish-*.json — an unavailable
+      # destination is never reported as a notification success.
       - name: Record actionable drift
         if: always()
         env:
@@ -62,9 +72,22 @@ jobs:
         if: always()
         run: npm run compat:report
 
+      - name: Write run summary
+        if: always()
+        run: |
+          echo "# compatibility-latest run" >> "$GITHUB_STEP_SUMMARY"
+          for f in compat-results/verdict-latest.json compat-results/update-candidate-latest.json; do
+            [ -f "$f" ] && echo "## $f" >> "$GITHUB_STEP_SUMMARY" && echo '```json' >> "$GITHUB_STEP_SUMMARY" && cat "$f" >> "$GITHUB_STEP_SUMMARY" && echo '```' >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      # compat-results/ holds every evidence artifact: candidate manifest,
+      # phase results, verdict, drift packets, publish outcomes, proposed
+      # manifest. Retention is bounded — the durable record is the drift
+      # packet (and its GitHub issue when publishing is available).
       - name: Upload compatibility artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: compatibility-latest
           path: compat-results/
+          retention-days: 30

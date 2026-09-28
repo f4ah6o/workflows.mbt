@@ -1,0 +1,14 @@
+{
+  // An ordinary Cloudflare Workflows project config — this file works
+  // unchanged under `npx wrangler dev` and under `workflows dev`.
+  "name": "workflows-mbt-scenario-example",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-26",
+  "workflows": [
+    {
+      "name": "charge-workflow",
+      "binding": "CHARGE_WORKFLOW",
+      "class_name": "ChargeWorkflow"
+    }
+  ]
+}

@@ -147,3 +147,17 @@ workflow source runs under `wrangler dev` and `workflows.mbt`, the local
 runtime is SIGKILLed mid-suspension, and the instance must complete from
 persisted state with identical output. Drill records land in
 `compat-results/drill-*.json`.
+
+The packaged artifact is additionally exercised end-to-end by
+`npm run test:scenario` (`scripts/consumer-scenario.mjs`): a consumer project
+with no repository checkout or MoonBit toolchain runs an ordinary Cloudflare
+Workflow that calls an external HTTP service with a business idempotency
+key. The run proves a retried external side effect (first call 503), a
+SIGKILL after the downstream effect was applied but before the step result
+committed (the replayed step callback re-executed — at-least-once delivery —
+and the downstream service deduplicated on the business key, one applied
+record for three calls), a SIGKILL while parked on `waitForEvent`, and
+completion after `sendEvent` on the third process. Evidence lands in
+`compat-results/scenario-consumer.json`. Exactly-once external delivery is
+not claimed anywhere — §4's application-level idempotency requirement is the
+mechanism that made the replay safe.

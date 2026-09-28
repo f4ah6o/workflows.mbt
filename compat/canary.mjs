@@ -158,6 +158,7 @@ try {
   } catch {}
   const result = {
     oracle: "hosted",
+    runId: process.env.WORKFLOWS_MBT_RUN_ID ?? "hosted-" + Date.now(),
     checkedAt: new Date().toISOString(),
     versions: { wrangler: wranglerVersion },
     probes,

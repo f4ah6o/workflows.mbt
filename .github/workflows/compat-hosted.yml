@@ -60,12 +60,20 @@ jobs:
 
       - name: Run hosted canary probes
         if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        env:
+          WORKFLOWS_MBT_RUN_ID: hosted-${{ github.run_id }}
         run: node compat/canary.mjs
 
+      # Classify the canary result — hosted-without-evidence becomes
+      # hosted-not-performed, never compatible.
+      - name: Verdict
+        if: always() && env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        run: node compat/verdict.mjs --oracle hosted
+
       # Hosted drift must become a durable actionable record, not just a red
-      # scheduled run: upsert one deduplicated GitHub issue per drift
-      # fingerprint (same dedup scheme as compat-latest, keyed on oracle +
-      # upstream versions + failing probes).
+      # scheduled run: upsert one deduplicated GitHub issue per problem
+      # fingerprint (keyed on oracle + failing probes, never the version
+      # tuple — a new upstream release recurs the same record).
       - name: Record actionable drift
         if: always() && env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
         env:
@@ -79,3 +87,4 @@ jobs:
         with:
           name: compatibility-hosted
           path: compat-results/
+          retention-days: 30
