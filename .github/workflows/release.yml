@@ -23,18 +23,12 @@ jobs:
         with:
           node-version: 22
 
-      - name: Setup MoonBit
-        uses: hustcer/setup-moonbit@v1
-        with:
-          # binaries CDN only serves channel names; check:toolchain enforces
-          # the pin recorded in .moonbit-toolchain.json
-          version: "latest"
-          core-version: "latest"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Verify toolchain pin
-        run: npm run check:toolchain
+      # Release verification consumes the vendored toolchain release, not the
+      # moving `latest` channel: install-toolchain.mjs downloads the tarballs
+      # recorded in .moonbit-toolchain.json from this repo's toolchain/* tag
+      # and verifies their sha256 before extracting.
+      - name: Install pinned MoonBit toolchain
+        run: node scripts/install-toolchain.mjs
 
       - name: Install dependencies
         run: npm ci --no-audit --no-fund

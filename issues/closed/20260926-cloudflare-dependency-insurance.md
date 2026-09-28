@@ -741,7 +741,12 @@ differential probes pass. Latest oracle (wrangler 4.142.0 / workers-types
    produce identical output. Records land in `compat-results/drill-*.json`.
 8. **Emergency artifact** — `package-lock.json` committed; CI uses `npm ci`;
    MoonBit pinned via `.moonbit-toolchain.json` (moon 0.1.20260920, moonc
-   0.10.14+7d59c7ec9) in `setup-moonbit`; tag `v*` builds
+   0.10.14+7d59c7ec9): monitoring workflows install `latest` + assert equality
+   with the pin (upstream releases surface as explicit drift), while the
+   release workflow installs the exact sha256-verified tarballs vendored as
+   assets on the repo's own immutable `toolchain/0.1.20260920` release via
+   `scripts/install-toolchain.mjs` — independent of upstream channel movement;
+   tag `v*` builds
    `.github/workflows/release.yml`, which packages the runtime tarball,
    extracts it to a clean directory, runs the drill from the extracted tree,
    and publishes a GitHub Release whose `metadata.json` records commit,

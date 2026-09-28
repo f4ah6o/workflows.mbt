@@ -1,5 +1,11 @@
 {
   "moon": "0.1.20260920",
   "moonc": "0.10.14+7d59c7ec9",
-  "note": "Pinned MoonBit toolchain for release verification. CI passes these to hustcer/setup-moonbit's version/core-version inputs; release metadata repeats them. Update deliberately, with a compat:pinned run on the new toolchain."
+  "release": {
+    "tag": "toolchain/0.1.20260920",
+    "moonAsset": "moonbit-linux-x86_64-0.1.20260920.tar.gz",
+    "moonSha256": "9226694de9ff978db1ecf820b7710c4224e84ec7a76b19a222d96f0cd4e31b6a",
+    "coreAsset": "core-0.10.14-7d59c7ec9.tar.gz",
+    "coreSha256": "6f18b8fdea18f85e628a75e4a1bd3977c5a5c9c6a836fd8824192b0e6bd91b14"
+  }
 }
