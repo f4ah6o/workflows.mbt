@@ -7,6 +7,15 @@ source keeps importing `cloudflare:workers`; the local compatibility host
 redirects that module at build time and delegates durable execution decisions to
 the MoonBit kernel.
 
+**Positioning: a compatibility safety net for Cloudflare Workflows.** Use
+Cloudflare normally; keep workflow source portable and continuously verified
+against this independent fallback runtime. Explicit non-goals: competing with
+Cloudflare Workflows, cloning the whole Workers platform, reproducing
+Cloudflare's global/distributed infrastructure, bundling D1/KV/R2/Queues/AI/
+Durable Objects emulators into core, or claiming transparent migration of
+in-flight Cloudflare state. See `docs/fallback-runbook.md` for the supported
+disaster-recovery model.
+
 The migration target is intentionally small:
 
 ```text
@@ -216,8 +225,18 @@ unrelated pull requests just because a version number changed.
 
 The pinned versions live in `compat/oracle/manifest.json`. Machine-readable
 results and `compat-results/report.md` are uploaded as GitHub Actions artifacts.
-Production Cloudflare probing is a separate optional extension point and is not
-required for credential-free CI.
+The evidence matrix is `compat/capabilities.json` (validated by
+`compat/check-capabilities.mjs`, rendered into the report); contract drift and
+semantic probe results are reported as distinct outcomes. Latest-oracle drift
+produces deduplicated durable records via `compat/drift-record.mjs` (one
+`compat-drift` GitHub issue per drift fingerprint).
+
+`node compat/run-drill.mjs` runs the source-unmodified fallback drill — the
+fixture under `fixtures/drill/` executes under `wrangler dev` and
+`workflows.mbt`, the local runtime is SIGKILLed mid-suspension, and the
+instance must complete from persisted state with identical output. A hosted
+Cloudflare canary is implemented but credential-gated and deferred; see
+`docs/hosted-canary.md`.
 
 ## Scope
 

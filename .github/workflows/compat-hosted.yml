@@ -1,0 +1,63 @@
+name: compatibility-hosted
+
+# Credential-gated hosted Cloudflare canary. Deferred until CF_API_TOKEN and
+# CF_ACCOUNT_ID repository secrets are provisioned — see docs/hosted-canary.md.
+# Secrets map to job env so the gate is testable in `if` conditions.
+
+on:
+  schedule:
+    - cron: "41 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hosted-canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+      CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+      CF_ACCOUNT_SUBDOMAIN: ${{ secrets.CF_ACCOUNT_SUBDOMAIN }}
+      CF_CANARY_URL: ${{ secrets.CF_CANARY_URL }}
+    steps:
+      - name: Report deferral
+        if: env.CF_API_TOKEN == '' || env.CF_ACCOUNT_ID == ''
+        run: echo "hosted canary deferred — see docs/hosted-canary.md"
+
+      - uses: actions/checkout@v4
+        if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+
+      - uses: actions/setup-node@v4
+        if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        with:
+          node-version: 22
+
+      - name: Setup MoonBit
+        if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        uses: hustcer/setup-moonbit@v1
+        with:
+          version: "0.1.20260920"
+          core-version: "0.10.14+7d59c7ec9"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install dependencies
+        if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        run: npm ci --no-audit --no-fund
+
+      - name: Build MoonBit JS kernel
+        if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        run: npm run build:core
+
+      - name: Run hosted canary probes
+        if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        run: node compat/canary.mjs
+
+      - name: Upload canary artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compatibility-hosted
+          path: compat-results/

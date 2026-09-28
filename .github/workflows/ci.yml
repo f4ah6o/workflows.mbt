@@ -21,11 +21,15 @@ jobs:
 
       - name: Setup MoonBit
         uses: hustcer/setup-moonbit@v1
+        with:
+          # pinned toolchain — see .moonbit-toolchain.json
+          version: "0.1.20260920"
+          core-version: "0.10.14+7d59c7ec9"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install host dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: MoonBit check
         run: npm run check:moon

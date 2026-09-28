@@ -790,7 +790,7 @@ test("binding batch semantics repeat duplicate delete results and skip duplicate
   const result = await binding.deleteBatch(["batch-a", "batch-a", "missing"]);
   assert.deepEqual(result.deleted, [{ id: "batch-a" }, { id: "batch-a" }]);
   assert.deepEqual(result.errors, [
-    { id: "missing", code: 404, message: "Workflow instance not found" },
+    { id: "missing", code: 10400, message: "Workflow instance not found" },
   ]);
 });
 

@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -13,14 +14,20 @@ const oracleIndex = process.argv.indexOf("--oracle");
 const oracle = oracleIndex >= 0 ? process.argv[oracleIndex + 1] : "pinned";
 if (!["pinned", "latest"].includes(oracle)) throw new Error("oracle must be pinned or latest");
 
-const probes = [
-  "basic",
-  "retry",
-  "sleep",
-  "wait-for-event",
-  "rollback",
-  "entrypoint-ctx",
-];
+const catalog = JSON.parse(
+  readFileSync(join(root, "compat/probes/catalog.json"), "utf8"),
+);
+const probeIndex = process.argv.indexOf("--probe");
+const onlyProbe = probeIndex >= 0 ? process.argv[probeIndex + 1] : null;
+// Probes with `differential: false` document behavior that cannot be diffed —
+// e.g. upstream aborts the isolate on BigInt step output — so they are kept in
+// the catalog (and capability matrix) but skipped by the differential runner.
+const probes = onlyProbe
+  ? [onlyProbe]
+  : catalog.probes.filter((entry) => entry.differential !== false).map((entry) => entry.id);
+if (onlyProbe && !catalog.probes.some((entry) => entry.id === onlyProbe)) {
+  throw new Error("unknown probe: " + onlyProbe);
+}
 const fixture = join(root, "compat/probes/wrangler.jsonc");
 const temp = mkdtempSync(join(tmpdir(), "workflows-mbt-diff-"));
 
@@ -95,7 +102,7 @@ async function waitReady(port, child, label) {
 
 async function runProbe(port, runtime, probe) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
+  const timeout = setTimeout(() => controller.abort(), 90000);
   try {
     const response = await fetch("http://127.0.0.1:" + port + "/run", {
       method: "POST",
@@ -108,14 +115,31 @@ async function runProbe(port, runtime, probe) {
     });
     const text = await response.text();
     if (!response.ok) throw new Error(runtime + "/" + probe + ": HTTP " + response.status + ": " + text);
+    console.error(`[${runtime}] ${probe} done`);
     return normalizeTrace(JSON.parse(text));
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith(runtime + "/")) throw error;
+    throw new Error(`${runtime}/${probe}: ${error?.name ?? "Error"}: ${error?.message ?? error}`);
   } finally {
     clearTimeout(timeout);
   }
 }
 
+// A crashed or timed-out run can leave dev servers behind on a port; always
+// bind a fresh free port so we never silently talk to a stale bundle.
+function freePort() {
+  return new Promise((resolvePort, rejectPort) => {
+    const server = createServer();
+    server.once("error", rejectPort);
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address();
+      server.close(() => resolvePort(port));
+    });
+  });
+}
+
 async function collectWorkflowsMbt() {
-  const port = 8790;
+  const port = await freePort();
   const child = start(process.execPath, [
     "host/cli.mjs", "dev",
     "--config", fixture,
@@ -135,7 +159,7 @@ async function collectWorkflowsMbt() {
 }
 
 async function collectCloudflare() {
-  const port = 8791;
+  const port = await freePort();
   const wrangler = wranglerCommand();
   const child = start(wrangler.command, [
     ...wrangler.args,

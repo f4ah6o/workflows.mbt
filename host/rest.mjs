@@ -111,7 +111,7 @@ export async function handleWorkflowRest(runtime, request) {
             trigger_source: "api",
           });
         } catch (error) {
-          if (error?.name !== "WorkflowInstanceAlreadyExistsError") throw error;
+          if (error?.alreadyExists !== true) throw error;
         }
       }
       return ok(created, {

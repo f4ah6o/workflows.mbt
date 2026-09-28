@@ -1,0 +1,247 @@
+{
+  "formatVersion": 1,
+  "probes": [
+    {
+      "id": "basic",
+      "kind": "workflow",
+      "capabilities": [
+        "step.do"
+      ]
+    },
+    {
+      "id": "retry",
+      "kind": "workflow",
+      "capabilities": [
+        "step.retry"
+      ]
+    },
+    {
+      "id": "sleep",
+      "kind": "workflow",
+      "capabilities": [
+        "step.sleep"
+      ]
+    },
+    {
+      "id": "sleep-until",
+      "kind": "workflow",
+      "capabilities": [
+        "step.sleep-until"
+      ]
+    },
+    {
+      "id": "wait-for-event",
+      "kind": "workflow",
+      "capabilities": [
+        "step.wait-for-event"
+      ]
+    },
+    {
+      "id": "durable-with-event",
+      "kind": "workflow",
+      "capabilities": [
+        "promise.mixed-durable-event"
+      ]
+    },
+    {
+      "id": "wait-timeout",
+      "kind": "workflow",
+      "capabilities": [
+        "step.wait-timeout"
+      ]
+    },
+    {
+      "id": "promise-all",
+      "kind": "workflow",
+      "capabilities": [
+        "promise.all"
+      ]
+    },
+    {
+      "id": "promise-allsettled",
+      "kind": "workflow",
+      "capabilities": [
+        "promise.allsettled"
+      ]
+    },
+    {
+      "id": "promise-race",
+      "kind": "workflow",
+      "capabilities": [
+        "promise.race"
+      ]
+    },
+    {
+      "id": "promise-any",
+      "kind": "workflow",
+      "capabilities": [
+        "promise.any"
+      ]
+    },
+    {
+      "id": "retry-in-branch",
+      "kind": "workflow",
+      "capabilities": [
+        "promise.concurrent-retry"
+      ]
+    },
+    {
+      "id": "wrapped-race",
+      "kind": "workflow",
+      "capabilities": [
+        "promise.wrapped-race"
+      ]
+    },
+    {
+      "id": "nonretryable",
+      "kind": "workflow",
+      "capabilities": [
+        "step.non-retryable-error"
+      ]
+    },
+    {
+      "id": "duplicate-names",
+      "kind": "workflow",
+      "capabilities": [
+        "step.identity"
+      ]
+    },
+    {
+      "id": "step-context",
+      "kind": "workflow",
+      "capabilities": [
+        "step.context"
+      ]
+    },
+    {
+      "id": "dynamic-delay",
+      "kind": "workflow",
+      "capabilities": [
+        "step.dynamic-delay"
+      ]
+    },
+    {
+      "id": "sensitive",
+      "kind": "workflow",
+      "capabilities": [
+        "subscribe.sensitive-redaction"
+      ]
+    },
+    {
+      "id": "ser-structured",
+      "kind": "workflow",
+      "capabilities": [
+        "serialization.structured"
+      ]
+    },
+    {
+      "id": "ser-bigint",
+      "kind": "workflow",
+      "capabilities": [
+        "serialization.durable-values"
+      ],
+      "differential": false,
+      "note": "Upstream aborts the isolate on BigInt step output (uncatchable); local serializes bigint natively. Recorded as an intentional difference."
+    },
+    {
+      "id": "ser-collections",
+      "kind": "workflow",
+      "capabilities": [
+        "serialization.collections"
+      ]
+    },
+    {
+      "id": "ser-binary",
+      "kind": "workflow",
+      "capabilities": [
+        "serialization.binary"
+      ]
+    },
+    {
+      "id": "ser-error",
+      "kind": "workflow",
+      "capabilities": [
+        "serialization.error"
+      ]
+    },
+    {
+      "id": "ser-unsupported",
+      "kind": "workflow",
+      "capabilities": [
+        "serialization.unsupported"
+      ],
+      "differential": false,
+      "note": "Upstream aborts the isolate on unserializable step output (Value is not serialisable); local rejects with a catchable WorkflowSerializationError."
+    },
+    {
+      "id": "ser-cyclic",
+      "kind": "workflow",
+      "capabilities": [
+        "serialization.unsupported"
+      ]
+    },
+    {
+      "id": "entrypoint-ctx",
+      "kind": "workflow",
+      "capabilities": [
+        "worker.entrypoint-ctx"
+      ]
+    },
+    {
+      "id": "rollback",
+      "kind": "workflow",
+      "capabilities": [
+        "rollback.auto"
+      ]
+    },
+    {
+      "id": "binding-crud",
+      "kind": "orchestrated",
+      "capabilities": [
+        "binding.crud"
+      ]
+    },
+    {
+      "id": "subscribe-filter",
+      "kind": "orchestrated",
+      "capabilities": [
+        "subscribe.filter-cursor"
+      ]
+    },
+    {
+      "id": "pause-resume",
+      "kind": "orchestrated",
+      "capabilities": [
+        "lifecycle.pause-resume"
+      ]
+    },
+    {
+      "id": "terminate-rollback",
+      "kind": "orchestrated",
+      "capabilities": [
+        "lifecycle.terminate-rollback"
+      ]
+    },
+    {
+      "id": "restart-from",
+      "kind": "orchestrated",
+      "capabilities": [
+        "lifecycle.restart-from"
+      ]
+    },
+    {
+      "id": "delete-instance",
+      "kind": "orchestrated",
+      "capabilities": [
+        "lifecycle.delete"
+      ]
+    },
+    {
+      "id": "worker-fetch",
+      "kind": "orchestrated",
+      "capabilities": [
+        "worker.http"
+      ]
+    }
+  ]
+}

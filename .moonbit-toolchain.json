@@ -1,0 +1,5 @@
+{
+  "moon": "0.1.20260920",
+  "moonc": "0.10.14+7d59c7ec9",
+  "note": "Pinned MoonBit toolchain for release verification. CI passes these to hustcer/setup-moonbit's version/core-version inputs; release metadata repeats them. Update deliberately, with a compat:pinned run on the new toolchain."
+}

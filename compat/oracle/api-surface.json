@@ -7,9 +7,34 @@
     "WorkflowInstanceCreateOptions": "7df1518a",
     "InstanceStatus": "c0b3a793",
     "WorkflowInstanceSubscribeOptions": "dd5398c9",
+    "WorkflowInstanceSubscription": "9084c53d",
+    "WorkflowInstanceTerminateOptions": "dc8eda3d",
+    "WorkflowInstanceRestartOptions": "0a8f4da4",
+    "WorkflowInstanceLocationHint": "17780740",
+    "WorkflowError": "7fdf911e",
     "WorkflowStep": "a4b48249",
     "WorkflowEntrypoint": "6dbc79a6",
-    "ExecutionContext": "002e5445"
+    "ExecutionContext": "002e5445",
+    "WorkflowEvent": "cc9142b0",
+    "WorkflowStepEvent": "7f50f727",
+    "WorkflowStepContext": "f0f80963",
+    "WorkflowStepConfig": "f4b3706c",
+    "WorkflowStepRollbackConfig": "ef493b0e",
+    "WorkflowStepRollbackOptions": "088f18b1",
+    "WorkflowRollbackContext": "8c0538a7",
+    "WorkflowRollbackHandler": "daceed55",
+    "WorkflowDynamicDelayContext": "af67584d",
+    "WorkflowDelayFunction": "2e604e44",
+    "WorkflowCronSchedule": "c3d9494e",
+    "NonRetryableError": "9daa2ed7"
+  },
+  "literalHashes": {
+    "WorkflowBackoff": "e5f37e2d",
+    "WorkflowSleepDuration": "bc1f122f",
+    "WorkflowTimeoutDuration": "679526ff",
+    "WorkflowRetentionDuration": "679526ff",
+    "WorkflowStepSensitivity": "e9bcc8b2",
+    "WorkflowDurationLabel": "e2cc3d10"
   },
   "members": {
     "Workflow": [
@@ -39,6 +64,19 @@
       "cursor",
       "filter"
     ],
+    "WorkflowInstanceSubscription": [
+      "next"
+    ],
+    "WorkflowInstanceTerminateOptions": [
+      "rollback"
+    ],
+    "WorkflowInstanceRestartOptions": [
+      "from"
+    ],
+    "WorkflowError": [
+      "code",
+      "message"
+    ],
     "WorkflowStep": [
       "do",
       "sleep",
@@ -59,6 +97,51 @@
       "props",
       "tracing",
       "waitUntil"
+    ],
+    "WorkflowEvent": [
+      "instanceId",
+      "payload",
+      "schedule",
+      "timestamp",
+      "workflowName"
+    ],
+    "WorkflowStepEvent": [
+      "payload",
+      "sensitive",
+      "timestamp",
+      "type"
+    ],
+    "WorkflowStepContext": [
+      "attempt",
+      "config",
+      "step"
+    ],
+    "WorkflowStepConfig": [
+      "retries",
+      "sensitive",
+      "timeout"
+    ],
+    "WorkflowStepRollbackConfig": [
+      "cron",
+      "scheduledTime"
+    ],
+    "WorkflowStepRollbackOptions": [
+      "rollback",
+      "rollbackConfig"
+    ],
+    "WorkflowRollbackContext": [
+      "ctx",
+      "error",
+      "output",
+      "stepName"
+    ],
+    "WorkflowDynamicDelayContext": [
+      "ctx",
+      "error"
+    ],
+    "WorkflowCronSchedule": [
+      "cron",
+      "scheduledTime"
     ]
   },
   "instanceStatusValues": [
@@ -103,5 +186,161 @@
     "workflow_terminated",
     "workflow_waiting",
     "workflow_waiting_for_pause"
-  ]
+  ],
+  "eventFields": {
+    "workflow_queued": [
+      "type"
+    ],
+    "workflow_started": [
+      "params",
+      "type"
+    ],
+    "workflow_running": [
+      "type"
+    ],
+    "workflow_paused": [
+      "type"
+    ],
+    "workflow_waiting_for_pause": [
+      "type"
+    ],
+    "workflow_waiting": [
+      "type"
+    ],
+    "workflow_completed": [
+      "output",
+      "type"
+    ],
+    "workflow_errored": [
+      "error",
+      "type"
+    ],
+    "workflow_terminated": [
+      "type"
+    ],
+    "step_started": [
+      "config",
+      "stepName",
+      "type"
+    ],
+    "step_completed": [
+      "output",
+      "stepName",
+      "type"
+    ],
+    "step_errored": [
+      "stepName",
+      "type"
+    ],
+    "attempt_started": [
+      "attempt",
+      "stepName",
+      "type"
+    ],
+    "attempt_completed": [
+      "attempt",
+      "stepName",
+      "type"
+    ],
+    "attempt_errored": [
+      "attempt",
+      "error",
+      "retryDelayMs",
+      "stepName",
+      "type"
+    ],
+    "sleep_started": [
+      "durationMs",
+      "stepName",
+      "type"
+    ],
+    "sleep_completed": [
+      "stepName",
+      "type"
+    ],
+    "wait_started": [
+      "eventType",
+      "stepName",
+      "type"
+    ],
+    "wait_completed": [
+      "stepName",
+      "type"
+    ],
+    "wait_timed_out": [
+      "stepName",
+      "type"
+    ],
+    "rollback_started": [
+      "type"
+    ],
+    "rollback_step_started": [
+      "config",
+      "stepName",
+      "type"
+    ],
+    "rollback_step_completed": [
+      "stepName",
+      "type"
+    ],
+    "rollback_step_errored": [
+      "error",
+      "stepName",
+      "type"
+    ],
+    "rollback_attempt_started": [
+      "attempt",
+      "stepName",
+      "type"
+    ],
+    "rollback_attempt_completed": [
+      "attempt",
+      "stepName",
+      "type"
+    ],
+    "rollback_attempt_errored": [
+      "attempt",
+      "error",
+      "retryDelayMs",
+      "stepName",
+      "type"
+    ],
+    "rollback_completed": [
+      "type"
+    ],
+    "rollback_errored": [
+      "type"
+    ]
+  },
+  "eventHashes": {
+    "workflow_queued": "2865aee9",
+    "workflow_started": "06074159",
+    "workflow_running": "71c2ef53",
+    "workflow_paused": "54cae4ac",
+    "workflow_waiting_for_pause": "241ff95c",
+    "workflow_waiting": "f0abfe83",
+    "workflow_completed": "c70af440",
+    "workflow_errored": "b0cf4188",
+    "workflow_terminated": "933bce49",
+    "step_started": "d26bab91",
+    "step_completed": "3215b276",
+    "step_errored": "e9896ca1",
+    "attempt_started": "0a75ea9f",
+    "attempt_completed": "dee416f3",
+    "attempt_errored": "295cba84",
+    "sleep_started": "b8fa96d8",
+    "sleep_completed": "7dddf59c",
+    "wait_started": "b505a560",
+    "wait_completed": "d395c78e",
+    "wait_timed_out": "e3d68355",
+    "rollback_started": "fdd4517e",
+    "rollback_step_started": "e48bc5de",
+    "rollback_step_completed": "e36477cc",
+    "rollback_step_errored": "218a2639",
+    "rollback_attempt_started": "4378c228",
+    "rollback_attempt_completed": "34ecbedc",
+    "rollback_attempt_errored": "872affc5",
+    "rollback_completed": "12a314c2",
+    "rollback_errored": "6eea45b4"
+  }
 }

@@ -33,13 +33,6 @@ class SuspendExecution extends Error {
   }
 }
 
-class WaitForEventTimeoutError extends Error {
-  constructor(name, type) {
-    super(`waitForEvent step "${name}" timed out waiting for event type "${type}"`);
-    this.name = "WorkflowWaitForEventTimeoutError";
-  }
-}
-
 // `ServiceBindingQueueMessage.serializedBody` (ArrayBuffer | ArrayBufferView)
 // carries the handler argument in the V8/jsg::Serializer structured-clone
 // encoding — decode it with v8.deserialize, not JSON.
@@ -970,7 +963,10 @@ class ExecutionContext {
     const stepContext = {
       step: { name, count: identity.count },
       attempt,
-      config: normalized,
+      // ctx.config mirrors the resolved config minus function-valued leaves —
+      // upstream serializes it across RPC, so e.g. a dynamic retries.delay
+      // function appears as an absent key there.
+      config: JSON.parse(JSON.stringify(normalized)),
     };
 
     try {
@@ -983,7 +979,28 @@ class ExecutionContext {
       if (!this.storage.getInstance(this.instance.id)) {
         throw new WorkflowInstanceDeletedExecution(this.instance.id);
       }
-      const encoded = encodeDurableValue(result, `step "${name}" output`);
+      let encoded;
+      let serializationError = null;
+      try {
+        encoded = encodeDurableValue(result, `step "${name}" output`);
+      } catch (error) {
+        serializationError = error;
+      }
+      if (serializationError) {
+        // Output serialization failures are terminal and non-retryable — the
+        // raw error (e.g. TypeError for a cyclic value) reaches run().
+        const stored = serializeError(serializationError);
+        this.storage.failDoStepSerialization(
+          identity,
+          attempt,
+          stored,
+          rollback
+            ? { config: observableConfig(this.normalizedConfig(rollback.config)) }
+            : null,
+        );
+        serializationError.__stepFinalized = true;
+        throw serializationError;
+      }
       this.storage.completeDoStep(
         identity,
         attempt,
@@ -992,8 +1009,11 @@ class ExecutionContext {
           ? { config: observableConfig(this.normalizedConfig(rollback.config)) }
           : null,
       );
-      return result;
+      // Upstream returns the serialized-then-deserialized value to run():
+      // error own-properties and other non-cloneable members do not survive.
+      return decodeDurableValue(encoded);
     } catch (error) {
+      if (error?.__stepFinalized) throw error;
       if (
         error instanceof WorkflowInstanceDeletedExecution ||
         !this.storage.getInstance(this.instance.id)
@@ -1001,19 +1021,35 @@ class ExecutionContext {
         throw new WorkflowInstanceDeletedExecution(this.instance.id);
       }
       const encodedError = serializeError(error);
-      const terminal =
-        Boolean(error?.nonRetryable || error?.name === "NonRetryableError") ||
-        attempt > normalized.retries.limit;
+      const nonRetryable = Boolean(
+        error?.nonRetryable || error?.name === "NonRetryableError",
+      );
+      const terminal = nonRetryable || attempt > normalized.retries.limit;
       if (terminal) {
+        // Cloudflare reports a terminal NonRetryableError as
+        // WorkflowFatalError on the step/event surface, while the rejection
+        // delivered to run() is a plain Error carrying "<name>: <message>".
+        const eventError = nonRetryable
+          ? serializeError(Object.assign(
+              new Error(
+                `Step threw a NonRetryableError with message "${error.name}: ${error.message}"`,
+              ),
+              { name: "WorkflowFatalError" },
+            ))
+          : encodedError;
+        const replayError = nonRetryable
+          ? serializeError(new Error(`${error.name}: ${error.message}`))
+          : encodedError;
         this.storage.finishDoStepTerminal(
           identity,
           attempt,
-          encodedError,
+          eventError,
           rollback
             ? { config: observableConfig(this.normalizedConfig(rollback.config)) }
             : null,
+          replayError,
         );
-        throw error;
+        throw deserializeError(replayError);
       }
 
       let delayMs;
@@ -1148,7 +1184,8 @@ class ExecutionContext {
     }
 
     if (decision.timer && this.kernel.deadlineReady(Date.now(), decision.timer.wake_at)) {
-      const error = new WaitForEventTimeoutError(name, options.type);
+      // Cloudflare delivers a plain Error("Execution timed out after <ms>ms").
+      const error = new Error(`Execution timed out after ${timeoutMs}ms`);
       this.storage.timeoutEventStep(identity, serializeError(error));
       throw error;
     }

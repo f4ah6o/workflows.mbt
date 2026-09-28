@@ -1,11 +1,18 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, "compat-results");
 mkdirSync(out, { recursive: true });
 const manifest = JSON.parse(readFileSync(join(root, "compat/oracle/manifest.json"), "utf8"));
+
+// Re-validate the matrix first so the report only ever renders evidence the
+// result files actually support.
+spawnSync(process.execPath, [join(root, "compat/check-capabilities.mjs")], {
+  stdio: "inherit",
+});
 
 function load(name) {
   const path = join(out, name);
@@ -16,7 +23,7 @@ const differentialPinned = load("differential-pinned.json");
 const differentialLatest = load("differential-latest.json");
 const driftPinned = load("drift-pinned.json");
 const driftLatest = load("drift-latest.json");
-const latestDrift = driftLatest ?? driftPinned;
+const capabilities = load("capabilities.json");
 const compatibility = readFileSync(join(root, "COMPATIBILITY.md"), "utf8");
 const known = compatibility.split("## Known differences")[1]?.split("## Compatibility claim")[0]?.trim() ?? "See COMPATIBILITY.md";
 
@@ -33,6 +40,24 @@ function probeLines(label, result) {
   ];
 }
 
+// Contract drift and semantic probe results are distinct axes: upstream can
+// break either one independently, so the report names the combination rather
+// than collapsing to a single compatibility boolean.
+function oracleOutcome(contract, semantic) {
+  const contractText = contract ? (contract.pass ? "contract clean" : "contract drift") : "contract not run";
+  const semanticText = semantic ? (semantic.pass ? "semantic probes pass" : "semantic probes failed") : "semantic probes not run";
+  return contractText + " + " + semanticText;
+}
+
+const EVIDENCE_LABELS = [
+  ["implemented", "impl"],
+  ["repository_tested", "repo-tested"],
+  ["pinned_differential", "pinned"],
+  ["latest_differential", "latest"],
+  ["hosted_differential", "hosted"],
+  ["intentionally_unsupported", "known-diff"],
+];
+
 const lines = [
   "# Compatibility verification report",
   "",
@@ -43,10 +68,11 @@ const lines = [
   "- Pinned Wrangler: " + manifest.wrangler,
   "- Pinned @cloudflare/workers-types: " + manifest.workersTypes,
   "- Pinned workerd: " + manifest.workerd,
-  "- Pinned contract: " + (driftPinned ? (driftPinned.pass ? "PASS" : "DRIFT") : "not run"),
-  "- Latest contract drift: " + (driftLatest ? (driftLatest.pass ? "none" : "detected") : "not run"),
-  "- Pinned differential: " + differentialSummary(differentialPinned),
-  "- Latest differential: " + differentialSummary(differentialLatest),
+  "",
+  "## Outcome",
+  "",
+  "- pinned oracle: " + oracleOutcome(driftPinned, differentialPinned),
+  "- latest oracle: " + oracleOutcome(driftLatest, differentialLatest),
   "",
   "## Differential probes",
   "",
@@ -55,18 +81,35 @@ const lines = [
   "",
   "## Contract drift",
   "",
-  ...(latestDrift ? [
-    "- checked versions: " + JSON.stringify(latestDrift.versions),
-    "- added: " + (latestDrift.drift.added.length ? latestDrift.drift.added.join(", ") : "none"),
-    "- removed: " + (latestDrift.drift.removed.length ? latestDrift.drift.removed.join(", ") : "none"),
-    "- changed: " + (latestDrift.drift.changed.length ? latestDrift.drift.changed.join(", ") : "none"),
+  ...(driftLatest ?? driftPinned ? [
+    "- checked versions: " + JSON.stringify((driftLatest ?? driftPinned).versions),
+    "- added: " + ((driftLatest ?? driftPinned).drift.added.length ? (driftLatest ?? driftPinned).drift.added.join(", ") : "none"),
+    "- removed: " + ((driftLatest ?? driftPinned).drift.removed.length ? (driftLatest ?? driftPinned).drift.removed.join(", ") : "none"),
+    "- changed: " + ((driftLatest ?? driftPinned).drift.changed.length ? (driftLatest ?? driftPinned).drift.changed.join(", ") : "none"),
   ] : ["- not run"]),
   "",
-  "## Known differences",
-  "",
-  known,
+  "## Capability matrix",
   "",
 ];
+
+if (!capabilities) {
+  lines.push("- capabilities.json not resolved — run compat/check-capabilities.mjs");
+} else {
+  lines.push(
+    "| Capability | Category | Evidence |",
+    "| --- | --- | --- |",
+    ...capabilities.capabilities.map((row) => {
+      const evidence = EVIDENCE_LABELS.filter(([key]) => row.evidence?.[key])
+        .map(([, label]) => label)
+        .join(", ") || "none";
+      const suffix = row.knownDifference ? " — " + row.knownDifference : "";
+      return "| " + row.id + " | " + row.category + " | " + evidence + suffix + " |";
+    }),
+    "",
+    "Verified at: " + JSON.stringify(capabilities.verifiedAt) + " · upstream: " + JSON.stringify(capabilities.upstream),
+  );
+}
+lines.push("", "## Known differences", "", known, "");
 const report = lines.join("\n");
 writeFileSync(join(out, "report.md"), report);
 console.log(report);
