@@ -111,17 +111,37 @@ async function waitDeployed(url) {
   throw new Error("canary deployment did not come up at " + url);
 }
 
+// The canary URL must point at the actual deployment — `workers.dev` alone is
+// not a valid hostname. Resolution order: explicit CF_CANARY_URL, the URL
+// wrangler prints on deploy, then CF_ACCOUNT_SUBDOMAIN to construct
+// <name>.<subdomain>.workers.dev. Without any of them we fail fast instead of
+// polling a URL that can never answer.
+function resolveCanaryUrl(deployOutput) {
+  if (process.env.CF_CANARY_URL) return process.env.CF_CANARY_URL;
+  const printed = deployOutput.match(/https:\/\/[^\s"'`]+workers\.dev[^\s"'`]*/)?.[0];
+  if (printed) return printed;
+  if (process.env.CF_ACCOUNT_SUBDOMAIN) {
+    return `https://${canaryName}.${process.env.CF_ACCOUNT_SUBDOMAIN}.workers.dev`;
+  }
+  throw new Error(
+    "canary URL not derivable: set CF_CANARY_URL, or CF_ACCOUNT_SUBDOMAIN " +
+    "(the account's workers.dev subdomain), or run a wrangler version that " +
+    "prints the deployed URL",
+  );
+}
+
 let deployed = false;
-const canaryUrl = process.env.CF_CANARY_URL ?? `https://${canaryName}.${process.env.CF_ACCOUNT_SUBDOMAIN ?? "workers.dev"}`;
 try {
   // Deploy the same probe worker source to a disposable hosted target.
-  await execFileP(wrangler, [
+  const { stdout, stderr } = await execFileP(wrangler, [
     "deploy",
     "--config", fixture,
     "--name", canaryName,
     "--compatibility-date", "2026-09-26",
   ], { cwd: root, maxBuffer: 8 * 1024 * 1024 });
   deployed = true;
+  const canaryUrl = resolveCanaryUrl(String(stdout) + "\n" + String(stderr));
+  console.log("canary deployed at " + canaryUrl);
   await waitDeployed(canaryUrl);
 
   const hosted = {};
@@ -133,9 +153,14 @@ try {
     const diff = diffTrace(hosted[probe], local[probe]);
     if (diff) differences[probe] = diff;
   }
+  let wranglerVersion = null;
+  try {
+    wranglerVersion = (await execFileP(wrangler, ["--version"], { cwd: root })).stdout.trim().replace(/^.*\s/, "");
+  } catch {}
   const result = {
     oracle: "hosted",
     checkedAt: new Date().toISOString(),
+    versions: { wrangler: wranglerVersion },
     probes,
     hosted,
     workflowsMbt: local,

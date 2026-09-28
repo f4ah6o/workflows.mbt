@@ -22,8 +22,10 @@ compatibility review — whichever comes first.
 2. Set repository secrets:
    - `CF_API_TOKEN` — the token
    - `CF_ACCOUNT_ID` — the target account id
-   - optionally `CF_ACCOUNT_SUBDOMAIN` / `CF_CANARY_URL` if workers.dev naming
-     differs
+   - `CF_ACCOUNT_SUBDOMAIN` — the account's workers.dev subdomain. Required
+     only if `wrangler deploy` does not print the deployed URL (it normally
+     does) and `CF_CANARY_URL` is unset; `CF_CANARY_URL` overrides everything
+     for non-workers.dev targets.
 3. The `compatibility-hosted` workflow (weekly + manual dispatch) then runs
    `compat/canary.mjs`, which:
    - deploys `compat/probes` as a disposable Worker named
@@ -33,6 +35,11 @@ compatibility review — whichever comes first.
    - writes `compat-results/differential-hosted.json` (picked up by the
      capability matrix as `hosted_differential` evidence),
    - deletes the deployment on success *and* failure.
+4. When hosted probes drift, the workflow records it via
+   `compat/drift-record.mjs --oracle hosted --publish`: one deduplicated
+   `compat-drift` GitHub issue per drift fingerprint (oracle + versions +
+   failing probes), with a link back to the Actions run. `issues: write` on
+   the workflow is only used for that upsert.
 
 Without the secrets the workflow prints the deferral notice and stays green.
 Hosted failures are labelled `oracle: hosted` in the result file and must not

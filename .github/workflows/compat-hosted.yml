@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   hosted-canary:
@@ -60,6 +61,17 @@ jobs:
       - name: Run hosted canary probes
         if: env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
         run: node compat/canary.mjs
+
+      # Hosted drift must become a durable actionable record, not just a red
+      # scheduled run: upsert one deduplicated GitHub issue per drift
+      # fingerprint (same dedup scheme as compat-latest, keyed on oracle +
+      # upstream versions + failing probes).
+      - name: Record actionable drift
+        if: always() && env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node compat/drift-record.mjs --oracle hosted --publish
 
       - name: Upload canary artifacts
         if: always()
