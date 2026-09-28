@@ -18,11 +18,15 @@ import {
   decodeDurableValue,
   deserializeError,
   encodeDurableValue,
+  normalizeDurableValue,
   observableConfig,
+  SerializationError,
   serializeError,
   serializeJson,
 } from "./serialization.mjs";
+import { buildLocalAdapters } from "./adapters.mjs";
 import { SQLiteStorage } from "./storage/sqlite.mjs";
+import { WorkflowSubscription } from "./subscription.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -49,18 +53,32 @@ function sleep(ms) {
   return new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
 }
 
+// Node clamps setTimeout delays above 2^31-1 ms (~24.8 days) to 1 ms, so a
+// long per-attempt timeout must be armed against a wall-clock deadline and
+// re-armed until the deadline is actually reached.
+const MAX_TIMER_MS = 2_147_483_647;
+
 async function withTimeout(valuePromise, timeoutMs) {
   if (timeoutMs == null) return await valuePromise;
+  const deadline = Date.now() + timeoutMs;
   let timer;
   try {
     return await Promise.race([
       valuePromise,
       new Promise((_, reject) => {
-        timer = setTimeout(() => {
-          const error = new Error(`Workflow step attempt timed out after ${timeoutMs}ms`);
-          error.name = "WorkflowStepTimeoutError";
-          reject(error);
-        }, timeoutMs);
+        const arm = () => {
+          const remaining = deadline - Date.now();
+          timer = setTimeout(() => {
+            if (deadline - Date.now() > 0) {
+              arm();
+              return;
+            }
+            const error = new Error(`Workflow step attempt timed out after ${timeoutMs}ms`);
+            error.name = "WorkflowStepTimeoutError";
+            reject(error);
+          }, Math.min(Math.max(remaining, 0), MAX_TIMER_MS));
+        };
+        arm();
       }),
     ]);
   } finally {
@@ -74,9 +92,10 @@ export class WorkflowRuntime {
     storagePath,
     buildDir,
     env = {},
+    envName = null,
     kernelPath = resolve(packageRoot, "dist/workflows_core.mjs"),
   } = {}) {
-    const config = loadProjectConfig(configPath, { storagePath, buildDir });
+    const config = loadProjectConfig(configPath, { storagePath, buildDir, envName });
     const kernel = await loadKernel(kernelPath);
     const storage = new SQLiteStorage(config.storagePath);
     const runtime = new WorkflowRuntime({ config, kernel, storage, env });
@@ -92,6 +111,11 @@ export class WorkflowRuntime {
     this.workflowModule = null;
     this.backgroundTasks = new Set();
     this.workflowByName = new Map(config.workflows.map((w) => [w.name, w]));
+    this.executorId = `exec_${randomUUID()}`;
+    // One active executor per instance; a crashed executor's lease expires and
+    // another process can then claim the instance. The lease is renewed while
+    // the instance executes and released on every exit path.
+    this.executorLeaseMs = config.executorLeaseMs ?? 30_000;
   }
 
   async prepare() {
@@ -103,6 +127,20 @@ export class WorkflowRuntime {
     }
     this.bundlePath = await bundleWorkflow(this.config);
     this.workflowModule = await loadWorkflowModule(this.bundlePath);
+    this.adapters = buildLocalAdapters(this.config, {
+      invokeQueue: async (batch) => {
+        const handler = this.workflowModule?.default?.queue;
+        if (typeof handler !== "function") {
+          throw new Error(
+            `Queue "${batch.queue}": the workflow module's default export has no queue() handler`,
+          );
+        }
+        await handler(batch, this.env(), {
+          waitUntil() {},
+          passThroughOnException() {},
+        });
+      },
+    });
     for (const workflow of this.config.workflows) {
       if (typeof this.workflowModule[workflow.className] !== "function") {
         throw new Error(
@@ -120,6 +158,12 @@ export class WorkflowRuntime {
     };
     for (const workflow of this.config.workflows) {
       env[workflow.binding] = new WorkflowBinding(this, workflow);
+    }
+    // Declared binding families (KV, D1, R2, queue producers, service
+    // bindings) resolve to their local adapters; userEnv values are dev
+    // overrides and do not shadow a declared binding.
+    for (const [name, adapter] of Object.entries(this.adapters ?? {})) {
+      env[name] = adapter;
     }
     return env;
   }
@@ -173,16 +217,22 @@ export class WorkflowRuntime {
     return new WorkflowInstanceHandle(this, workflowName, id);
   }
 
+  // Retention resolution order mirrors Cloudflare: per-instance retention,
+  // then the Workflow binding's default_retention, then the local account-plan
+  // policy adapter (workflows.mbt.json `retention.plan`), else unlimited.
   resolveRetention(workflow, requestedRetention = {}) {
     const defaultRetention = workflow.defaultRetention ?? {};
+    const planRetention = this.config.retentionPolicy ?? {};
     const successRetention =
       requestedRetention.successRetention ??
       requestedRetention.success_retention ??
-      defaultRetention.success_retention;
+      defaultRetention.success_retention ??
+      planRetention.successRetentionMs;
     const errorRetention =
       requestedRetention.errorRetention ??
       requestedRetention.error_retention ??
-      defaultRetention.error_retention;
+      defaultRetention.error_retention ??
+      planRetention.errorRetentionMs;
     return {
       successRetentionMs: successRetention == null
         ? null
@@ -275,6 +325,11 @@ export class WorkflowRuntime {
     return created;
   }
 
+  async subscribeInstance(storageId, publicId, options = {}) {
+    const row = this.requireStoredInstance(storageId);
+    return new WorkflowSubscription(this, row.id, publicId, options);
+  }
+
   async sendEvent(id, event, workflowName = null) {
     const instance = this.requireInstance(id, workflowName);
     if (!["queued", "running", "waiting", "waitingForPause"].includes(instance.status)) {
@@ -296,17 +351,44 @@ export class WorkflowRuntime {
     this.storage.deleteExpired(Date.now());
     let ran = 0;
     for (let round = 0; round < maxRounds; round += 1) {
-      const runnable = this.storage.listRunnable(Date.now());
+      const runnable = this.storage.listRunnable(Date.now(), this.executorId);
       if (!runnable.length) break;
       for (const row of runnable) {
-        await this.runInstance(row.id);
-        ran += 1;
+        if (await this.runInstance(row.id)) ran += 1;
       }
     }
     return ran;
   }
 
   async runInstance(id) {
+    if (!this.storage.claimInstance(id, this.executorId, this.executorLeaseMs)) {
+      return false;
+    }
+    const heartbeat = setInterval(
+      () => {
+        try {
+          // Once the lease is gone the commit-time fence rejects any stale
+          // writes anyway, so there is nothing left to renew.
+          if (!this.storage.renewLease(id, this.executorId, this.executorLeaseMs)) {
+            clearInterval(heartbeat);
+          }
+        } catch {}
+      },
+      Math.max(250, Math.floor(this.executorLeaseMs / 3)),
+    );
+    heartbeat.unref?.();
+    try {
+      await this.runInstanceLeased(id);
+    } finally {
+      clearInterval(heartbeat);
+      try {
+        this.storage.releaseLease(id, this.executorId);
+      } catch {}
+    }
+    return true;
+  }
+
+  async runInstanceLeased(id) {
     let row = this.getStoredInstance(id);
     if (!row) return;
     if (row.status === "rollingBack") {
@@ -325,8 +407,8 @@ export class WorkflowRuntime {
     const instance = new WorkflowClass(this.workflowExecutionContext(id), this.env());
     const event = this.workflowEvent(row);
 
-    this.storage.markInstanceStarted(id, JSON.parse(row.payload));
-    this.storage.setInstanceStatus(id, "running", { error: null });
+    this.storage.markInstanceStarted(id, JSON.parse(row.payload), this.executorId);
+    this.storage.setInstanceStatus(id, "running", { error: null }, this.executorId);
     globalThis.__WORKFLOWS_MBT_CONTEXT__ = execution;
     try {
       const result = await workflowExecutionScope.run(
@@ -341,44 +423,71 @@ export class WorkflowRuntime {
       row = this.getStoredInstance(id);
       if (!row) return;
       if (row.status === "waitingForPause") {
-        this.storage.setInstanceStatus(id, "paused");
+        this.storage.setInstanceStatus(id, "paused", {}, this.executorId);
         return;
       }
       if (["paused", "terminated", "rollingBack"].includes(row.status)) {
         return;
       }
-      const encoded = encodeDurableValue(result, "workflow output");
-      this.storage.setInstanceStatus(id, "complete", { output: encoded, error: null });
+      const encoded = encodeDurableValue(
+        result,
+        "workflow output",
+        await normalizeDurableValue(result, "workflow output"),
+      );
+      this.storage.setInstanceStatus(
+        id, "complete", { output: encoded, error: null }, this.executorId,
+      );
     } catch (error) {
+      // A fenced commit that discovers the lease is gone means another
+      // executor owns the instance now — nothing here may write.
+      if (error?.name === "WorkflowLeaseLostError") return;
       await execution.settleOperations();
       row = this.getStoredInstance(id);
       if (!row || error instanceof WorkflowInstanceDeletedExecution) return;
       if (row.status === "waitingForPause") {
-        this.storage.setInstanceStatus(id, "paused");
+        this.setStatusIfLeased(id, "paused");
         return;
       }
       if (["paused", "terminated", "rollingBack"].includes(row.status)) {
         return;
       }
       if (error instanceof SuspendExecution) {
-        this.storage.setInstanceStatus(id, "waiting");
+        if (error.message === "lease-lost") return;
+        this.setStatusIfLeased(id, "waiting");
       } else {
-        const encodedError = serializeError(error);
-        const rollbacks = this.storage.listRollbackRegistrations(id);
-        if (rollbacks.length) {
-          this.storage.setInstanceStatus(id, "running", { error: encodedError });
-          this.storage.beginRollback(id, {
-            terminalStatus: "errored",
-            cause: encodedError,
-          });
-        } else {
-          this.storage.setInstanceStatus(id, "errored", {
-            error: encodedError,
-          });
+        try {
+          const encodedError = serializeError(error);
+          const rollbacks = this.storage.listRollbackRegistrations(id);
+          if (rollbacks.length) {
+            this.storage.setInstanceStatus(
+              id, "running", { error: encodedError }, this.executorId,
+            );
+            this.storage.beginRollback(id, {
+              terminalStatus: "errored",
+              cause: encodedError,
+            }, this.executorId);
+          } else {
+            this.storage.setInstanceStatus(id, "errored", {
+              error: encodedError,
+            }, this.executorId);
+          }
+        } catch (commitError) {
+          if (commitError?.name !== "WorkflowLeaseLostError") throw commitError;
         }
       }
     } finally {
       delete globalThis.__WORKFLOWS_MBT_CONTEXT__;
+    }
+  }
+
+  // Status transitions from an executor that may have already lost its
+  // lease: a lost lease silently skips the write — the new owner drives the
+  // instance from here on.
+  setStatusIfLeased(id, status, options = {}) {
+    try {
+      this.storage.setInstanceStatus(id, status, options, this.executorId);
+    } catch (error) {
+      if (error?.name !== "WorkflowLeaseLostError") throw error;
     }
   }
 
@@ -413,7 +522,9 @@ export class WorkflowRuntime {
     for (const registration of registrations) {
       if (registration.state === "completed") continue;
       if (registration.state === "failed") {
-        this.storage.finishRollback(id, "failed", registration.rollback_error);
+        this.storage.finishRollback(
+          id, "failed", registration.rollback_error, this.executorId,
+        );
         return;
       }
       if (
@@ -442,8 +553,8 @@ export class WorkflowRuntime {
         error.name = "WorkflowRollbackHandlerMissingError";
         const encodedError = serializeError(error);
         const attempt = Math.max(1, registration.attempt || 0);
-        this.storage.failRollback(identity, attempt, encodedError);
-        this.storage.finishRollback(id, "failed", encodedError);
+        this.storage.failRollback(identity, attempt, encodedError, this.executorId);
+        this.storage.finishRollback(id, "failed", encodedError, this.executorId);
         return;
       }
 
@@ -457,8 +568,11 @@ export class WorkflowRuntime {
           "rollback retries.limit must be an integer between 0 and 10000",
         );
         const encodedError = serializeError(error);
-        this.storage.failRollback(identity, Math.max(1, registration.attempt || 0), encodedError);
-        this.storage.finishRollback(id, "failed", encodedError);
+        this.storage.failRollback(
+          identity, Math.max(1, registration.attempt || 0), encodedError,
+          this.executorId,
+        );
+        this.storage.finishRollback(id, "failed", encodedError, this.executorId);
         return;
       }
 
@@ -475,15 +589,14 @@ export class WorkflowRuntime {
           : deserializeError(row.rollback_cause),
         output: registration.output == null
           ? undefined
-          : decodeDurableValue(registration.output),
+          : decodeDurableValue(registration.output, this.durableValueContext()),
       };
       const attempt =
         registration.state === "running" && registration.attempt > 0
           ? registration.attempt
           : registration.attempt + 1;
-      this.storage.startRollbackAttempt(identity, attempt);
-
       try {
+        this.storage.startRollbackAttempt(identity, attempt, this.executorId);
         const timeoutMs = rollbackConfig.timeout == null
           ? null
           : parseDuration(rollbackConfig.timeout, "rollback timeout");
@@ -495,9 +608,10 @@ export class WorkflowRuntime {
           ),
         );
         if (!this.storage.getInstance(id)) return;
-        this.storage.completeRollback(identity);
+        this.storage.completeRollback(identity, this.executorId);
       } catch (error) {
         if (
+          error?.name === "WorkflowLeaseLostError" ||
           error instanceof WorkflowInstanceDeletedExecution ||
           !this.storage.getInstance(id)
         ) {
@@ -508,8 +622,8 @@ export class WorkflowRuntime {
           Boolean(error?.nonRetryable || error?.name === "NonRetryableError") ||
           attempt > rollbackConfig.retries.limit;
         if (terminal) {
-          this.storage.failRollback(identity, attempt, encodedError);
-          this.storage.finishRollback(id, "failed", encodedError);
+          this.storage.failRollback(identity, attempt, encodedError, this.executorId);
+          this.storage.finishRollback(id, "failed", encodedError, this.executorId);
           return;
         }
 
@@ -527,8 +641,8 @@ export class WorkflowRuntime {
               "Static rollback retry delay above 2,000,000,000ms is not supported",
             );
             const rangeEncoded = serializeError(rangeError);
-            this.storage.failRollback(identity, attempt, rangeEncoded);
-            this.storage.finishRollback(id, "failed", rangeEncoded);
+            this.storage.failRollback(identity, attempt, rangeEncoded, this.executorId);
+            this.storage.finishRollback(id, "failed", rangeEncoded, this.executorId);
             return;
           }
           delayMs = this.kernel.retryDelayMs(
@@ -536,14 +650,14 @@ export class WorkflowRuntime {
           );
         }
         this.storage.scheduleRollbackRetry(
-          identity, attempt, encodedError, Date.now() + delayMs,
+          identity, attempt, encodedError, Date.now() + delayMs, this.executorId,
         );
         return;
       }
     }
 
     if (!this.storage.getInstance(id)) return;
-    this.storage.finishRollback(id, "complete", null);
+    this.storage.finishRollback(id, "complete", null, this.executorId);
   }
 
   // Loopback-compatible entries for ctx.exports, mirroring workerd's
@@ -756,6 +870,71 @@ export class WorkflowRuntime {
     }
   }
 
+  durableValueContext() {
+    return { openStream: (streamId) => this.storage.openStream(streamId) };
+  }
+
+  // Step results are the only place a top-level ReadableStream<Uint8Array> may
+  // be persisted (matching the upstream contract). The stream is pumped into
+  // bounded chunks before the step commits, so commit visibility stays atomic.
+  async encodeStepResult(identity, result, label, lease = null) {
+    if (result instanceof ReadableStream) {
+      if (result.locked) {
+        throw new SerializationError(
+          `${label} must be a fresh unlocked ReadableStream`,
+        );
+      }
+      const streamId = randomUUID();
+      this.storage.beginStepStream(identity, streamId, lease);
+      const maxBytes = this.config.limits?.streamBytes ?? 256 * 1024 * 1024;
+      const reader = result.getReader();
+      let seq = 0;
+      let bytes = 0;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!(value instanceof Uint8Array)) {
+            throw new SerializationError(
+              `${label} stream must produce Uint8Array chunks`,
+            );
+          }
+          bytes += value.byteLength;
+          if (bytes > maxBytes) {
+            throw new SerializationError(
+              `${label} stream exceeds the configured ${maxBytes}-byte persisted limit`,
+            );
+          }
+          this.storage.appendStreamChunk(
+            streamId,
+            seq,
+            Buffer.from(value.buffer, value.byteOffset, value.byteLength),
+            lease,
+          );
+          seq += 1;
+        }
+      } catch (error) {
+        this.storage.abandonStream(streamId);
+        throw error;
+      }
+      const encoded = JSON.stringify({
+        kind: "stream",
+        streamId,
+        bytes,
+        chunks: seq,
+      });
+      return { encoded, stream: { id: streamId, bytes, chunks: seq } };
+    }
+    return {
+      encoded: encodeDurableValue(
+        result,
+        label,
+        await normalizeDurableValue(result, label),
+      ),
+      stream: null,
+    };
+  }
+
   // Drains pending ctx.waitUntil() tasks before closing storage so delayed
   // continuations still observe a live runtime. Resolves synchronously when
   // no tasks are pending, so bare close() callers keep old behavior.
@@ -792,8 +971,13 @@ class ExecutionContext {
     if (this.rollbackHydration) return;
     const row = this.storage.getInstance(this.instance.id);
     if (!row) throw new SuspendExecution("instance-deleted");
+    if (row.lease_owner != null && row.lease_owner !== this.runtime.executorId) {
+      throw new SuspendExecution("lease-lost");
+    }
     if (row.status === "waitingForPause") {
-      this.storage.setInstanceStatus(this.instance.id, "paused");
+      this.storage.setInstanceStatus(
+        this.instance.id, "paused", {}, this.runtime.executorId,
+      );
       throw new SuspendExecution("pause-boundary");
     }
     if (["paused", "terminated", "rollingBack"].includes(row.status)) {
@@ -917,9 +1101,10 @@ class ExecutionContext {
           observableConfig(this.normalizedConfig(rollback.config)),
           step.output,
           null,
+          this.runtime.executorId,
         );
       }
-      return decodeDurableValue(step.output);
+      return decodeDurableValue(step.output, this.runtime.durableValueContext());
     }
     if (step?.state === "failed") {
       if (rollback && !this.rollbackHydration) {
@@ -929,6 +1114,7 @@ class ExecutionContext {
           observableConfig(this.normalizedConfig(rollback.config)),
           null,
           step.error,
+          this.runtime.executorId,
         );
       }
       throw deserializeError(step.error);
@@ -947,7 +1133,8 @@ class ExecutionContext {
     }
 
     step = this.storage.ensureStep(
-      identity, identity.ordinal, step?.state ?? "running", observableConfig(normalized),
+      identity, identity.ordinal, step?.state ?? "running",
+      observableConfig(normalized), null, this.runtime.executorId,
     );
 
     if (step.state === "waiting_retry") {
@@ -957,9 +1144,37 @@ class ExecutionContext {
       }
     }
 
+    // A previous attempt left in 'running' means the executor that owned it
+    // crashed or timed out mid-flight. Whether its persisted timeout deadline
+    // already passed decides if it is recorded as a timeout or an interrupt.
+    const attempts = this.storage.listAttempts(identity);
+    const lastAttempt = attempts.at(-1);
+    if (lastAttempt?.state === "running") {
+      const timeoutTimer = this.storage.getTimer(identity, "attempt-timeout");
+      const staleError = timeoutTimer != null && timeoutTimer.wake_at <= Date.now()
+        ? Object.assign(
+            new Error("Workflow step attempt timed out before the executor stopped"),
+            { name: "WorkflowStepTimeoutError" },
+          )
+        : Object.assign(
+            new Error("Step attempt interrupted by an executor restart"),
+            { name: "WorkflowAttemptInterruptedError" },
+          );
+      this.storage.finishAttempt(
+        identity,
+        lastAttempt.attempt,
+        "failed",
+        serializeError(staleError),
+        null,
+        this.runtime.executorId,
+      );
+    }
+
     const attempt = this.storage.countAttempts(identity) + 1;
-    this.storage.updateStep(identity, { state: "running", error: null });
-    this.storage.startAttempt(identity, attempt);
+    this.storage.updateStep(
+      identity, { state: "running", error: null }, this.runtime.executorId,
+    );
+    this.storage.startAttempt(identity, attempt, this.runtime.executorId);
     const stepContext = {
       step: { name, count: identity.count },
       attempt,
@@ -969,9 +1184,17 @@ class ExecutionContext {
       config: JSON.parse(JSON.stringify(normalized)),
     };
 
+    const timeoutMs =
+      normalized.timeout == null ? null : parseDuration(normalized.timeout, "step timeout");
     try {
-      const timeoutMs =
-        normalized.timeout == null ? null : parseDuration(normalized.timeout, "step timeout");
+      // The attempt's timeout deadline is durable so a restart can tell an
+      // interrupted attempt apart from one whose deadline already passed.
+      if (timeoutMs != null) {
+        this.storage.putTimer(
+          identity, "attempt-timeout", Date.now() + timeoutMs,
+          this.runtime.executorId,
+        );
+      }
       const result = await withTimeout(
         Promise.resolve().then(() => callback(stepContext)),
         timeoutMs,
@@ -980,15 +1203,22 @@ class ExecutionContext {
         throw new WorkflowInstanceDeletedExecution(this.instance.id);
       }
       let encoded;
+      let stream = null;
       let serializationError = null;
       try {
-        encoded = encodeDurableValue(result, `step "${name}" output`);
+        ({ encoded, stream } = await this.runtime.encodeStepResult(
+          identity,
+          result,
+          `step "${name}" output`,
+          this.runtime.executorId,
+        ));
       } catch (error) {
         serializationError = error;
       }
       if (serializationError) {
         // Output serialization failures are terminal and non-retryable — the
-        // raw error (e.g. TypeError for a cyclic value) reaches run().
+        // raw error (e.g. TypeError for a cyclic value) reaches run() and is
+        // catchable there, matching the upstream surface.
         const stored = serializeError(serializationError);
         this.storage.failDoStepSerialization(
           identity,
@@ -997,6 +1227,7 @@ class ExecutionContext {
           rollback
             ? { config: observableConfig(this.normalizedConfig(rollback.config)) }
             : null,
+          this.runtime.executorId,
         );
         serializationError.__stepFinalized = true;
         throw serializationError;
@@ -1008,12 +1239,21 @@ class ExecutionContext {
         rollback
           ? { config: observableConfig(this.normalizedConfig(rollback.config)) }
           : null,
+        stream,
+        this.runtime.executorId,
       );
-      // Upstream returns the serialized-then-deserialized value to run():
-      // error own-properties and other non-cloneable members do not survive.
-      return decodeDurableValue(encoded);
+      // The caller gets the persisted stream, not the drained original — the
+      // bytes read after a live run and after a restart are identical. Other
+      // values round-trip through the codec: error own-properties and other
+      // non-cloneable members do not survive, like upstream's clone.
+      return stream == null
+        ? decodeDurableValue(encoded, this.runtime.durableValueContext())
+        : this.storage.openStream(stream.id);
     } catch (error) {
       if (error?.__stepFinalized) throw error;
+      if (error?.name === "WorkflowLeaseLostError") {
+        throw new SuspendExecution("lease-lost");
+      }
       if (
         error instanceof WorkflowInstanceDeletedExecution ||
         !this.storage.getInstance(this.instance.id)
@@ -1048,6 +1288,7 @@ class ExecutionContext {
             ? { config: observableConfig(this.normalizedConfig(rollback.config)) }
             : null,
           replayError,
+          this.runtime.executorId,
         );
         throw deserializeError(replayError);
       }
@@ -1068,7 +1309,9 @@ class ExecutionContext {
         );
       }
       const wakeAt = Date.now() + delayMs;
-      this.storage.scheduleRetry(identity, attempt, encodedError, wakeAt);
+      this.storage.scheduleRetry(
+        identity, attempt, encodedError, wakeAt, this.runtime.executorId,
+      );
       throw new SuspendExecution("retry-delay");
     }
   }
@@ -1091,10 +1334,11 @@ class ExecutionContext {
       JSON.stringify({ mode: "relative", duration, durationMs: waitMs }),
       "sleep",
       initialWakeAt,
+      this.runtime.executorId,
     );
     if (step.state === "completed") return;
     if (this.kernel.deadlineReady(Date.now(), timer.wake_at)) {
-      this.storage.completeTimerStep(identity, "sleep");
+      this.storage.completeTimerStep(identity, "sleep", this.runtime.executorId);
       return;
     }
     throw new SuspendExecution("sleep");
@@ -1121,10 +1365,11 @@ class ExecutionContext {
       }),
       "sleep",
       wakeAt,
+      this.runtime.executorId,
     );
     if (step.state === "completed") return;
     if (this.kernel.deadlineReady(Date.now(), timer.wake_at)) {
-      this.storage.completeTimerStep(identity, "sleep");
+      this.storage.completeTimerStep(identity, "sleep", this.runtime.executorId);
       return;
     }
     throw new SuspendExecution("sleepUntil");
@@ -1175,6 +1420,7 @@ class ExecutionContext {
           },
           `event "${options.type}"`,
         ),
+      this.runtime.executorId,
     );
 
     if (decision.event) {
@@ -1186,7 +1432,9 @@ class ExecutionContext {
     if (decision.timer && this.kernel.deadlineReady(Date.now(), decision.timer.wake_at)) {
       // Cloudflare delivers a plain Error("Execution timed out after <ms>ms").
       const error = new Error(`Execution timed out after ${timeoutMs}ms`);
-      this.storage.timeoutEventStep(identity, serializeError(error));
+      this.storage.timeoutEventStep(
+        identity, serializeError(error), this.runtime.executorId,
+      );
       throw error;
     }
     throw new SuspendExecution("waitForEvent");

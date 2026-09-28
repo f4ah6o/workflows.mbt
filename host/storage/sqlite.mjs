@@ -12,6 +12,9 @@ export class SQLiteStorage extends Storage {
     this.db = new Database(path);
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
+    // Multiple executor processes may share one database; busy_timeout keeps a
+    // contended writer retrying instead of surfacing SQLITE_BUSY.
+    this.db.pragma("busy_timeout = 5000");
     this.#schema();
   }
 
@@ -136,6 +139,25 @@ export class SQLiteStorage extends Storage {
         created_at INTEGER NOT NULL,
         FOREIGN KEY(instance_id) REFERENCES instances(id) ON DELETE CASCADE
       );
+      CREATE TABLE IF NOT EXISTS step_streams (
+        id TEXT PRIMARY KEY,
+        instance_id TEXT NOT NULL,
+        step_type TEXT NOT NULL,
+        step_name TEXT NOT NULL,
+        step_count INTEGER NOT NULL,
+        state TEXT NOT NULL,
+        byte_length INTEGER NOT NULL DEFAULT 0,
+        chunk_count INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY(instance_id) REFERENCES instances(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS stream_chunks (
+        stream_id TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        bytes BLOB NOT NULL,
+        PRIMARY KEY(stream_id, seq),
+        FOREIGN KEY(stream_id) REFERENCES step_streams(id) ON DELETE CASCADE
+      );
       CREATE INDEX IF NOT EXISTS idx_instances_status ON instances(status);
       CREATE INDEX IF NOT EXISTS idx_timers_wake ON timers(wake_at);
       CREATE INDEX IF NOT EXISTS idx_events_unconsumed ON events(instance_id, type, consumed_at);
@@ -176,6 +198,8 @@ export class SQLiteStorage extends Storage {
     ensureColumn("rollback_registrations", "wake_at", "INTEGER");
     ensureColumn("rollback_registrations", "rollback_error", "TEXT");
     ensureColumn("rollback_registrations", "completed_at", "INTEGER");
+    ensureColumn("instances", "lease_owner", "TEXT");
+    ensureColumn("instances", "lease_expires_at", "INTEGER");
   }
 
   registerWorkflow(workflow) {
@@ -281,6 +305,56 @@ export class SQLiteStorage extends Storage {
     `).run(workflowName, cron, Math.trunc(lastCheckedAt));
   }
 
+  // Executor leases: exactly one live executor may run an instance. A lease is
+  // held only while the instance executes; suspension and terminal states
+  // release it, and an expired lease is treated as a crashed executor.
+  claimInstance(id, owner, ttlMs, now = Date.now()) {
+    return this.db.prepare(`
+      UPDATE instances
+      SET lease_owner=@owner, lease_expires_at=@expiresAt
+      WHERE id=@id
+        AND (lease_expires_at IS NULL OR lease_expires_at <= @now OR lease_owner=@owner)
+    `).run({ owner, expiresAt: now + ttlMs, id, now }).changes === 1;
+  }
+
+  renewLease(id, owner, ttlMs, now = Date.now()) {
+    return this.db.prepare(`
+      UPDATE instances SET lease_expires_at=@expiresAt
+      WHERE id=@id AND lease_owner=@owner
+    `).run({ expiresAt: now + ttlMs, id, owner }).changes === 1;
+  }
+
+  releaseLease(id, owner) {
+    return this.db.prepare(`
+      UPDATE instances SET lease_owner=NULL, lease_expires_at=NULL
+      WHERE id=@id AND lease_owner=@owner
+    `).run({ id, owner }).changes === 1;
+  }
+
+  // Fencing check executed inside committing transactions. A mutation that
+  // runs under an executor lease verifies the lease is still held and
+  // unexpired before the transaction commits, so an executor whose lease
+  // lapsed (and was possibly reclaimed by another executor) cannot land
+  // stale work on top of the new owner's. `lease` is the caller's
+  // executorId; null skips the check (lifecycle commands are unfenced).
+  assertLease(instanceId, lease) {
+    if (lease == null) return;
+    const row = this.db.prepare(
+      "SELECT lease_owner, lease_expires_at FROM instances WHERE id=?",
+    ).get(instanceId);
+    if (
+      !row ||
+      row.lease_owner !== lease ||
+      (row.lease_expires_at != null && row.lease_expires_at <= Date.now())
+    ) {
+      const error = new Error(
+        `Executor lease lost for workflow instance ${instanceId}`,
+      );
+      error.name = "WorkflowLeaseLostError";
+      throw error;
+    }
+  }
+
   deleteExpired(now = Date.now()) {
     return this.db.prepare(
       "DELETE FROM instances WHERE expires_at IS NOT NULL AND expires_at <= ?",
@@ -303,14 +377,33 @@ export class SQLiteStorage extends Storage {
     ).all(publicId);
   }
 
-  listInstances(workflowName) {
+  listInstances(workflowName, { status = null, offset = 0, limit = null } = {}) {
     this.deleteExpired(Date.now());
-    return this.db.prepare(
-      "SELECT * FROM instances WHERE workflow_name = ? ORDER BY created_at",
-    ).all(workflowName);
+    const where = status == null
+      ? "workflow_name = ?"
+      : "workflow_name = ? AND status = ?";
+    const args = status == null ? [workflowName] : [workflowName, status];
+    const total = this.db.prepare(
+      `SELECT COUNT(*) AS n FROM instances WHERE ${where}`,
+    ).get(...args).n;
+    const paged = limit == null
+      ? this.db.prepare(
+          `SELECT * FROM instances WHERE ${where} ORDER BY created_at`,
+        ).all(...args)
+      : this.db.prepare(
+          `SELECT * FROM instances WHERE ${where} ORDER BY created_at LIMIT ? OFFSET ?`,
+        ).all(...args, limit, offset);
+    return { rows: paged, total };
   }
 
-  setInstanceStatus(id, status, { output = undefined, error = undefined } = {}) {
+  setInstanceStatus(id, status, { output = undefined, error = undefined } = {}, lease = null) {
+    return this.db.transaction(() => {
+      this.assertLease(id, lease);
+      this.setInstanceStatusInner(id, status, { output, error });
+    })();
+  }
+
+  setInstanceStatusInner(id, status, { output = undefined, error = undefined } = {}) {
     const current = this.getInstance(id);
     if (!current) throw new Error(`Unknown workflow instance: ${id}`);
     const nextOutput = output === undefined ? current.output : output;
@@ -352,13 +445,21 @@ export class SQLiteStorage extends Storage {
     return this.db.prepare("DELETE FROM instances WHERE id = ?").run(id).changes > 0;
   }
 
-  listRunnable(now = Date.now()) {
+  // Instances leased to a live foreign executor are not runnable here: they
+  // stay out of the result set until the lease expires or is released.
+  listRunnable(now = Date.now(), executorId = null) {
     return this.db.prepare(`
       SELECT DISTINCT i.*
       FROM instances i
       LEFT JOIN timers t ON t.instance_id = i.id
-      WHERE i.status IN ('queued', 'running')
-         OR (i.status = 'waiting' AND t.wake_at <= ?)
+      WHERE (
+          i.lease_owner IS NULL
+          OR i.lease_owner = @executorId
+          OR i.lease_expires_at <= @now
+        )
+        AND (
+          i.status IN ('queued', 'running')
+         OR (i.status = 'waiting' AND t.wake_at <= @now)
          OR (
            i.status = 'rollingBack'
            AND (
@@ -371,13 +472,14 @@ export class SQLiteStorage extends Storage {
                WHERE rr.instance_id = i.id
                  AND (
                    rr.state IN ('pending', 'running')
-                   OR (rr.state = 'waiting_retry' AND rr.wake_at <= ?)
+                   OR (rr.state = 'waiting_retry' AND rr.wake_at <= @now)
                  )
              )
            )
          )
+        )
       ORDER BY i.created_at
-    `).all(now, now);
+    `).all({ now, executorId });
   }
 
   getStep(identity) {
@@ -392,7 +494,14 @@ export class SQLiteStorage extends Storage {
     ).all(instanceId);
   }
 
-  ensureStep(identity, ordinal, state, config, eventType = null) {
+  ensureStep(identity, ordinal, state, config, eventType = null, lease = null) {
+    return this.db.transaction(() => {
+      this.assertLease(identity.instanceId, lease);
+      return this.ensureStepInner(identity, ordinal, state, config, eventType);
+    })();
+  }
+
+  ensureStepInner(identity, ordinal, state, config, eventType = null) {
     const result = this.db.prepare(`
       INSERT OR IGNORE INTO steps(
         instance_id, type, name, count, ordinal, state, config, event_type, created_at
@@ -432,7 +541,14 @@ export class SQLiteStorage extends Storage {
     return this.getStep(identity);
   }
 
-  updateStep(identity, fields) {
+  updateStep(identity, fields, lease = null) {
+    return this.db.transaction(() => {
+      this.assertLease(identity.instanceId, lease);
+      this.updateStepInner(identity, fields);
+    })();
+  }
+
+  updateStepInner(identity, fields) {
     const allowed = ["state", "config", "output", "error", "event_type", "completed_at"];
     const entries = Object.entries(fields).filter(([key]) => allowed.includes(key));
     if (!entries.length) return;
@@ -443,23 +559,33 @@ export class SQLiteStorage extends Storage {
     `).run({ ...identity, ...Object.fromEntries(entries) });
   }
 
-  startAttempt(identity, attempt) {
-    this.db.prepare(`
-      INSERT INTO attempts(
-        instance_id, step_type, step_name, step_count, attempt, state, started_at
-      ) VALUES(?, ?, ?, ?, ?, 'running', ?)
-    `).run(
-      identity.instanceId, identity.type, identity.name, identity.count,
-      attempt, Date.now(),
-    );
-    this.log(
-      identity.instanceId,
-      "attempt.started",
-      JSON.stringify({ name: `${identity.name}-${identity.count}`, attempt }),
-    );
+  startAttempt(identity, attempt, lease = null) {
+    this.db.transaction(() => {
+      this.assertLease(identity.instanceId, lease);
+      this.db.prepare(`
+        INSERT INTO attempts(
+          instance_id, step_type, step_name, step_count, attempt, state, started_at
+        ) VALUES(?, ?, ?, ?, ?, 'running', ?)
+      `).run(
+        identity.instanceId, identity.type, identity.name, identity.count,
+        attempt, Date.now(),
+      );
+      this.log(
+        identity.instanceId,
+        "attempt.started",
+        JSON.stringify({ name: `${identity.name}-${identity.count}`, attempt }),
+      );
+    })();
   }
 
-  finishAttempt(identity, attempt, state, error = null, retryDelayMs = null) {
+  finishAttempt(identity, attempt, state, error = null, retryDelayMs = null, lease = null) {
+    this.db.transaction(() => {
+      this.assertLease(identity.instanceId, lease);
+      this.finishAttemptInner(identity, attempt, state, error, retryDelayMs);
+    })();
+  }
+
+  finishAttemptInner(identity, attempt, state, error = null, retryDelayMs = null) {
     this.db.prepare(`
       UPDATE attempts SET state=?, finished_at=?, error=?
       WHERE instance_id=? AND step_type=? AND step_name=? AND step_count=? AND attempt=?
@@ -494,12 +620,16 @@ export class SQLiteStorage extends Storage {
     `).all(identity.instanceId, identity.type, identity.name, identity.count);
   }
 
-  completeDoStep(identity, attempt, output, rollback = null) {
+  completeDoStep(identity, attempt, output, rollback = null, stream = null, lease = null) {
     this.db.transaction(() => {
-      this.finishAttempt(identity, attempt, "completed", null);
-      this.updateStep(identity, {
+      this.assertLease(identity.instanceId, lease);
+      this.finishAttemptInner(identity, attempt, "completed", null);
+      this.updateStepInner(identity, {
         state: "completed", output, error: null, completed_at: Date.now(),
       });
+      // The stream becomes visible in the same transaction that commits the
+      // step result, so readers never observe a partially-written stream.
+      if (stream) this.commitStream(stream.id, stream.bytes, stream.chunks);
       const step = this.getStep(identity);
       let sensitiveOutput = false;
       try {
@@ -510,16 +640,21 @@ export class SQLiteStorage extends Storage {
         "step.completed",
         JSON.stringify({
           name: `${identity.name}-${identity.count}`,
-          output: sensitiveOutput ? null : output,
-          redacted: sensitiveOutput,
+          ...(stream
+            ? { stream: true, bytes: stream.bytes }
+            : {
+                output: sensitiveOutput ? null : output,
+                redacted: sensitiveOutput,
+              }),
         }),
       );
       if (rollback) {
-        this.registerRollback(
+        this.registerRollbackInner(
           identity, identity.ordinal, rollback.config, output, null,
         );
       }
-      this.deleteTimer(identity, "retry");
+      this.deleteTimerInner(identity, "retry");
+      this.deleteTimerInner(identity, "attempt-timeout");
     })();
   }
 
@@ -527,10 +662,11 @@ export class SQLiteStorage extends Storage {
   // rethrows to run() — they differ for terminal NonRetryableError failures,
   // which Cloudflare reports as WorkflowFatalError while the rejection seen by
   // workflow code is a plain Error.
-  finishDoStepTerminal(identity, attempt, error, rollback = null, stepError = null) {
+  finishDoStepTerminal(identity, attempt, error, rollback = null, stepError = null, lease = null) {
     this.db.transaction(() => {
-      this.finishAttempt(identity, attempt, "failed", error);
-      this.updateStep(identity, {
+      this.assertLease(identity.instanceId, lease);
+      this.finishAttemptInner(identity, attempt, "failed", error);
+      this.updateStepInner(identity, {
         state: "failed", error: stepError ?? error, completed_at: Date.now(),
       });
       this.log(
@@ -539,42 +675,54 @@ export class SQLiteStorage extends Storage {
         JSON.stringify({ name: `${identity.name}-${identity.count}`, error }),
       );
       if (rollback) {
-        this.registerRollback(
+        this.registerRollbackInner(
           identity, identity.ordinal, rollback.config, null, error,
         );
       }
-      this.deleteTimer(identity, "retry");
+      this.deleteTimerInner(identity, "retry");
+      this.deleteTimerInner(identity, "attempt-timeout");
     })();
   }
 
   // Output-serialization failures complete the attempt (the work ran fine —
   // the result could not be persisted) and fail the step without a
   // step.errored event, matching Cloudflare's event surface.
-  failDoStepSerialization(identity, attempt, error, rollback = null) {
+  failDoStepSerialization(identity, attempt, error, rollback = null, lease = null) {
     this.db.transaction(() => {
-      this.finishAttempt(identity, attempt, "completed", null);
-      this.updateStep(identity, {
+      this.assertLease(identity.instanceId, lease);
+      this.finishAttemptInner(identity, attempt, "completed", null);
+      this.updateStepInner(identity, {
         state: "failed", error, completed_at: Date.now(),
       });
       if (rollback) {
-        this.registerRollback(
+        this.registerRollbackInner(
           identity, identity.ordinal, rollback.config, null, error,
         );
       }
-      this.deleteTimer(identity, "retry");
+      this.deleteTimerInner(identity, "retry");
+      this.deleteTimerInner(identity, "attempt-timeout");
     })();
   }
 
-  scheduleRetry(identity, attempt, error, wakeAt) {
+  scheduleRetry(identity, attempt, error, wakeAt, lease = null) {
     this.db.transaction(() => {
+      this.assertLease(identity.instanceId, lease);
       const retryDelayMs = Math.max(0, Math.trunc(wakeAt - Date.now()));
-      this.finishAttempt(identity, attempt, "failed", error, retryDelayMs);
-      this.updateStep(identity, { state: "waiting_retry", error, completed_at: null });
-      this.putTimer(identity, "retry", wakeAt);
+      this.finishAttemptInner(identity, attempt, "failed", error, retryDelayMs);
+      this.updateStepInner(identity, { state: "waiting_retry", error, completed_at: null });
+      this.putTimerInner(identity, "retry", wakeAt);
+      this.deleteTimerInner(identity, "attempt-timeout");
     })();
   }
 
-  putTimer(identity, kind, wakeAt) {
+  putTimer(identity, kind, wakeAt, lease = null) {
+    this.db.transaction(() => {
+      this.assertLease(identity.instanceId, lease);
+      this.putTimerInner(identity, kind, wakeAt);
+    })();
+  }
+
+  putTimerInner(identity, kind, wakeAt) {
     this.db.prepare(`
       INSERT INTO timers(
         instance_id, step_type, step_name, step_count, kind, wake_at, created_at
@@ -596,31 +744,40 @@ export class SQLiteStorage extends Storage {
     ) ?? null;
   }
 
-  deleteTimer(identity, kind) {
+  deleteTimer(identity, kind, lease = null) {
+    this.db.transaction(() => {
+      this.assertLease(identity.instanceId, lease);
+      this.deleteTimerInner(identity, kind);
+    })();
+  }
+
+  deleteTimerInner(identity, kind) {
     this.db.prepare(`
       DELETE FROM timers
       WHERE instance_id=? AND step_type=? AND step_name=? AND step_count=? AND kind=?
     `).run(identity.instanceId, identity.type, identity.name, identity.count, kind);
   }
 
-  waitOnTimer(identity, ordinal, config, kind, wakeAt) {
+  waitOnTimer(identity, ordinal, config, kind, wakeAt, lease = null) {
     return this.db.transaction(() => {
-      const step = this.ensureStep(identity, ordinal, "waiting", config);
+      this.assertLease(identity.instanceId, lease);
+      const step = this.ensureStepInner(identity, ordinal, "waiting", config);
       let timer = this.getTimer(identity, kind);
       if (!timer && step.state !== "completed") {
-        this.putTimer(identity, kind, wakeAt);
+        this.putTimerInner(identity, kind, wakeAt);
         timer = this.getTimer(identity, kind);
       }
       return { step: this.getStep(identity), timer };
     })();
   }
 
-  completeTimerStep(identity, kind) {
+  completeTimerStep(identity, kind, lease = null) {
     this.db.transaction(() => {
-      this.updateStep(identity, {
+      this.assertLease(identity.instanceId, lease);
+      this.updateStepInner(identity, {
         state: "completed", output: null, error: null, completed_at: Date.now(),
       });
-      this.deleteTimer(identity, kind);
+      this.deleteTimerInner(identity, kind);
       if (kind === "sleep") {
         this.log(
           identity.instanceId,
@@ -631,9 +788,10 @@ export class SQLiteStorage extends Storage {
     })();
   }
 
-  waitForEvent(identity, ordinal, config, eventType, wakeAt, encodedEvent) {
+  waitForEvent(identity, ordinal, config, eventType, wakeAt, encodedEvent, lease = null) {
     return this.db.transaction(() => {
-      const step = this.ensureStep(
+      this.assertLease(identity.instanceId, lease);
+      const step = this.ensureStepInner(
         identity, ordinal, "waiting", config, eventType,
       );
       if (step.state === "completed") return { step, event: null, timer: null };
@@ -649,10 +807,10 @@ export class SQLiteStorage extends Storage {
         this.db.prepare("UPDATE events SET consumed_at=? WHERE id=?")
           .run(consumedAt, event.id);
         const output = encodedEvent({ ...event, consumed_at: consumedAt });
-        this.updateStep(identity, {
+        this.updateStepInner(identity, {
           state: "completed", output, error: null, completed_at: consumedAt,
         });
-        this.deleteTimer(identity, "event-timeout");
+        this.deleteTimerInner(identity, "event-timeout");
         this.log(
           identity.instanceId,
           "wait.completed",
@@ -663,19 +821,20 @@ export class SQLiteStorage extends Storage {
 
       let timer = this.getTimer(identity, "event-timeout");
       if (!timer) {
-        this.putTimer(identity, "event-timeout", wakeAt);
+        this.putTimerInner(identity, "event-timeout", wakeAt);
         timer = this.getTimer(identity, "event-timeout");
       }
       return { step: this.getStep(identity), event: null, timer };
     })();
   }
 
-  timeoutEventStep(identity, error) {
+  timeoutEventStep(identity, error, lease = null) {
     this.db.transaction(() => {
-      this.updateStep(identity, {
+      this.assertLease(identity.instanceId, lease);
+      this.updateStepInner(identity, {
         state: "failed", error, completed_at: Date.now(),
       });
-      this.deleteTimer(identity, "event-timeout");
+      this.deleteTimerInner(identity, "event-timeout");
       this.log(
         identity.instanceId,
         "wait.timed_out",
@@ -704,7 +863,14 @@ export class SQLiteStorage extends Storage {
     })();
   }
 
-  registerRollback(identity, ordinal, config, output = null, stepError = null) {
+  registerRollback(identity, ordinal, config, output = null, stepError = null, lease = null) {
+    this.db.transaction(() => {
+      this.assertLease(identity.instanceId, lease);
+      this.registerRollbackInner(identity, ordinal, config, output, stepError);
+    })();
+  }
+
+  registerRollbackInner(identity, ordinal, config, output = null, stepError = null) {
     this.db.prepare(`
       INSERT INTO rollback_registrations(
         instance_id, step_type, step_name, step_count, ordinal, state, config,
@@ -740,8 +906,9 @@ export class SQLiteStorage extends Storage {
     ) ?? null;
   }
 
-  beginRollback(id, { terminalStatus = "terminated", cause = null } = {}) {
+  beginRollback(id, { terminalStatus = "terminated", cause = null } = {}, lease = null) {
     return this.db.transaction(() => {
+      this.assertLease(id, lease);
       const instance = this.getInstance(id);
       if (!instance) throw new Error(`Unknown workflow instance: ${id}`);
       this.db.prepare(`
@@ -763,7 +930,14 @@ export class SQLiteStorage extends Storage {
     })();
   }
 
-  startRollbackAttempt(identity, attempt) {
+  startRollbackAttempt(identity, attempt, lease = null) {
+    return this.db.transaction(() => {
+      this.assertLease(identity.instanceId, lease);
+      this.startRollbackAttemptInner(identity, attempt);
+    })();
+  }
+
+  startRollbackAttemptInner(identity, attempt) {
     const current = this.getRollbackRegistration(identity);
     this.db.prepare(`
       UPDATE rollback_registrations
@@ -786,7 +960,14 @@ export class SQLiteStorage extends Storage {
     );
   }
 
-  completeRollback(identity) {
+  completeRollback(identity, lease = null) {
+    return this.db.transaction(() => {
+      this.assertLease(identity.instanceId, lease);
+      this.completeRollbackInner(identity);
+    })();
+  }
+
+  completeRollbackInner(identity) {
     const current = this.getRollbackRegistration(identity);
     this.db.prepare(`
       UPDATE rollback_registrations
@@ -807,7 +988,14 @@ export class SQLiteStorage extends Storage {
     );
   }
 
-  scheduleRollbackRetry(identity, attempt, error, wakeAt) {
+  scheduleRollbackRetry(identity, attempt, error, wakeAt, lease = null) {
+    this.db.transaction(() => {
+      this.assertLease(identity.instanceId, lease);
+      this.scheduleRollbackRetryInner(identity, attempt, error, wakeAt);
+    })();
+  }
+
+  scheduleRollbackRetryInner(identity, attempt, error, wakeAt) {
     this.db.prepare(`
       UPDATE rollback_registrations
       SET state='waiting_retry', attempt=?, wake_at=?, rollback_error=?, completed_at=NULL
@@ -828,7 +1016,14 @@ export class SQLiteStorage extends Storage {
     );
   }
 
-  failRollback(identity, attempt, error) {
+  failRollback(identity, attempt, error, lease = null) {
+    this.db.transaction(() => {
+      this.assertLease(identity.instanceId, lease);
+      this.failRollbackInner(identity, attempt, error);
+    })();
+  }
+
+  failRollbackInner(identity, attempt, error) {
     this.db.prepare(`
       UPDATE rollback_registrations
       SET state='failed', attempt=?, wake_at=NULL, rollback_error=?, completed_at=?
@@ -849,7 +1044,14 @@ export class SQLiteStorage extends Storage {
     );
   }
 
-  finishRollback(id, outcome, error = null) {
+  finishRollback(id, outcome, error = null, lease = null) {
+    return this.db.transaction(() => {
+      this.assertLease(id, lease);
+      this.finishRollbackInner(id, outcome, error);
+    })();
+  }
+
+  finishRollbackInner(id, outcome, error = null) {
     const instance = this.getInstance(id);
     if (!instance) throw new Error(`Unknown workflow instance: ${id}`);
     const terminalStatus = instance.rollback_terminal_status ?? "terminated";
@@ -875,15 +1077,18 @@ export class SQLiteStorage extends Storage {
     );
   }
 
-  markInstanceStarted(instanceId, params) {
-    const existing = this.db.prepare(`
-      SELECT 1 FROM execution_events
-      WHERE instance_id=? AND kind='instance.started'
-      LIMIT 1
-    `).get(instanceId);
-    if (!existing) {
-      this.log(instanceId, "instance.started", JSON.stringify({ params }));
-    }
+  markInstanceStarted(instanceId, params, lease = null) {
+    this.db.transaction(() => {
+      this.assertLease(instanceId, lease);
+      const existing = this.db.prepare(`
+        SELECT 1 FROM execution_events
+        WHERE instance_id=? AND kind='instance.started'
+        LIMIT 1
+      `).get(instanceId);
+      if (!existing) {
+        this.log(instanceId, "instance.started", JSON.stringify({ params }));
+      }
+    })();
   }
 
   listExecutionEvents(instanceId, afterId = 0, limit = 100) {
@@ -949,6 +1154,83 @@ export class SQLiteStorage extends Storage {
       INSERT INTO execution_events(instance_id, kind, detail, created_at)
       VALUES(?, ?, ?, ?)
     `).run(instanceId, kind, detail, Date.now());
+  }
+
+  // Persisted step streams. Chunks are written while the callback's returned
+  // ReadableStream is pumped; the step_streams row flips to 'committed' inside
+  // the step-completion transaction so a reader only ever sees complete
+  // streams. A crashed write leaves a 'writing' row that beginStepStream
+  // replaces when the step re-runs.
+  beginStepStream(identity, streamId, lease = null) {
+    return this.db.transaction(() => {
+      this.assertLease(identity.instanceId, lease);
+      this.db.prepare(`
+        DELETE FROM step_streams
+        WHERE instance_id=? AND step_type=? AND step_name=? AND step_count=?
+      `).run(identity.instanceId, identity.type, identity.name, identity.count);
+      this.db.prepare(`
+        INSERT INTO step_streams(
+          id, instance_id, step_type, step_name, step_count, state, created_at
+        ) VALUES(?, ?, ?, ?, ?, 'writing', ?)
+      `).run(
+        streamId, identity.instanceId, identity.type, identity.name,
+        identity.count, Date.now(),
+      );
+    })();
+  }
+
+  appendStreamChunk(streamId, seq, bytes, lease = null) {
+    this.db.transaction(() => {
+      if (lease != null) {
+        const stream = this.db.prepare(
+          "SELECT instance_id FROM step_streams WHERE id=?",
+        ).get(streamId);
+        this.assertLease(stream?.instance_id ?? null, lease);
+      }
+      this.db.prepare(`
+        INSERT INTO stream_chunks(stream_id, seq, bytes) VALUES(?, ?, ?)
+      `).run(streamId, seq, bytes);
+    })();
+  }
+
+  commitStream(streamId, byteLength, chunkCount) {
+    this.db.prepare(`
+      UPDATE step_streams
+      SET state='committed', byte_length=?, chunk_count=?
+      WHERE id=?
+    `).run(byteLength, chunkCount, streamId);
+  }
+
+  abandonStream(streamId) {
+    this.db.prepare("DELETE FROM step_streams WHERE id=?").run(streamId);
+  }
+
+  getStream(streamId) {
+    return this.db.prepare("SELECT * FROM step_streams WHERE id=?").get(streamId) ?? null;
+  }
+
+  openStream(streamId) {
+    const stream = this.getStream(streamId);
+    if (!stream || stream.state !== "committed") {
+      const error = new Error(`Persisted stream is not committed: ${streamId}`);
+      error.name = "WorkflowStreamError";
+      throw error;
+    }
+    const chunk = this.db.prepare(
+      "SELECT bytes FROM stream_chunks WHERE stream_id=? AND seq=?",
+    );
+    let seq = 0;
+    return new ReadableStream({
+      pull: (controller) => {
+        const row = chunk.get(streamId, seq);
+        if (!row) {
+          controller.close();
+          return;
+        }
+        seq += 1;
+        controller.enqueue(new Uint8Array(row.bytes));
+      },
+    });
   }
 
   close() {

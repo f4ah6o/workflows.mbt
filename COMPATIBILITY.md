@@ -155,10 +155,11 @@ external side effects are not claimed.
 - [x] repeated batch-delete IDs repeat their result
 - [x] per-instance success/error retention options
 - [x] Wrangler `default_retention` (including scheduled instances)
+- [x] explicit account-plan retention adapter: `workflows.mbt.json`
+  `retention.plan` = `"free"` (3d/3d) or `"paid"` (7d/7d) supplies the
+  Cloudflare plan defaults when neither per-instance retention nor
+  `default_retention` is set; omitted plan keeps unlimited retention
 - [x] default Worker HTTP handler can invoke workflow bindings unchanged
-
-Cloudflare account-plan default retention is not emulated locally when no
-retention setting is supplied; see Known differences.
 
 ## WorkflowInstance
 
@@ -197,7 +198,9 @@ log rather than an HTTP-specific transport.
 - [x] rollback step/attempt events
 - [x] sensitive step output redaction
 
-A REST streaming `GET .../subscribe` transport is not yet implemented.
+The REST facade exposes the same subscription over
+`GET .../instances/{id}/subscribe` as server-sent events (`id:` carries the
+durable event id; `?cursor=` resumes; `?filter=` selects event types).
 
 ## State model
 
@@ -233,7 +236,8 @@ completion.
 - [x] Cloudflare numeric weekday numbering (`1=SUN` .. `7=SAT`)
 - [x] `workflows[].default_retention`
 - [x] top-level `vars`
-- [x] local `.dev.vars` / `.env`
+- [x] local `.dev.vars` / `.env` (mutually exclusive per Wrangler: an
+  applicable `.dev.vars` file excludes `.env` files entirely)
 - [x] `secrets.required` local filtering / process-env fallback
 - [x] compatibility flags are parsed and preserved for adapters
 - [x] unknown Wrangler fields are ignored without source/config rewriting
@@ -245,11 +249,26 @@ completion.
 - [x] streamed Worker `Response.body` is forwarded incrementally with backpressure
 - [x] inbound `Request.body` is a `ReadableStream` (not pre-buffered) for non-GET/HEAD requests
 - [x] multiple `Set-Cookie` response headers are preserved as separate header values
-- [ ] Wrangler named environments / `--env` overlay semantics
+- [x] Wrangler named environments: `--env <name>` selects `env.<name>` in
+  `wrangler.jsonc` with Wrangler's inheritance semantics — inheritable keys
+  (`main`, `name`, `compatibility_date`/`flags`) fall back to top level,
+  non-inheritable keys (`vars`, `secrets`, and every binding family:
+  `workflows`, `kv_namespaces`, `d1_databases`, `r2_buckets`, `queues`,
+  `services`) must be declared per environment and are never merged from
+  the top level; unknown env names fail. Secret files follow Wrangler too:
+  `.dev.vars.<env>` replaces `.dev.vars` entirely when present, an
+  applicable `.dev.vars` excludes all `.env` files, and otherwise the `.env`
+  family merges with precedence `.env.<env>.local` > `.env.local` >
+  `.env.<env>` > `.env`
 - [ ] full Wrangler clone
 
-Cloudflare D1/KV/R2/Queues/Workers AI/Durable Objects/Service Bindings are not
-emulated by the core runtime. Custom values/adapters may be injected into
+Cloudflare Workers AI and Durable Objects are not emulated by the core
+runtime. Optional local adapters (configured under `adapters` in
+`workflows.mbt.json`) cover the binding shapes real Workflow projects use:
+KV namespaces, D1 databases, and R2 buckets persist under the local adapters
+directory; queue producers support `loopback` (delivered to the same module's
+`queue` handler) and `spool` (durable on-disk); service bindings forward
+`fetch` to a configured URL. Custom values/adapters may also be injected into
 `this.env`.
 
 ## Persistence
@@ -269,8 +288,17 @@ emulated by the core runtime. Custom values/adapters may be injected into
 - [x] atomic retry scheduling
 - [x] atomic event consume + wait completion
 - [x] restart-from-step invalidation
+- [x] stream output persistence (`step_streams` + `stream_chunks`)
 - [ ] PostgreSQL adapter
-- [ ] multi-process executor lease/claim
+- [x] multi-process executor lease/claim: `runInstance` claims an instance via
+  `lease_owner`/`lease_expires_at` with a heartbeat renewed at `leaseMs/3`;
+  `listRunnable` excludes live foreign leases so a crashed executor's
+  instances become reclaimable only after expiry; durable boundaries re-check
+  the lease and abort with a `lease-lost` suspension; every leased commit
+  (step completion, retry scheduling, rollback boundaries, timers, status
+  writes) re-validates lease ownership inside its commit transaction and
+  throws `WorkflowLeaseLostError` on a stale or expired lease, so a stalled
+  executor cannot land work after another executor claims the instance
 
 ## Serialization
 
@@ -284,15 +312,28 @@ emulated by the core runtime. Custom values/adapters may be injected into
 - [x] typed arrays
 - [x] `Map`
 - [x] `Set`
-- [x] `Error`
+- [x] `Error` (name/message/stack/cause round-trip; own-properties are
+  dropped and `name` decodes non-enumerable, matching the upstream
+  structured-clone boundary)
 - [x] nested combinations of the supported structured values
 - [x] `NaN`, positive/negative Infinity, and negative zero
 - [x] type-preserving process-restart E2E
 - [x] explicit size failure above the local 1 MiB non-stream limit
-- [ ] persisted `ReadableStream<Uint8Array>`
+- [x] cyclic graphs fail the serialize boundary with a catchable
+  `TypeError` and the step ends `failed` (not retried); acyclic shared
+  references re-encode as independent copies
+- [x] `Headers`, `Request`, `Response`, `Blob` (eagerly buffered; a
+  `Request`/`Response` body is persisted through the stream contract)
+- [x] persisted `ReadableStream<Uint8Array>` step output: streamed to
+  `stream_chunks` without buffering the whole body in RAM, committed
+  atomically with the step row, capped by `limits.streamBytes`
+  (default 256 MiB), and re-readable after restart via the step result
+  envelope and `instance.step`/`GET .../step` output; uncommitted streams
+  left by a crash fail as `WorkflowStreamError`
 - [ ] complete Cloudflare `RpcSerializable` surface
 
-Unsupported cycles, functions, symbols, custom-prototype objects, and streams fail
+Unsupported functions, symbols, custom-prototype objects,
+`WritableStream`s, and nested streams inside `Request`/`Response` values fail
 explicitly rather than being stringified or silently buffered.
 
 ## REST compatibility facade
@@ -310,8 +351,38 @@ the Workers binding and CLI.
 - [x] restart
 - [x] terminate
 - [x] delete
-- [ ] REST step-output endpoint
-- [ ] REST `GET .../subscribe` streaming endpoint
+- [x] `GET .../instances/{id}/step?step_name=&count=` step output:
+  JSON value, `application/octet-stream` for persisted streams, `[REDACTED]`
+  for sensitive steps
+- [x] `GET .../instances/{id}/subscribe` SSE stream (`id:` event ids,
+  `?cursor=` resume, `?filter=` event types)
+- [x] `GET .../instances` `?status=` filter and `?page=`/`?per_page=`
+  pagination with `result_info.total_count`
+
+## Error surface
+
+Stable local error names. REST responses use the Cloudflare-style envelope
+`{success:false, errors:[{code,message}], messages:[], result:null}` where
+`code` equals the HTTP status; upstream-minted error codes are not invented
+where Cloudflare's are undocumented.
+
+| Behavior | Local error | REST |
+| --- | --- | --- |
+| duplicate instance ID | `WorkflowInstanceAlreadyExistsError`; `createBatch` is idempotent | 400 (batch create skips duplicates) |
+| unknown instance | `Workflow instance not found: <id>` | 404 |
+| invalid restart target | `Restart target not found: <type>/<name>/<count>`; `Unknown workflow instance` | 404 |
+| serialization failure | `WorkflowSerializationError`; cyclic values fail as a catchable `TypeError`; the step ends `failed` without retry | n/a (instance transitions to `errored`) |
+| executor lease lost mid-run | `WorkflowLeaseLostError` inside the commit transaction; surfaces as a `lease-lost` suspension | n/a |
+| invalid event type | `TypeError` (`sendEvent requires { type, payload }`, 1..100 char `[A-Za-z0-9_-]` type) | 400 |
+| step timeout | `WorkflowStepTimeoutError` (durable; also produced after restart for an expired in-flight attempt) | via `status().error` |
+| event-wait timeout | `WorkflowWaitForEventTimeoutError` | via `status().error` |
+| attempt interrupted by executor crash | `WorkflowAttemptInterruptedError` (stale `running` attempt at recovery) | via `status().error` |
+| retry exhaustion | final attempt error propagates; instance `errored` | via `status().error` |
+| `NonRetryableError` | skips remaining retries; `nonRetryable` flag in the serialized error | via `status().error` |
+| invalid lifecycle transition | `Cannot send event to instance in state <s>`; `resume()` on a non-paused instance is a no-op | 400 |
+| rollback failure | `WorkflowRollbackHandlerMissingError`; handler errors terminate as `errored` | via `status().error` |
+| uncommitted persisted stream | `WorkflowStreamError` | 400 via the step endpoint |
+| REST envelope | — | 400 bad input, 404 not found, 405 wrong method |
 
 ## CLI
 
@@ -385,41 +456,33 @@ behavior.
 
 These are intentionally not hidden behind compatibility claims:
 
-1. **ReadableStream step-output persistence** — Cloudflare JavaScript Workflows
-   support fresh unlocked `ReadableStream<Uint8Array>` step outputs. The SQLite
-   adapter rejects persisted step-result streams until a bounded persisted
-   streaming contract is added. This does **not** apply to default Worker HTTP
-   responses, which are streamed incrementally by the local HTTP host.
-2. **Full RpcSerializable** — the practical structured-value subset above is
-   covered, but `workflows.mbt` does not yet claim the complete Workers RPC
-   serialization surface.
-3. **Account-plan retention defaults** — Cloudflare currently retains finished
-   state for the account's plan default when no explicit retention is supplied.
-   A local runtime has no Cloudflare account plan, so unspecified retention is
-   currently unlimited. Explicit instance and Wrangler retention are supported.
-4. **Bare Promise.race / Promise.any replay winner** — Cloudflare itself warns
+1. **Full RpcSerializable** — the structured-value subset above (including
+   `Headers`/`Request`/`Response`/`Blob` and persisted
+   `ReadableStream<Uint8Array>` step output) is covered, but `workflows.mbt`
+   does not yet claim the complete Workers RPC serialization surface.
+2. **Account-plan retention defaults** — a local runtime has no Cloudflare
+   account plan, so plan defaults are opt-in via
+   `workflows.mbt.json` `retention.plan` (`"free"` / `"paid"`). Without it,
+   unspecified retention remains unlimited. Explicit instance and Wrangler
+   retention are supported.
+3. **Bare Promise.race / Promise.any replay winner** — Cloudflare itself warns
    that the observed winner can differ from the cached replay winner. The same
    stronger guarantee is not claimed here; use an outer `step.do` when the
    winner must be durable.
-5. **Timeout crash boundary** — per-attempt timeout enforcement currently uses a
-   host timer. Retry state is durable once the timeout is recorded, but an
-   in-flight timeout deadline itself is not persisted across process death.
-6. **Single executor process** — SQLite is safe for the tested single runtime
-   process. There is not yet an instance lease preventing two separate scheduler
-   processes from racing the same database.
-7. **REST streaming** — Workers `WorkflowInstance.subscribe()` is implemented,
-   but the Cloudflare REST subscription stream transport is not.
-8. **Cloudflare service bindings** — no built-in D1/KV/R2/Queues/AI/Durable
-   Objects/Service Binding emulators are bundled.
-9. **Workflow placement / concurrency controls** — current Cloudflare
+4. **PostgreSQL storage** — the storage contract is workflow-semantic and
+   `host/storage/storage.mjs` enumerates it, but only the SQLite adapter is
+   implemented and tested.
+5. **Workflow placement / concurrency controls** — current Cloudflare
    surfaces expose instance `locationHint` plus Workflow `limits` and
    `concurrency`. The local single-machine runtime does not emulate
    Cloudflare geographic placement or account-level concurrency/limit
    enforcement.
-10. **Cross-script Workflow bindings** — Wrangler
-    `workflows[].script_name` can reference a Workflow defined by another
-    Worker. The local host currently resolves Workflow classes from the
-    configured local module only.
+6. **Cross-script Workflow bindings** — Wrangler
+   `workflows[].script_name` can reference a Workflow defined by another
+   Worker. The local host currently resolves Workflow classes from the
+   configured local module only.
+7. **Cloudflare Workers AI / Durable Objects** — not emulated; the local
+   binding adapters cover KV, D1, R2, Queues, and Service Bindings.
 
 ## Compatibility claim
 

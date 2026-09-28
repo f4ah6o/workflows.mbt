@@ -35,11 +35,31 @@ export function parseDotenv(text) {
   return out;
 }
 
-export function loadLocalDevEnv(root, { requiredSecrets = null } = {}) {
-  const devVars = join(root, ".dev.vars");
-  const dotenv = join(root, ".env");
-  const path = existsSync(devVars) ? devVars : (existsSync(dotenv) ? dotenv : null);
-  const parsed = path == null ? {} : parseDotenv(readFileSync(path, "utf8"));
+export function loadLocalDevEnv(root, { requiredSecrets = null, envName = null } = {}) {
+  // Wrangler local secret files: .dev.vars and .env are mutually exclusive —
+  // when any .dev.vars file applies, .env files are not loaded at all. Under a
+  // named environment .dev.vars.<env> replaces .dev.vars entirely (secrets
+  // must be defined per environment). Only when no .dev.vars file applies do
+  // .env files load, and they merge rather than replace, with precedence
+  // .env.<env>.local > .env.local > .env.<env> > .env.
+  const at = (name) => join(root, name);
+  const load = (path) => parseDotenv(readFileSync(path, "utf8"));
+
+  let parsed = {};
+  const envDevVars = envName == null ? null : at(`.dev.vars.${envName}`);
+  if (envDevVars != null && existsSync(envDevVars)) {
+    parsed = load(envDevVars);
+  } else if (existsSync(at(".dev.vars"))) {
+    parsed = load(at(".dev.vars"));
+  } else {
+    const order = envName == null
+      ? [".env", ".env.local"]
+      : [".env", `.env.${envName}`, ".env.local", `.env.${envName}.local`];
+    for (const name of order) {
+      const path = at(name);
+      if (existsSync(path)) Object.assign(parsed, load(path));
+    }
+  }
 
   if (!Array.isArray(requiredSecrets)) return parsed;
 

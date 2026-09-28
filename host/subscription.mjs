@@ -66,15 +66,19 @@ function mapEvent(row, publicInstanceId) {
         ...(detail.config == null ? {} : { config: JSON.parse(detail.config) }),
       };
     case "step.completed":
+      // A persisted stream result is not JSON-representable inside an event,
+      // matching the REST surface where it is served as octet-stream instead.
       return {
         ...base,
         type: "step_completed",
         stepName: detail.name,
-        ...(detail.redacted
-          ? { output: "[REDACTED]" }
-          : detail.output == null
-            ? {}
-            : { output: decodeDurableValue(detail.output) }),
+        ...(detail.stream === true
+          ? { stream: true, ...(typeof detail.bytes === "number" ? { bytes: detail.bytes } : {}) }
+          : detail.redacted
+            ? { output: "[REDACTED]" }
+            : detail.output == null
+              ? {}
+              : { output: decodeDurableValue(detail.output) }),
       };
     case "step.errored":
       return { ...base, type: "step_errored", stepName: detail.name };

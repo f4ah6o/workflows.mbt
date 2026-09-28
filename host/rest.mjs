@@ -1,3 +1,10 @@
+import { decodeDurableValue } from "./serialization.mjs";
+
+const INSTANCE_STATUSES = new Set([
+  "queued", "running", "paused", "errored", "terminated",
+  "complete", "waitingForPause", "waiting", "rollingBack",
+]);
+
 function ok(result, { status = 200, resultInfo } = {}) {
   return Response.json({
     success: true,
@@ -42,6 +49,123 @@ function parseParams(value) {
   return value;
 }
 
+function parsePositiveInt(raw, fallback) {
+  if (raw == null) return fallback;
+  const value = Number(raw);
+  return Number.isInteger(value) && value >= 1 ? value : null;
+}
+
+// GET .../instances/{id}/step?step_name=<name>[&count=<n>] — the upstream
+// step-output endpoint. Structured outputs come back inside the JSON
+// envelope; persisted streams are served as application/octet-stream.
+function stepOutputResponse(runtime, row, url) {
+  const stepName = url.searchParams.get("step_name");
+  if (!stepName) return fail(400, "step_name query parameter is required", 400);
+  const countParam = url.searchParams.get("count");
+  const count = countParam == null ? null : Number(countParam);
+  if (count != null && (!Number.isInteger(count) || count < 1)) {
+    return fail(400, "count must be a positive integer", 400);
+  }
+  const steps = runtime.storage
+    .listSteps(row.id)
+    .filter((step) => step.name === stepName)
+    .filter((step) => count == null || step.count === count)
+    .filter((step) => step.type === "do" || step.type === "waitForEvent");
+  const step = steps.at(-1);
+  if (!step) {
+    return fail(404, `Step not found: ${stepName}`, 404);
+  }
+  let sensitive = false;
+  try {
+    sensitive = JSON.parse(step.config ?? "{}")?.sensitive === "output";
+  } catch {}
+  const body = {
+    name: `${step.name}-${step.count}`,
+    type: step.type,
+    status: step.state,
+    finished: step.state === "completed" || step.state === "failed",
+    ...(step.event_type == null ? {} : { event_type: step.event_type }),
+    error: step.error == null ? null : JSON.parse(step.error),
+  };
+  if (step.state !== "completed" || step.output == null) {
+    return ok(body);
+  }
+  const envelope = JSON.parse(step.output);
+  if (envelope?.kind === "stream") {
+    if (sensitive) return ok({ ...body, output: "[REDACTED]" });
+    const stream = runtime.storage.openStream(envelope.streamId);
+    return new Response(stream, {
+      headers: {
+        "content-type": "application/octet-stream",
+        "content-length": String(envelope.bytes ?? 0),
+      },
+    });
+  }
+  return ok({
+    ...body,
+    output: sensitive ? "[REDACTED]" : decodeDurableValue(step.output),
+  });
+}
+
+// GET .../instances/{id}/subscribe — streaming transport for the same
+// subscription feed exposed by WorkflowInstance.subscribe(). Events are
+// delivered as Server-Sent Events with `id:` set to the durable eventId so a
+// client can resume with ?cursor=<lastEventId>.
+function subscribeResponse(runtime, row, url) {
+  const cursor = url.searchParams.get("cursor");
+  const filterParam = url.searchParams.get("filter");
+  const options = {};
+  if (cursor != null) {
+    const parsed = Number(cursor);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+      return fail(400, "cursor must be a non-negative integer", 400);
+    }
+    options.cursor = parsed;
+  }
+  if (filterParam != null) {
+    options.filter = filterParam.split(",").filter(Boolean);
+  }
+
+  let subscription;
+  let closed = false;
+  const encoder = new TextEncoder();
+  const body = new ReadableStream({
+    async pull(controller) {
+      if (closed) return;
+      try {
+        subscription ??= await runtime.subscribeInstance(row.id, row.public_id, options);
+        const { value, done } = await subscription.next();
+        if (done) {
+          closed = true;
+          controller.enqueue(encoder.encode("event: done\ndata: {}\n\n"));
+          controller.close();
+          return;
+        }
+        controller.enqueue(encoder.encode(
+          `id: ${value.eventId}\nevent: ${value.type}\ndata: ${JSON.stringify(value)}\n\n`,
+        ));
+      } catch (error) {
+        closed = true;
+        controller.enqueue(encoder.encode(
+          `event: error\ndata: ${JSON.stringify({ message: error?.message ?? String(error) })}\n\n`,
+        ));
+        controller.close();
+      }
+    },
+    cancel() {
+      closed = true;
+      subscription?.[Symbol.dispose]?.();
+    },
+  });
+  return new Response(body, {
+    headers: {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+    },
+  });
+}
+
 export async function handleWorkflowRest(runtime, request) {
   const url = new URL(request.url);
   const parts = url.pathname.split("/").filter(Boolean);
@@ -63,14 +187,29 @@ export async function handleWorkflowRest(runtime, request) {
   try {
     if (parts.length === 5) {
       if (request.method === "GET") {
-        const instances = runtime.storage.listInstances(workflowName).map((row) =>
+        const status = url.searchParams.get("status");
+        if (status != null && !INSTANCE_STATUSES.has(status)) {
+          return fail(400, `Unknown instance status filter: ${status}`, 400);
+        }
+        const page = parsePositiveInt(url.searchParams.get("page"), 1);
+        const perPage = parsePositiveInt(url.searchParams.get("per_page"), 50);
+        if (page == null || perPage == null || perPage > 1000) {
+          return fail(400, "Invalid pagination parameters", 400);
+        }
+        const { rows, total } = runtime.storage.listInstances(workflowName, {
+          status,
+          offset: (page - 1) * perPage,
+          limit: perPage,
+        });
+        const instances = rows.map((row) =>
           statusBody(runtime, workflowName, row.public_id)
         );
         return ok(instances, {
           resultInfo: {
             count: instances.length,
-            per_page: instances.length,
-            total_count: instances.length,
+            page,
+            per_page: perPage,
+            total_count: total,
           },
         });
       }
@@ -124,6 +263,7 @@ export async function handleWorkflowRest(runtime, request) {
     }
 
     const instanceId = decodeURIComponent(parts[5]);
+    const row = runtime.requireInstance(instanceId, workflowName);
     const instance = await binding.get(instanceId);
 
     if (parts.length === 6) {
@@ -134,6 +274,14 @@ export async function handleWorkflowRest(runtime, request) {
         await instance.delete();
         return new Response(null, { status: 204 });
       }
+    }
+
+    if (parts.length === 7 && parts[6] === "step" && request.method === "GET") {
+      return stepOutputResponse(runtime, row, url);
+    }
+
+    if (parts.length === 7 && parts[6] === "subscribe" && request.method === "GET") {
+      return subscribeResponse(runtime, row, url);
     }
 
     if (parts.length === 7 && parts[6] === "status" && request.method === "PATCH") {

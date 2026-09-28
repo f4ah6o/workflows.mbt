@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -536,7 +536,7 @@ test("scheduled workflow metadata is durable and scheduler restart is idempotent
   let runtime = await openRuntime(e2eConfig, paths);
   assert.equal(await runtime.enqueueSchedules(minute), 3);
   await runtime.runPending();
-  let rows = runtime.storage.listInstances("scheduled");
+  let rows = runtime.storage.listInstances("scheduled").rows;
   assert.equal(rows.length, 1);
   let status = runtime.instanceStatus(rows[0].id);
   assert.equal(status.status, "complete");
@@ -551,11 +551,11 @@ test("scheduled workflow metadata is durable and scheduler restart is idempotent
   runtime = await openRuntime(e2eConfig, paths);
   t.after(() => runtime.close());
   assert.equal(await runtime.enqueueSchedules(minute), 0);
-  assert.equal(runtime.storage.listInstances("scheduled").length, 1);
+  assert.equal(runtime.storage.listInstances("scheduled").rows.length, 1);
 
   assert.equal(await runtime.enqueueSchedules(minute + 2 * 60_000), 6);
   await runtime.runPending();
-  rows = runtime.storage.listInstances("scheduled");
+  rows = runtime.storage.listInstances("scheduled").rows;
   assert.equal(rows.length, 3);
   assert.deepEqual(
     rows.map((row) => row.scheduled_time).sort((a, b) => a - b),
@@ -1507,14 +1507,14 @@ test("scheduled instances inherit the Workflow default_retention", async (t) => 
 
   await runtime.enqueueSchedules(minute);
   const retainedRow = runtime.storage
-    .listInstances("scheduled-retained")
+    .listInstances("scheduled-retained").rows
     .find((row) => row.scheduled_time === minute);
   assert.ok(retainedRow);
   assert.equal(retainedRow.success_retention_ms, 40);
   assert.equal(retainedRow.error_retention_ms, 60);
 
   const errorRow = runtime.storage
-    .listInstances("scheduled-error")
+    .listInstances("scheduled-error").rows
     .find((row) => row.scheduled_time === minute);
   assert.ok(errorRow);
   assert.equal(errorRow.success_retention_ms, 40);
@@ -1540,7 +1540,7 @@ test("scheduled instances inherit the Workflow default_retention", async (t) => 
     /not found/,
   );
   // The same firing's un-retained scheduled instance is unaffected.
-  assert.equal(runtime.storage.listInstances("scheduled").length, 1);
+  assert.equal(runtime.storage.listInstances("scheduled").rows.length, 1);
 });
 
 
@@ -1716,4 +1716,554 @@ test("inbound default-Worker request bodies stream before upload EOF", async (t)
   for await (const chunk of response) chunks.push(chunk);
   assert.equal(Buffer.concat(chunks).toString(), "chunk-one");
   request.end("chunk-two");
+});
+
+
+// ── P2 hardening: persisted streams, durable timeouts, leases, REST depth ──
+
+test("step.do persists ReadableStream output and replays it as bytes", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-stream-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const instance = await runtime.trigger("stream", {
+    id: "stream-1",
+    params: { sleepMs: 0 },
+  });
+  const status = await drain(runtime, instance.id);
+  assert.equal(status.status, "complete");
+  assert.equal(status.output.received, "chunk-a\nchunk-b\n");
+
+  // The step row stores an envelope pointing at the committed stream.
+  const row = runtime.requireInstance(instance.id, "stream");
+  const step = runtime.storage
+    .listSteps(row.id)
+    .find((entry) => entry.type === "do" && entry.name === "stream-out");
+  const envelope = JSON.parse(step.output);
+  assert.equal(envelope.kind, "stream");
+  assert.equal(envelope.bytes, 16);
+  const stream = runtime.storage.getStream(envelope.streamId);
+  assert.equal(stream.state, "committed");
+  assert.equal(stream.byte_length, 16);
+  assert.equal(stream.chunk_count, 2);
+
+  // Subscription events carry stream:true instead of a JSON output.
+  const subscription = await runtime.subscribeInstance(row.id, instance.id, {
+    filter: ["step_completed"],
+  });
+  const event = await subscription.next();
+  assert.equal(event.value.type, "step_completed");
+  assert.equal(event.value.stepName, "stream-out-1");
+  assert.equal(event.value.stream, true);
+  assert.equal(event.value.bytes, 16);
+  subscription[Symbol.dispose]();
+});
+
+test("persisted stream output replays across executor restart", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-stream-restart-");
+  let runtime = await openRuntime(e2eConfig, paths);
+
+  const instance = await runtime.trigger("stream", {
+    id: "stream-restart",
+    params: { sleepMs: 300 },
+  });
+  await poll(async () => {
+    await runtime.runPending();
+    const status = runtime.instanceStatus(instance.id);
+    return status.status === "waiting" ? status : null;
+  });
+  await runtime.close();
+
+  // The second executor replays the stream step from persisted chunks.
+  runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+  const status = await drain(runtime, instance.id);
+  assert.equal(status.status, "complete");
+  assert.equal(status.output.received, "chunk-a\nchunk-b\n");
+
+  // The stream step ran exactly once across both executors.
+  const row = runtime.requireInstance(instance.id, "stream");
+  const step = runtime.storage
+    .listSteps(row.id)
+    .find((entry) => entry.name === "stream-out");
+  const attempts = runtime.storage.listAttempts({
+    instanceId: row.id,
+    type: "do",
+    name: "stream-out",
+    count: step.count,
+  });
+  assert.equal(attempts.length, 1);
+});
+
+test("attempt timeouts are durable and report WorkflowStepTimeoutError", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-timeout-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const instance = await runtime.trigger("timeout", {
+    id: "timeout-1",
+    params: {},
+  });
+  const status = await drain(runtime, instance.id);
+  assert.equal(status.status, "errored");
+  assert.equal(status.error.name, "WorkflowStepTimeoutError");
+
+  const row = runtime.requireInstance(instance.id, "timeout");
+  const steps = runtime.storage.listSteps(row.id);
+
+  // A timeout beyond the 2^31-1ms setTimeout clamp did not fire early.
+  const longStep = steps.find((entry) => entry.name === "long-timeout-ok");
+  assert.equal(longStep.state, "completed");
+
+  const timedOut = steps.find((entry) => entry.name === "slow-step");
+  assert.equal(timedOut.state, "failed");
+  assert.equal(JSON.parse(timedOut.error).name, "WorkflowStepTimeoutError");
+  // The durable attempt-timeout timer was consumed by the terminal failure.
+  assert.equal(
+    runtime.storage.getTimer(
+      {
+        instanceId: row.id,
+        type: "do",
+        name: "slow-step",
+        count: timedOut.count,
+      },
+      "attempt-timeout",
+    ),
+    null,
+  );
+});
+
+test("executor lease claims an instance to exactly one executor", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-lease-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const instance = await runtime.createInstance("approval", {
+    id: "lease-1",
+    params: {},
+  });
+  const row = runtime.requireInstance(instance.id, "approval");
+
+  // A foreign executor holding the lease keeps this runtime from running it.
+  assert.equal(
+    runtime.storage.claimInstance(row.id, "foreign-executor", 60_000),
+    true,
+  );
+  assert.equal(await runtime.runPending(), 0);
+  assert.equal(runtime.instanceStatus(instance.id).status, "queued");
+
+  // A conflicting claim fails while the lease is live.
+  assert.equal(
+    runtime.storage.claimInstance(row.id, "other-executor", 60_000),
+    false,
+  );
+
+  // An expired lease is reclaimable by another executor.
+  assert.equal(
+    runtime.storage.claimInstance(row.id, "foreign-executor", -1),
+    true,
+  );
+  assert.equal(
+    runtime.storage.claimInstance(row.id, "other-executor", 60_000),
+    true,
+  );
+  runtime.storage.releaseLease(row.id, "other-executor");
+
+  // With the lease released, this executor runs the instance normally.
+  await runtime.runPending();
+  assert.equal(runtime.instanceStatus(instance.id).status, "waiting");
+});
+
+test("durable commits are fenced to the lease holder", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-fence-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const instance = await runtime.createInstance("approval", {
+    id: "fence-1",
+    params: {},
+  });
+  const row = runtime.requireInstance(instance.id, "approval");
+  const identity = {
+    instanceId: row.id,
+    type: "do",
+    name: "ghost-step",
+    count: 1,
+    ordinal: 1,
+  };
+
+  // Executor A holds the lease; its fenced writes land.
+  runtime.storage.claimInstance(row.id, "exec-a", 60_000);
+  runtime.storage.ensureStep(identity, 1, "running", "{}", null, "exec-a");
+  runtime.storage.startAttempt(identity, 1, "exec-a");
+
+  // The lease moves to executor B; A's stale commits are rejected inside the
+  // transaction, so no completion lands on top of the new owner.
+  runtime.storage.releaseLease(row.id, "exec-a");
+  runtime.storage.claimInstance(row.id, "exec-b", 60_000);
+  assert.throws(
+    () =>
+      runtime.storage.completeDoStep(
+        identity, 1, '"stale-output"', null, null, "exec-a",
+      ),
+    (error) => error.name === "WorkflowLeaseLostError",
+  );
+  assert.equal(runtime.storage.getStep(identity).state, "running");
+
+  // An expired lease is fenced the same way.
+  runtime.storage.releaseLease(row.id, "exec-b");
+  runtime.storage.claimInstance(row.id, "exec-expired", -1);
+  assert.throws(
+    () =>
+      runtime.storage.completeDoStep(
+        identity, 1, '"stale-output"', null, null, "exec-expired",
+      ),
+    (error) => error.name === "WorkflowLeaseLostError",
+  );
+  assert.equal(runtime.storage.getStep(identity).state, "running");
+
+  // The live lease holder can still commit.
+  runtime.storage.claimInstance(row.id, "exec-b", 60_000);
+  runtime.storage.completeDoStep(identity, 1, '"ok"', null, null, "exec-b");
+  assert.equal(runtime.storage.getStep(identity).state, "completed");
+
+  // Lifecycle commands stay unfenced: a status write without a lease lands.
+  runtime.storage.setInstanceStatus(row.id, "terminated");
+  assert.equal(runtime.instanceStatus(instance.id).status, "terminated");
+});
+
+test("serialization boundary matches upstream: cycles fail, error own-props drop", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-ser-boundary-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const instance = await runtime.trigger("serialization-boundary", {
+    id: "ser-boundary-1",
+    params: {},
+  });
+  const status = await drain(runtime, instance.id);
+  assert.equal(status.status, "complete");
+  assert.equal(status.output.cyclicError.name, "TypeError");
+  assert.equal(status.output.revivedIsError, true);
+  assert.equal(status.output.revivedName, "TypeError");
+  assert.equal(status.output.revivedCode, null);
+
+  // The cyclic step ended failed after one attempt — no retry loop.
+  const row = runtime.requireInstance(instance.id, "serialization-boundary");
+  const cyclicStep = runtime.storage
+    .listSteps(row.id)
+    .find((entry) => entry.type === "do" && entry.name === "cyclic-output");
+  assert.equal(cyclicStep.state, "failed");
+  const attempts = runtime.storage.listAttempts({
+    instanceId: row.id,
+    type: "do",
+    name: "cyclic-output",
+    count: cyclicStep.count,
+  });
+  assert.equal(attempts.length, 1);
+});
+
+test("REST step endpoint returns JSON output or octet-stream bytes", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-rest-step-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const request = (path, init = {}) =>
+    handleWorkflowRest(
+      runtime,
+      new Request(`http://local.test${path}`, {
+        headers: { "content-type": "application/json", ...(init.headers ?? {}) },
+        ...init,
+      }),
+    );
+
+  // A structured step output returns inside the JSON envelope.
+  await request("/accounts/local/workflows/approval/instances", {
+    method: "POST",
+    body: JSON.stringify({ instance_id: "rest-step-1", params: "{}" }),
+  });
+  await runtime.runPending();
+  await request(
+    "/accounts/local/workflows/approval/instances/rest-step-1/events/approved",
+    { method: "POST", body: JSON.stringify({ approved: true }) },
+  );
+  await runtime.runPending();
+
+  let response = await request(
+    "/accounts/local/workflows/approval/instances/rest-step-1/step?step_name=approval",
+  );
+  assert.equal(response.status, 200);
+  let body = await response.json();
+  assert.equal(body.success, true);
+  assert.equal(body.result.type, "waitForEvent");
+  assert.equal(body.result.status, "completed");
+  assert.equal(body.result.finished, true);
+  assert.equal(body.result.event_type, "approved");
+  assert.equal(body.result.output.payload.approved, true);
+
+  response = await request(
+    "/accounts/local/workflows/approval/instances/rest-step-1/step",
+  );
+  assert.equal(response.status, 400);
+  response = await request(
+    "/accounts/local/workflows/approval/instances/rest-step-1/step?step_name=nope",
+  );
+  assert.equal(response.status, 404);
+  assert.equal((await response.json()).success, false);
+
+  // A stream step output is served as application/octet-stream.
+  await request("/accounts/local/workflows/stream/instances", {
+    method: "POST",
+    body: JSON.stringify({
+      instance_id: "rest-stream-1",
+      params: JSON.stringify({ sleepMs: 0 }),
+    }),
+  });
+  await drain(runtime, "rest-stream-1");
+  response = await request(
+    "/accounts/local/workflows/stream/instances/rest-stream-1/step?step_name=stream-out",
+  );
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type"), "application/octet-stream");
+  assert.equal(await response.text(), "chunk-a\nchunk-b\n");
+});
+
+test("REST subscribe endpoint streams SSE with resumable cursor", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-rest-subscribe-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const request = (path, init = {}) =>
+    handleWorkflowRest(
+      runtime,
+      new Request(`http://local.test${path}`, {
+        headers: { "content-type": "application/json", ...(init.headers ?? {}) },
+        ...init,
+      }),
+    );
+
+  const instance = await runtime.trigger("duplicate", {
+    id: "rest-sub-1",
+    params: {},
+  });
+  await drain(runtime, instance.id);
+
+  const response = await request(
+    "/accounts/local/workflows/duplicate/instances/rest-sub-1/subscribe?filter=workflow_completed",
+  );
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type"), /text\/event-stream/);
+  const text = await response.text();
+  const completed = text.match(/id: (\d+)\nevent: workflow_completed\ndata: (.+)\n/);
+  assert.ok(completed, `expected a workflow_completed SSE frame, got: ${text}`);
+  const event = JSON.parse(completed[2]);
+  assert.equal(event.type, "workflow_completed");
+  assert.deepEqual(event.output, [
+    { i: 0, count: 1 },
+    { i: 1, count: 2 },
+    { i: 2, count: 3 },
+  ]);
+
+  // Resuming at the terminal eventId yields only the stream terminator.
+  const resumed = await request(
+    `/accounts/local/workflows/duplicate/instances/rest-sub-1/subscribe?filter=workflow_completed&cursor=${completed[1]}`,
+  );
+  const resumedText = await resumed.text();
+  assert.match(resumedText, /event: done/);
+  assert.doesNotMatch(resumedText, /workflow_completed/);
+
+  const badCursor = await request(
+    "/accounts/local/workflows/duplicate/instances/rest-sub-1/subscribe?cursor=-1",
+  );
+  assert.equal(badCursor.status, 400);
+});
+
+test("REST list instances supports status filter and pagination", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-rest-list-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const request = (path, init = {}) =>
+    handleWorkflowRest(
+      runtime,
+      new Request(`http://local.test${path}`, {
+        headers: { "content-type": "application/json", ...(init.headers ?? {}) },
+        ...init,
+      }),
+    );
+
+  for (const id of ["list-a", "list-b", "list-c"]) {
+    await request("/accounts/local/workflows/approval/instances", {
+      method: "POST",
+      body: JSON.stringify({ instance_id: id, params: "{}" }),
+    });
+  }
+  await runtime.runPending();
+
+  let response = await request(
+    "/accounts/local/workflows/approval/instances?status=waiting&page=1&per_page=2",
+  );
+  let body = await response.json();
+  assert.equal(body.result.length, 2);
+  assert.equal(body.result_info.total_count, 3);
+  assert.equal(body.result_info.page, 1);
+  assert.equal(body.result_info.per_page, 2);
+
+  response = await request(
+    "/accounts/local/workflows/approval/instances?status=waiting&page=2&per_page=2",
+  );
+  body = await response.json();
+  assert.equal(body.result.length, 1);
+  assert.equal(body.result_info.total_count, 3);
+
+  response = await request(
+    "/accounts/local/workflows/approval/instances?status=complete",
+  );
+  body = await response.json();
+  assert.equal(body.result.length, 0);
+  assert.equal(body.result_info.total_count, 0);
+
+  response = await request(
+    "/accounts/local/workflows/approval/instances?status=bogus",
+  );
+  assert.equal(response.status, 400);
+});
+
+test("local KV/D1/R2/queue adapters execute binding calls", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-adapters-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+
+  const instance = await runtime.trigger("bindings", {
+    id: "bindings-1",
+    params: {},
+  });
+  const status = await drain(runtime, instance.id);
+  assert.equal(status.status, "complete");
+  assert.equal(status.output.kvValue, "kv-value");
+  assert.deepEqual(status.output.kvMetadata, { tag: "t" });
+  assert.deepEqual(status.output.d1Row, { v: "d1-value" });
+  assert.equal(status.output.r2Value, "r2-value");
+
+  // Spool-mode queue producer recorded both deliveries.
+  const spool = readFileSync(
+    join(paths.dir, "adapters/queues/Q.jsonl"),
+    "utf8",
+  ).trim().split("\n").map(JSON.parse);
+  assert.equal(spool.length, 2);
+  assert.deepEqual(spool[0].messages[0], { contentType: "json", body: { probe: 1 } });
+  assert.equal(spool[1].messages.length, 2);
+  assert.deepEqual(spool[1].messages[1], { contentType: "text", body: "b" });
+
+  // KV persisted to a per-binding file.
+  const kvFile = JSON.parse(
+    readFileSync(join(paths.dir, "adapters/kv/KV.json"), "utf8"),
+  );
+  assert.equal(Buffer.from(kvFile.probe.value, "base64").toString(), "kv-value");
+});
+
+test("service binding adapter forwards to the configured HTTP URL", async (t) => {
+  const counter = await startCounterServer();
+  t.after(() => counter.server.close());
+
+  const dir = mkdtempSync(join(tmpdir(), "workflows-mbt-svc-"));
+  const configPath = join(dir, "wrangler.jsonc");
+  writeFileSync(
+    configPath,
+    JSON.stringify({
+      name: "svc-test",
+      main: join(root, "fixtures/e2e/src/index.ts"),
+      workflows: [{
+        name: "svc",
+        binding: "SVC_WORKFLOW",
+        class_name: "ServiceBindingWorkflow",
+      }],
+      services: [{ binding: "SVC", service: "counter" }],
+    }),
+  );
+  writeFileSync(
+    join(dir, "workflows.mbt.json"),
+    JSON.stringify({
+      adapters: { services: { SVC: counter.baseUrl } },
+    }),
+  );
+
+  const paths = {
+    dir,
+    storagePath: join(dir, "workflows.db"),
+    buildDir: join(dir, "bundles"),
+  };
+  const runtime = await openRuntime(configPath, paths);
+  t.after(() => runtime.close());
+
+  const instance = await runtime.trigger("svc", {
+    id: "svc-1",
+    params: { path: "/via-binding" },
+  });
+  const status = await drain(runtime, instance.id);
+  assert.equal(status.status, "complete");
+  assert.deepEqual(status.output, {
+    status: 200,
+    body: JSON.stringify({ ok: true, key: "/via-binding" }),
+  });
+
+  // A declared service binding without an adapter URL fails loudly.
+  writeFileSync(join(dir, "workflows.mbt.json"), "{}");
+  await assert.rejects(
+    WorkflowRuntime.open({
+      configPath,
+      storagePath: join(dir, "other.db"),
+      buildDir: join(dir, "bundles2"),
+    }),
+    /local\.adapters\.services\.SVC/,
+  );
+});
+
+test("workflows.mbt.json retention plan adapter applies account-plan defaults", async (t) => {
+  const counter = await startCounterServer();
+  t.after(() => counter.server.close());
+
+  const dir = mkdtempSync(join(tmpdir(), "workflows-mbt-retention-"));
+  const configPath = join(dir, "wrangler.jsonc");
+  writeFileSync(
+    configPath,
+    JSON.stringify({
+      name: "retention-test",
+      main: join(root, "fixtures/e2e/src/index.ts"),
+      workflows: [{
+        name: "duplicate",
+        binding: "DUPLICATE",
+        class_name: "DuplicateWorkflow",
+      }],
+    }),
+  );
+  // Free-plan adapter: 3 days for both completed and errored instances.
+  writeFileSync(
+    join(dir, "workflows.mbt.json"),
+    JSON.stringify({ retention: { plan: "free" } }),
+  );
+
+  const runtime = await WorkflowRuntime.open({
+    configPath,
+    storagePath: join(dir, "workflows.db"),
+    buildDir: join(dir, "bundles"),
+  });
+  t.after(() => runtime.close());
+  const instance = await runtime.createInstance("duplicate", {
+    id: "retained-1",
+    params: {},
+  });
+  const row = runtime.requireInstance(instance.id, "duplicate");
+  assert.equal(row.success_retention_ms, 3 * 86_400_000);
+  assert.equal(row.error_retention_ms, 3 * 86_400_000);
+
+  // An explicit per-instance override still wins over the plan default.
+  const overridden = await runtime.createInstance("duplicate", {
+    id: "retained-2",
+    params: {},
+    retention: { success_retention: "1 hour" },
+  });
+  const overrideRow = runtime.requireInstance(overridden.id, "duplicate");
+  assert.equal(overrideRow.success_retention_ms, 3_600_000);
+  assert.equal(overrideRow.error_retention_ms, 3 * 86_400_000);
 });
