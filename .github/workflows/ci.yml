@@ -47,6 +47,9 @@ jobs:
       - name: Compatibility host tests
         run: npm run test:host
 
+      - name: Compatibility probe-client tests
+        run: npm run test:compat
+
       - name: Durable process E2E
         run: npm run test:e2e
       - name: Pinned Cloudflare compatibility oracle

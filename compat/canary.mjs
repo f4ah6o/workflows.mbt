@@ -67,12 +67,22 @@ async function collectLocal() {
   ], { cwd: root, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, CI: "true" }, detached });
   try {
     const deadline = Date.now() + 45000;
+    let ready = false;
+    let stderrTail = "";
+    child.stderr?.on("data", (chunk) => { stderrTail = (stderrTail + chunk).slice(-4000); });
     while (Date.now() < deadline) {
+      if (child.exitCode != null) break;
       try {
         const response = await fetch("http://127.0.0.1:" + port + "/health");
-        if (response.ok) break;
+        if (response.ok) { ready = true; break; }
       } catch {}
       await delay(100);
+    }
+    if (!ready) {
+      const detail = child.exitCode != null
+        ? `exited with code ${child.exitCode}`
+        : "did not become ready within 45s";
+      throw new Error(`local workflows.mbt runtime ${detail}\n${stderrTail}`.trim());
     }
     return await collectTraces("http://127.0.0.1:" + port, "workflows-mbt", probes, { log: (m) => console.error(m) });
   } catch (error) {
