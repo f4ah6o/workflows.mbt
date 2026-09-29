@@ -1,62 +1,302 @@
 {
-  "checkedAt": "2026-09-28T09:04:38.577Z",
+  "formatVersion": 2,
+  "checkedAt": "2026-09-29T19:30:45.789Z",
   "sourceFile": "compat/cloudflare/VERSION.md",
   "sources": [
     {
       "url": "https://developers.cloudflare.com/workflows/build/workers-api/",
-      "sha256": "3df5919d61e3ed10deeb4c0195778d12c6edae442c0ea0f5f7e2a4d620fa3282"
+      "scope": "main",
+      "sections": {
+        "__intro__": "7b602048ac7f4e57595dd454039838ad53b988dc33757060bb1735a9723810f7",
+        "workers-api": "f5bceb944e6d807d5d730c5350fb08cff8393e22df52cbe8d4ff82a765b77c93",
+        "workflowentrypoint": "1d03aeb83d0a51ba4edb33ff7a1b41884520334d8083f74778f08dbd9f6c7047",
+        "run": "31cdee00d6931452795c43a2efcc80e67dd4bb7cf0f9efbeec5db7e59012b70a",
+        "workflowevent": "d2bd3ec7c8358569ed3214bb32a7ac521fc23e21f110b947fce5b95de960d5d9",
+        "workflowstep": "78daf1692c4cef4163258ea06b9edbfb26f90aa1bf9770590a0441d8d33ba9a0",
+        "step": "7cde0090df030739c76f02200fbb3e79720661f34c98ff9899994f1d07637d30",
+        "workflowstepconfig": "6197193095610d69ea2018c4a526d67776f34ab597cb8eeb858ba697b73ba7cf",
+        "rollback-options": "3e5976f31b591354b8f815b7873ec9961b17306c6cdec3011d3df65d0249aa7e",
+        "workflowstepcontext": "5fb999dd3f29fbc5498c533a587f1c270386370d983e1bf43c8b85c83ff9c19b",
+        "workflow-step-limits": "b52f2a19acdf58802fdaa1a1ff26e359ffdedb6a2772c4e9a450f28b86a4a2e5",
+        "default-instance-retention": "35f8b3eb667fb3596271df185dd742ee33a1b7ed68c1b8f25770ab52e7e45e29",
+        "declare-workflows-in-exports": "547b2031c136ff10d944ae84e8b00a3e7d78da340b04f7a17c917c066477f86e",
+        "call-a-workflow-through-ctx-exports": "4ec0d92c1f4f6b7154eda8622c1606a495101323f0bc7ef3a23e7dc44e1ed62d",
+        "nonretryableerror": "3940cb33c828f385475857421bb76b9f1e5ff1ce3e43838759dd7e18e72d8dea",
+        "call-workflows-from-workers": "5371ed03d74764c5e1ad7b649dd8892cd7866ef984cf902b5129af930aeb3ef6",
+        "bind-from-pages": "520d5375bf84563c359c058f0be89249289c218d265e557b91dbcdb8d1956c1d",
+        "cross-script-calls": "35d27dd7d2c6a51bec0f4fcf9a22636711bf27b1a8ac8b39f8542cbb856b3b49",
+        "workflow": "2f85437109dd4dd982f7c50d622e5356e9fbf358d6b837e8c20f88c7d5b61d1a",
+        "create": "0e7738307ab7c3a319818065a8e81eade3db44388de82aaaba6c4c21b5353911",
+        "createbatch": "040e4d206254bb87ab0b750fc43465472a9a2410c617e6fd2daa4fd0deda138a",
+        "deletebatch": "368908402aae9c385681ccfe99e04d82bd6bfeac1576f5a25d3581a4a4841506",
+        "get": "580f59b972aea16d3d7cb8d9bf7284a388546d1a665c14756a395604b4f6224f",
+        "workflowinstancecreateoptions": "3ebe49747877621629f2321aaa135249d3dbf35a90b901f6c8f8f0f16dd0e1db",
+        "workflowinstance": "3f72e149b3593cf71e631fdbc3c532819d4432ab57680c742990cea8a65ff184",
+        "id": "4930d88f3f3bbb4cd94c104270f731d13277e349b09238dc2fddda50c48d7e48",
+        "status": "3749ffc1f4d9cdda81893c4fd97c7f3fba76a39954d957d3aca413614e420cf7",
+        "pause": "b32cdda645e23150e32d668942220cbfb0bd182ed48cd6d031d2bb835b5a017a",
+        "resume": "149cbc1f59d04598b1616333d23cdb5c8339753920727893f3e72589c28e965e",
+        "restart": "5d9aac7d915420c219e513e9e00463238b5d5303d872d512d7875adfce66c3e2",
+        "terminate": "3d7ebde57a91c943e0cbec377641a74a94e17652ebe72226a18eaef82186ed94",
+        "delete": "adeea3b720835bfb04ce184260a795bedd7cf2b62a46576616f5ef15447cbce6",
+        "sendevent": "71fb76e8bd9ea851c33897c0f4c54e189401daf125a2a63ca4b4a0ca64cdf125",
+        "subscribe": "354dad38833e3827ec73f3bd1bc18190b4d0f09c8bb2009bd4cfebf88c33a6c5",
+        "instancestatus": "a51ccadfd530c95fc58a7486c18f8d963f233a12dd90ac7be5dfa025b1c14d6e",
+        "footnotes": "4103eb7e15fb6ed74a26163d6db15a1f59e6ad3240518e22b2181b86dba1c0c1"
+      }
     },
     {
       "url": "https://developers.cloudflare.com/workflows/build/sleeping-and-retrying/",
-      "sha256": "f50f7323ef7c298cf4c660a24f1337c0b26512032b2ca513908f9cb0481a5ba3"
+      "scope": "main",
+      "sections": {
+        "__intro__": "75e920101b23982d6c87d7321e232d7594365071b058696a40e0c72275ccd15e",
+        "sleeping-and-retrying": "b7f3b99bb45ecb5c1c6e77da6a6696a7ad773fa4bfd5e5dd2b5bce44cfc5065b",
+        "sleep-a-workflow": "966ced64127aad969859920ca42f07c3aa261b6b67375009e188c302db066577",
+        "sleep-for-a-relative-period": "bbb62c4dd75818158727d4b16281c42f10adcc90dfbf686d36c19eb5a9e01299",
+        "sleep-until-a-fixed-date": "a3db0564eb609df3e3917401f4d75f1e6eff0f8140297670420362fc6082285c",
+        "retry-steps": "463a9936ac3369b368fe92283c006e5965da8d0c212c165293d7277e7d076117",
+        "set-a-dynamic-retry-delay": "c437a8f9a9b7ad841fef8d3ca916e69c1cc7168e768a5baf4f343c51e2028f45",
+        "force-a-workflow-instance-to-fail": "e78daa8be03ad7d1b069726c15dd4497d586d5f2a48696d08ef31cc7ba787c2e",
+        "register-rollback-handlers": "9e232941a1e81fb39d60f6d9caf73f5f0f18bd700df14145e053cde3dd070b88",
+        "catch-workflow-errors": "453229f0dcf1b7b4bba3bdb21ed6bb24865d6af6b08cde1ab1098b2322baf037"
+      }
     },
     {
       "url": "https://developers.cloudflare.com/workflows/build/step-context/",
-      "sha256": "a452d746c42ab74659e64167b5315b3c4a3720552ff10eb9ef4f473776fe9603"
+      "scope": "main",
+      "sections": {
+        "__intro__": "6b709b5b60c0507612a35747664ed1f1c524fad0fe83e56a8b4a96b84fec45cb",
+        "step-context": "72ccb49ea658a81212e16f0e38688dd14418be9f25232213ec2c09f89f142de1",
+        "workflowstepcontext": "5e8911f49f7d4569be39e840b0524d704177260089cee49657b530b7b15e23c3",
+        "properties": "c29654020eaf7fd0213ee11727932784b3f5e127fbff00fdc030f5abc8ad89f3",
+        "access-the-context": "c28fb70d15da4dc170aedd76d416bd0b4d1179e3724b78148a773683ece68750",
+        "examples": "3ebeaafc26570f4f78a26969ada27053cf4f76583c94ab4cb317397ad58cb912",
+        "adjust-behavior-based-on-retry-attempt": "1398db5436d401273ef374aef0570557a86b3b265acd64f7a153662835ec2d74",
+        "log-step-metadata-for-observability": "3b40569d97eb5a2473d594b5208a3af822fe56a85dd03f56215101ae9daae615"
+      }
     },
     {
       "url": "https://developers.cloudflare.com/workflows/build/events-and-parameters/",
-      "sha256": "b6dc819d1237a6279ad66f65bf3df5279da64798d7a0993bb1bfc0d56b2222b3"
+      "scope": "main",
+      "sections": {
+        "__intro__": "6c9615e23e8f7f066917aaa1ac31bb727e082df8ff4a8a7349e11dd37e666a47",
+        "events-and-parameters": "baeb53377f337314eff8bd0b5a96e27fbe5eff3a96ce2b118f28b21506bf790c",
+        "pass-data-to-a-workflow": "f3edf7241c9a31b8c052fae7fe6c01bfc511cd67604ff9359ef5148b9733d97b",
+        "wait-for-events": "96cedf6391a6eead4ddc08ca0f9a280c34c19751a68ec353c5b17fad253a5c3d",
+        "send-events-to-running-workflows": "c6df0abcfc5e59044946c68a90989e4ead4f93a7050cabc67a86bcaafd447588",
+        "typescript-and-type-parameters": "6ca4aa56d5c2fc2316d27321c3636f74ab0191138367c5d0de8e73e5b6676a26",
+        "footnotes": "a3911b4c9c19b01de9c6083d7d744e11efc67fc1f88f116da182d08731d1e315"
+      }
     },
     {
       "url": "https://developers.cloudflare.com/workflows/build/rules-of-workflows/",
-      "sha256": "52ec3d9cf2b2d1e59ac5abe75b8d7a209755480f4c2ad958ee186858808f9237"
+      "scope": "main",
+      "sections": {
+        "__intro__": "fb8f30eb806eaae490d1131a19261131c7373668c684d46862ccb5206b39a0a3",
+        "rules-of-workflows": "8bc10b8e3b25cb7a857e488bc25f5cbca8c03f120e55bf25dbed8997f326d525",
+        "ensure-api-binding-calls-are-idempotent": "11882d37568bb904a76748c68cc70f58a06378217fe8b33969045c7ce65fe2c0",
+        "make-your-steps-granular": "3bbf3231d324ac07f09ac020cfa6976e0893311a817ad7aa45bc2c893a6a5a87",
+        "do-not-rely-on-state-outside-of-a-step": "ead10e26fe7f24247e6f5adc028eb35cc97f604b8b68be404bc2b0b2758fd4ab",
+        "avoid-doing-side-effects-outside-of-a-step-do": "92b0cc3bad5387c483fa4ead3c0abca6b9f752070c3beadd8bec7bbee91bcf72",
+        "do-not-mutate-your-incoming-events": "d7d93ce49a0b82939d99337874dbfef5bf857ad9fadd733be1c38e579d546a97",
+        "name-steps-deterministically": "7a5289c366e9166ed4ed43a1e1085b5c793632ded8ee5dbde6c2e110d4ecd5c0",
+        "take-care-with-promise-race-and-promise-any": "733e8e948c47cf0c23e48cbb39b5f59e5e7d443593c5a34981ebbfe24ac54a0d",
+        "instance-ids-are-unique": "d01435bc845e1b6713e626316cfb4d2009a9dbce5e68de38ec9dcdd07931485c",
+        "await-your-steps": "107701c4fb0b6eaac9cb65c0cf3ab7e11c9f0791d31ee1ecda4b66a322ba5f9f",
+        "use-conditional-logic-carefully": "bd02cfd7ec203942585d5677025aafcdaf4584035587904041bdd276b9741877",
+        "batch-multiple-workflow-invocations": "e1148a570dd28fd1f5748736c0447172ea61aa7c8f46d1307d2019c1522c6c69",
+        "limit-timeouts-to-30-minutes-or-less": "e005cb8539c463aeaff2fcaa2f4c7185a462311f0ae152803be552780cb1f22b",
+        "keep-non-stream-step-return-values-under-1-mib": "168ff0e000a0cda7affced6998b92b5e8670f491d821e0f0e8ead94db2dc47bc",
+        "related-resources": "0d24b9a751678d371b756a67eca765ecf8c7cba4fa40a4364eeb77649e91bce7"
+      }
     },
     {
       "url": "https://developers.cloudflare.com/workflows/build/trigger-workflows/",
-      "sha256": "71a5fdca9e23dcac81568888d77217faa56bf8c854bd224eb4673431fe2adc0b"
+      "scope": "main",
+      "sections": {
+        "__intro__": "d09ea39d2d70a269608d91785f6df629095835277e91960fad6aade0fec0b28a",
+        "trigger-workflows": "f3600a142c27209ebe3eaa46a99e2d3a063c2cdbc43e0045f6382e6389d73369",
+        "workers-api-bindings": "0a981016a4ddb4d5f8bff7794f870e861f112eaa750ab09076eee7a089dc7412",
+        "schedule-a-workflow-directly": "8c8cfd6218e8487d5e24cbace2f38aea1477a7689bad6dce37424c8269819961",
+        "inspect-a-workflow-s-status": "b79fe6f36ccd8916f640d1940a367f91e50a4c3ee96535ecee0db057f8cb5397",
+        "explicitly-pause-a-workflow": "cb77104ed8e1c44ef423aa0701aaea1635ab7e8cb7a6337cb5fece19204e827a",
+        "resume-a-workflow": "eb39149592d0d4cf409c80870af31cf751ec49c5111b48a78ae4eddc5f06e00b",
+        "stop-a-workflow": "7cf92e4c83b6fccb70e478139d5749ec88dd906562a1d4f5cb594b4602579e91",
+        "restart-a-workflow": "aaf816d229ba53272a6263f091c908e2b7dc684d1071be405b14929165f88fcf",
+        "delete-workflow-instances": "2c2a0408f60720cf087b1b00c7e82c84ca4e6f4a721f8c223b615a7df12af611",
+        "trigger-a-workflow-from-another-workflow": "e16edc04e9a3c951fc5cfbf3718fa30c5f18d78d108978a96ae64864443a4c5f",
+        "rest-api-http": "b6065cc702d456b1f4e83878d0ccf3d226f2bcff2d3a219cb3a92932125a83ac",
+        "command-line-cli": "fa673f255b09ecad635ff6621ae68c21373196e299772cee28930513f3ef140d"
+      }
     },
     {
       "url": "https://developers.cloudflare.com/workflows/build/subscribe-to-instance-events/",
-      "sha256": "9d9ebfb0e0867a3daeacba7784826f8dc86d189919a244d558b83a6bdcab1414"
+      "scope": "main",
+      "sections": {
+        "__intro__": "af74798f41d4ab0122b32741c365e8f39e5b8161b316534852e4747dcffd06a2",
+        "subscribe-to-instance-events": "65c93205da4ac8219b79b7f066b32c7b5c173163357e3e5b99ffbfcd546a0cd5",
+        "subscribe-to-all-events": "b6a97e4539d9a9cf8765383b3f44b2a41284bac4b1eb07aa95fd09d7853eaed2",
+        "filter-events": "964c77baccda4bd8f5611f2f881678d4e617983277b12767ca43833a9c2f708e",
+        "resume-from-a-cursor": "429122630aae283cbcbb7fc1a69abb4d347fd77f2abce17c74b920da022760cf",
+        "sensitive-outputs": "adf645a0c031b82c5d177cb8b051ffa1f74510337d33fad51cb1713dfa6b9777",
+        "dispose-of-a-subscription": "47d09ce7703e3863d48c7b7372443690ad71248e884dd2053ca4808031a01e54",
+        "event-fields": "84bc5b5717a27329f28c51ee5506e2abd295967a5e679f9a85f4acc26e0809d9",
+        "workflow-lifecycle-events": "c533d5384fadf9d1fad055fe7f9dab82e308464b703c259f40467bb0e32c4216",
+        "step-and-attempt-events": "de5e2d1a8bca84a8c7d5ae0070caa16ceb091d0551357d82d172a2fdbc8eb178",
+        "sleep-and-wait-events": "32829b898e6c222dfe0e3a0f812381e07081b4a61b76e23576bf8582cd2efded",
+        "rollback-events": "5d1fa85dfc4567a2c64a989dac99aeaa6fb5e6832794083369abd16f1fdaf06d"
+      }
     },
     {
       "url": "https://developers.cloudflare.com/workers/wrangler/configuration/",
-      "sha256": "1f2262655238d9d0af176320fa0d7ef611900c99e871a93fe23de97230b6d010"
+      "scope": "main",
+      "sections": {
+        "__intro__": "406d0e714195ac219de8fc971c6f4cd32a8e2125a65424ae7708b1187871f587",
+        "configuration": "a3dee5bd2dc0d50dae0fe207a2169d567e0654dfab9ffe5f587c136e36855f12",
+        "sample-wrangler-configuration": "ad79f1e6362a4b29064d7774d6fdbb161e001cf0a2f7a85b6d0a5361eee6148c",
+        "environments": "11db6914aabab085e12e06ee3d2ac9f2fe2bb6bd62b6e761483ac0407221d876",
+        "automatic-provisioning": "18593c2c472c711ccb52df94aa7741804eb1f825bd7388a6cce401ad38b8b4a0",
+        "top-level-only-keys": "92d766d155d38317d41897909a6e9f3ab856f4d72438e1e9557aa52c34f0f68a",
+        "inheritable-keys": "49a31132f2ff37d61deba5acdf4ace3b7e7a240b4e7711f0c692d8d4d414032a",
+        "non-inheritable-keys": "11fc6564a527814b4d1cfa5a6ebe29f89c2b3c641b3a85ec6f5019841aab5011",
+        "types-of-routes": "6c424af7620f51d0392ff1965e9653e8cd90641fdd29870e773a2e3797222919",
+        "custom-domains": "4e2b07d8e175e1b134f60ffd46e9cdbee2a344b6df63c4690c954ff48ac1fb53",
+        "routes": "9f3652a3df63e2538bf95760e6c5f2ab9965d03393a3af724c9f426c830fb086",
+        "workers-dev": "d08698be423920487e94ce900cd4d8dffa0d2fbec1664031484995b027dbd057",
+        "triggers": "761d591479f9af83a9057200a0cce80adf658fad5b888fbe8495cd0cf36f15ff",
+        "observability": "cddf9528509525f2862c881778264306bcdc06cec665c9ad2d8f95eb8b1459f3",
+        "custom-builds": "358cda7de23a1dfa073e1fbfbc8b38c54afe680ca72675166407f7c6972edf3b",
+        "limits": "dacf3a015e00df082f7389d5d6783af98f3f5ccd2d4db3061c10f957f1530289",
+        "bindings": "4ce3106a6185a7567072dec3b595c75162107cd25926d8211cd6734018c6ecee",
+        "browser-run": "1c72d87229e12700fd014addfda6dfd2f66d74a9b98554ee21dc753c49e2a928",
+        "d1-databases": "9e2440e2351d79656184336e6770220f72bf89d837ec49a10f42e96d69cd03d9",
+        "dispatch-namespace-bindings-workers-for-platforms": "cd2d13f711716584733502fd6cc60ae9a011dead4ee27474377706cdcb927889",
+        "durable-objects": "9449be5412f9a2f13cf387db13815a613f710579bf1d8efb79b5aedacc43fee6",
+        "email-bindings": "1c3634477e2105d78c06e1f0e7f611ede88920de571e3ea358b7f01f760e3c30",
+        "environment-variables": "c122d3739b45aee82b195a84a97220ff609ad1c2d04c5fb74a7122d426c36c31",
+        "hyperdrive": "c17e655a4a0ee3bf4a41c3740c4a9645282d2b60303afed26daa1d531c26d2f2",
+        "images": "52d596cdf1e20b0e4d71a7dc55aa6c6028b8738676493258044d69a1ced15b61",
+        "kv-namespaces": "f273484aa085603d72d872c9964f396e1436efb8636f00ad76241041c14d596e",
+        "ai-search-namespaces": "7a47d6577d70a469d69ce0cf61083f29202a042acb99d29c1e1f3e7fc60ab59c",
+        "ai-search-instances": "685748990da6956c37c2e78afd15c1354d10f63273b6ca3d1e5a1066f4c570de",
+        "queues": "94c1527aee6b4dd7d244eeb3302fc02a6e3d47e9ae9f3daefe006bfa1aabc2ef",
+        "r2-buckets": "aea4155a98a010f158293cea3f2eda25b9a11120d8aba62f72533d8b66943917",
+        "vectorize-indexes": "101f48f345cce6fbf20d6d81acf6b2b3233f9c721eba150fce582fc133c60306",
+        "service-bindings": "7ac0882be6c03a3a1a1956e3608e633272298fe0ad48b13a8c17cc0fbea71e72",
+        "static-assets": "267e9065eaaf41bad32edb4b890a691c3c35a7f5d58b391462a200c353cd26ab",
+        "analytics-engine-datasets": "779055cb628ce101e76101e099a3226ff072403c0a69965381e56228e04f5d0e",
+        "mtls-certificates": "8ecfb260439b1c2debff7209c49e3edf7dde85f2e2037f6f7467a1212b0ca2eb",
+        "workers-ai": "77b353a59f3aee4791788eb2b8ca1151b7434325ad7eaba1c3ceaf792e37ccc2",
+        "workflows": "6f2b95f19c29c946cba19db3f977bc8eb1760794640ea9b93bf2cf5ff0715df1",
+        "assets": "1677a7b7818b719647c5bf49a7daf22d104ae009a4489c1445fe6df0aefe3759",
+        "containers": "eaa77e77545bb96aea080336d71d34f8fcd5548533125848c267ad0804fdf6ff",
+        "custom-instance-types": "61c90cbb5de6fab73f0fbaf3897131ef4efc263117c956a52e5034af837be926",
+        "ssh": "02faca24c039e1c73fa96df038bf0c6285f9ba29abc8f4c8415eeeb4dab4cf50",
+        "authorized-keys": "6cbfb349c67f9a74035ab104b608b8d362c8068702a8b147d15523b3a0fc2805",
+        "bundling": "85045636f5f5408168a082b741b4207744f3b45e4847c9d074c72392a459664f",
+        "importing-modules-within-a-worker": "a08c1b04cdb12cd7a646cbe5a990cbfd95a6d006518c1580ae7d52f4387d24f9",
+        "find-additional-modules": "11345a6f962b9990888ac4ec148653a1bfbf333746ab77613e5e5af84e884eab",
+        "python-workers": "135644837e207244131d2a667550a980e638c786c04988677458288610704936",
+        "local-development-settings": "c14eb543fa3d87aab40ad75e0a8dbbc448f888293592d496e56f7f52a391e769",
+        "secrets": "119f9f7407fe6e988549aae7f940ca6a229ed4271af2fa3d62906c8fc83912b5",
+        "secrets-configuration-property": "c00a3c471a8226b99cd01aa25fb29eb2ea74644a9a8cd3a635d371ea2681322b",
+        "local-development": "a75ae9a76613ff5799df5c56598a61731a2484d5cacb2600321db7bea20514d5",
+        "module-aliasing": "a54bc9c23c6724754667cd06d6e97fd168d8ec82648abd8633b3c67b175da60d",
+        "bundling-issues": "52903a984fc93b0c9b0c12f5a3617de6af1e232330009f9aff301333a07111a9",
+        "example-aliasing-dependencies-from-npm": "d30ed8fcca52419c5a94157e432d317d2c01cb702464928c7ef573aeec22cff4",
+        "example-aliasing-node-js-apis": "4dd72817540c168374e5086da44ac4cfe5a64570d5a4a265b70015b06d488668",
+        "source-maps": "6d56252511bbbbb2af59cb7f370ebec14c2c9da6b339f23dc7edee7c9ed2e45b",
+        "workers-sites": "f92df3eb232b3cce8c9bbca96600c439eb1f02252bc4789e6defe7cdef295b22",
+        "proxy-support": "af3a0a188745268567d0e14be4bd14ec389fa30e6328a319b4b61b4652b069dd",
+        "source-of-truth": "63e460437a31b21b0a759409c11e4a665ae645b050768414108e2012db2ea6e8",
+        "generated-wrangler-configuration": "3a1c75958e9d0ad541d03065c02ab6f54379bbac04275e55557fc00ae5564d45",
+        "custom-build-tool-example": "e2de12e444cde3d843efb4ad60b278ea190f3c11eab0c256ae2f01b0bcf85fe0"
+      }
     },
     {
       "url": "https://developers.cloudflare.com/workflows/reference/limits/",
-      "sha256": "f3937f4b6b2d24aae60c7bb16ba37e21566b10fd53f4e6be701e9fa8959df67b"
+      "scope": "main",
+      "sections": {
+        "__intro__": "7e3b0bdccbd56396825d89b5e31adc69f61c69ea382219611fd9045b63389644",
+        "limits": "8816145ce63ed6617fdfac098e053a25d3e1858a80f5cff4a845638315befdc0",
+        "waiting-instances-do-not-count-towards-instance-concurrency-limits": "878c9765392528cc3b26d6df54cc89f01084ecb48cd5d42163721aeb66101773",
+        "cron-triggered-instances-on-workers-paid": "c7e5ace56f209712d61e6b5d8a1bb82bf6b947ced3c3e3365a7fcf536699b904",
+        "increasing-workflow-step-limits": "40b03c90eeca91906374f1d8c43ebf518139ff1f712089e28dddc716d445d501",
+        "increasing-workflow-cpu-limits": "aa31c760e954d55cf52a94623c868515d5873fc02ac67e3e22855cdf146ec5fd",
+        "increasing-workflow-subrequest-limits": "39021b33536858d84b95ee51db01de74b1948bc9890baeb85b39143ae3e62b1b",
+        "wall-time-limits-by-invocation-type": "b91e1f171e45aedaab27ea1e4ce50a04dd489aa68369bb44db3f680d7773d1c6",
+        "footnotes": "2bb7eddc07ba569f7091eb3a237bba27d0ed43d80fa9e0d8ab0cb658f5b2379c"
+      }
     },
     {
       "url": "https://developers.cloudflare.com/workflows/reference/pricing/",
-      "sha256": "f6303bc2bb91482677065d18b59cf58f24f0a7ca81abd0012df9bccb3c8ccd64"
+      "scope": "main",
+      "sections": {
+        "__intro__": "ebcb6eaf544e1173509ebde8c9284ef3aee83e82026d936d9fc5d914deddd2ad",
+        "pricing": "feaf111ce07053dc2db46772deca727bd28c0de138a08a0fcacccc33c78cb1c9",
+        "workflows-pricing": "e481c650e7d17a691ef9b837968ae8ff65ef6e4d3d2964b09cd6cb0f5ef62bd1",
+        "storage-usage": "4a8cddc7876d8fec78314bf406ffd8dcde99e0cf5471f6c84226e19364180831",
+        "frequently-asked-questions": "6d34f4f4f7b69b3af00289eb7c62ae93ae6b0e4565cafd817814e970517f0f9a",
+        "are-there-additional-costs-for-workflows": "7e8ceffb0e721fb0680ff0d1531ce182acca8c3af84da2c149af97a3ed263a7c",
+        "are-workflows-available-on-the-workers-free-plan": "6291d06a01fcdfba797b27935bdf013a62db162653d430af536860160aa93606",
+        "what-is-a-workflow-invocation": "49f4a3ab4316033ef5480f4239571dde209fa8f5320ba3333e769cebad041e07",
+        "how-do-workflows-show-up-on-my-bill": "3166a3b61cf796470492b0ba9c6ebe1481af231adfa4953a2833b0d5838cd04f",
+        "are-there-any-limits-to-workflows": "8e8eacf946f6744c5df87762c605b90352223fa0dcdd9ebaa36ced0dcb8388e0"
+      }
     },
     {
       "url": "https://developers.cloudflare.com/api/resources/workflows/",
-      "sha256": "ac10cd1939fc996a7936ab44a8b70c4e7dc56c74ce5637df05409f07bd4ee3ae"
+      "scope": "main",
+      "sections": {
+        "__intro__": "9d5ea12c923e973740aa2e0ecbb23822cfe3bcc5a148e7ded3c50afc7fee7063",
+        "workflows": "65e6bcd3e3e4ca44950f062181014227e08467e0e812b75d845d199570d6ad75"
+      }
     },
     {
       "url": "https://developers.cloudflare.com/workers/runtime-apis/context/",
-      "sha256": "6f391519c7df06d3406987c740ad5b95ca1d5ee372be6cad46186b5100c5579c"
+      "scope": "main",
+      "sections": {
+        "__intro__": "634a84e751e89973ef5540d0107efd0e0cde57a29a7c9a01ab359e8dc859905e",
+        "context-ctx": "5ac0969ff448dc77d0fa68aa0f29dbb97662b42af0813a6716ee8766a3f3bca7",
+        "props": "bac4fe5911e76304a3d01a6a3b68fca2a3a42070e7cc481b89401f01d66fe139",
+        "exports": "95164325663f1a1994df37a47592d2c92189ab7fd0440dda16cae119be44b620",
+        "specifying-ctx-props-when-using-ctx-exports": "3289d2a68c766cfee8d5f715b8566fd3f3ced772f981d2ebbdd53153b02dc041",
+        "typescript-types-for-ctx-exports-and-ctx-props": "334135a5454deb2fd586af617ee10085da37a35660b3d127889321162f90c310",
+        "tracing": "7dcfd71d0967598430a2cb0542a0de4902d3b21c8e76c14752487807b51c07a6",
+        "waituntil": "209f3cf2f39b7790e3a592cc2e0a53dbc38021a8ad7fa495c2c4306379f6c9d7",
+        "passthroughonexception": "d43fb550399360dde06c257b46e18f2e3fdae6a92e9e648b8ca42d9d9d4f6b91"
+      }
     },
     {
       "url": "https://developers.cloudflare.com/workers/runtime-apis/streams/",
-      "sha256": "80f35257b518006f57084282f8f93bc38b26f476eac14401b4044ed1beda0b68"
+      "scope": "main",
+      "sections": {
+        "__intro__": "1ee48d85da67f958b07eb47d788282cbade62e42504f2f1ff90c3ce1e16b2f5c",
+        "streams": "03879d380d20da4ff06a7d77372aed296c44158894b41285e65cd6c1c58341d8",
+        "common-issues": "5f291837cdc9e8a06b5d75b3d13c59164fc2d7ae4635074d15ededc828e4ed5e",
+        "related-resources": "976a1ddd6ecdfa0062c3dc912cc82427757eea5f920c05c654cfb65be8fd70b1"
+      }
     },
     {
       "url": "https://developers.cloudflare.com/workers/runtime-apis/response/",
-      "sha256": "5bb3ab85bd352c348e0c96c2d75f23f807476c44ca854a12e7207550e22ffe3e"
+      "scope": "main",
+      "sections": {
+        "__intro__": "7a9833aedc9193752d80da7eed49935727987a59802a28c34e897d219a65704d",
+        "response": "2b56ce91e1204af7b44fa9a8385062a87ee4a15560c4e9830b316f24dad1afa0",
+        "constructor": "701dc406c0755da7560321294df0ac03816459fb4c4a0a4ad951166c5154de49",
+        "parameters": "804aee7ae5361aede5b95e6d15e290ce15eefa58c67a7aeab44184cec3b617e8",
+        "properties": "fd6eab2538a0857ae4403f085b8fae2ef96c789deb47515313ecd2c3b14d38ef",
+        "methods": "25274f3e07156ff29c6cc62e93e9b8aa7210a85e0e319f8ab02fd9cd3eafecf9",
+        "instance-methods": "88ef422e57dd6badd510e3de638530a40e49a9971f8aab322266635c7d6d4b3f",
+        "additional-instance-methods": "9f36df3cdd4573c3e9aab56b18efc4ce858aa71cbb3b2fdcebe00b6ec947793f",
+        "set-the-content-length-header": "9d54d716bd1d42567a782c1221c7e701bd07c4633f7eaae105e67c107a5e527d",
+        "differences": "43302018bd74512d10385a7a96d2690fb5857ca4569347119d8fa02050749538",
+        "the-cf-property": "51164645f6274eecf41678407f925f8657fd03002d426eb525f5db719834f816",
+        "the-websocket-property": "5414ee9a5e45139e31a490a6ecf6ee15941a789997c13c2a5efea4ea69d6d2e6",
+        "the-encodebody-option": "62e5f9dccfc60c7dbb6f79d3ca0d9d87cb369b702e8bb21cda6b34f2692e8e27",
+        "the-headers-property": "a0affaa70d6bd67091f9ca1dc4e0be81330de1e052170bfd5b28f64fe3cbefdd",
+        "related-resources": "e14dc9a759caa4e02b4a4837cf9c9389e96c797fadf11b4b85fd9ff35c9c667a"
+      }
     }
   ]
 }
