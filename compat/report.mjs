@@ -9,10 +9,16 @@ mkdirSync(out, { recursive: true });
 const manifest = JSON.parse(readFileSync(join(root, "compat/oracle/manifest.json"), "utf8"));
 
 // Re-validate the matrix first so the report only ever renders evidence the
-// result files actually support.
-spawnSync(process.execPath, [join(root, "compat/check-capabilities.mjs")], {
+// result files actually support. A validator failure must abort the report —
+// a non-zero status that fell through to the render would produce a normal
+// report built on unvalidated data.
+const matrixCheck = spawnSync(process.execPath, [join(root, "compat/check-capabilities.mjs")], {
   stdio: "inherit",
 });
+if (matrixCheck.status !== 0) {
+  console.error("check-capabilities.mjs failed (status " + matrixCheck.status + ") — not rendering a report on unvalidated data");
+  process.exit(matrixCheck.status ?? 1);
+}
 
 function load(name) {
   const path = join(out, name);

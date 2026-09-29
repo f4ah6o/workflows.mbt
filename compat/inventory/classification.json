@@ -1,0 +1,3615 @@
+{
+  "formatVersion": 1,
+  "notes": "Human-owned classification keyed by stable inventory IDs (issue §2 'Human-owned layer'). Machine-side drift checks live in the baselines; this file carries profile + target (in-scope|excluded + exclusionReason) + optional unsupportedReason. Rows survive upstream removal so classification intent is preserved.",
+  "items": {
+    "cloudflare:workers.cache": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.env": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.exports": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.tracing": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.waitUntil": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.withEnv": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.withEnvAndExports": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.withExports": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkerEntrypoint": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkerEntrypoint._Rpc___WORKER_ENTRYPOINT_BRAND_": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkerEntrypoint.connect": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkerEntrypoint.ctx": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkerEntrypoint.email": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkerEntrypoint.env": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkerEntrypoint.fetch": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkerEntrypoint.queue": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkerEntrypoint.scheduled": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkerEntrypoint.tail": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkerEntrypoint.tailStream": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkerEntrypoint.test": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkerEntrypoint.trace": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowBackoff": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowBackoff.constant": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowBackoff.exponential": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowBackoff.linear": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowCronSchedule": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowCronSchedule.cron": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowCronSchedule.scheduledTime": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowDelayDuration": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowDelayFunction": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowDurationLabel": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowDurationLabel.day": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowDurationLabel.hour": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowDurationLabel.minute": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowDurationLabel.month": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowDurationLabel.second": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowDurationLabel.week": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowDurationLabel.year": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowDynamicDelayContext": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowDynamicDelayContext.ctx": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowDynamicDelayContext.error": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowEntrypoint": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowEntrypoint._Rpc___WORKFLOW_ENTRYPOINT_BRAND_": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowEntrypoint.ctx": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowEntrypoint.env": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowEntrypoint.run": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowEvent": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowEvent.instanceId": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowEvent.payload": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowEvent.schedule": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowEvent.timestamp": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowEvent.workflowName": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowInstanceStatus": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowInstanceStatus.complete": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowInstanceStatus.errored": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowInstanceStatus.paused": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowInstanceStatus.queued": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowInstanceStatus.running": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowInstanceStatus.terminated": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowInstanceStatus.unknown": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowInstanceStatus.waiting": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowInstanceStatus.waitingForPause": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowRetentionDuration": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowRollbackContext": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowRollbackContext.ctx": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowRollbackContext.error": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowRollbackContext.output": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowRollbackContext.stepName": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowRollbackHandler": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowSleepDuration": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowSleepDuration.variant-0": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowSleepDuration.variant-1": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStep": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStep.do": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStep.sleep": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStep.sleepUntil": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStep.waitForEvent": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStepConfig": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStepConfig.retries": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStepConfig.sensitive": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStepConfig.timeout": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStepContext": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStepContext.attempt": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStepContext.config": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStepContext.step": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStepEvent": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStepEvent.payload": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStepEvent.sensitive": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStepEvent.timestamp": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStepEvent.type": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStepRollbackConfig": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStepRollbackOptions": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStepRollbackOptions.rollback": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStepRollbackOptions.rollbackConfig": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowStepSensitivity": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workers.WorkflowTimeoutDuration": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "cloudflare:workflows.NonRetryableError": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.AbortSignal": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.AlarmInvocationInfo": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.Blob": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.BlobOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.Body": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.BodyInit": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.CacheContext": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.CachePurgeError": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.CachePurgeOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.CachePurgeResult": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.CertVerificationStatus": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.CfProperties": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.CloseEvent": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.CloseEventInit": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.Cloudflare.Env": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.Cloudflare.Exports": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.CloudflareAccessContext": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.CloudflareAccessIdentity": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.CloudflareWorkersModule.DurableObject": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.CloudflareWorkersModule.WorkerEntrypoint": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.CloudflareWorkersModule.WorkflowEntrypoint": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.Container": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ContainerDirectorySnapshot": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ContainerDirectorySnapshotRestoreParams": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ContainerExecOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ContainerExecPtyOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ContainerInfo": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ContainerSnapshot": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ContainerSnapshotOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ContainerSnapshotRestoreParams": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ContainerStartResources": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ContainerStartupOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ContinentCode": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.D1Database": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.D1Database.batch": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.D1Database.dump": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.D1Database.exec": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.D1Database.prepare": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.D1Database.withSession": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.D1DatabaseSession": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.D1ExecResult": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.D1Meta": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.D1PreparedStatement": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.D1PreparedStatement.all": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.D1PreparedStatement.bind": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.D1PreparedStatement.first": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.D1PreparedStatement.raw": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.D1PreparedStatement.run": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.D1Response": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.D1Result": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.D1SessionBookmark": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.D1SessionConstraint": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.DurableObjectAbortOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.DurableObjectClass": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.DurableObjectFacets": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.DurableObjectGetAlarmOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.DurableObjectGetOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.DurableObjectId": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.DurableObjectJurisdiction": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.DurableObjectListOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.DurableObjectLocationHint": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.DurableObjectNamespace": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.DurableObjectNamespaceGetDurableObjectOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.DurableObjectNamespaceNewUniqueIdOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.DurableObjectPutOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.DurableObjectRoutingMode": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.DurableObjectSetAlarmOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.DurableObjectState": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.DurableObjectStorage": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.DurableObjectStub": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.DurableObjectTransaction": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.EmailAddress": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.EmailAttachment": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.EmailExportedHandler": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.EmailMessage": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.EmailReplyMessageBuilder": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.EmailSendResult": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ErrorEvent": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ErrorEventErrorEventInit": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.Event": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.EventInit": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.EventListener": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.EventListenerObject": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.EventListenerOrEventListenerObject": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.EventTarget": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.EventTargetAddEventListenerOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.EventTargetEventListenerOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExecOutput": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExecProcess": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExecutionContext": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExecutionContext.abort": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExecutionContext.access": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExecutionContext.cache": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExecutionContext.exports": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExecutionContext.passThroughOnException": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExecutionContext.props": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExecutionContext.tracing": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExecutionContext.waitUntil": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExportedHandler": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExportedHandler.connect": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExportedHandler.email": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExportedHandler.fetch": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExportedHandler.queue": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExportedHandler.scheduled": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExportedHandler.tail": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExportedHandler.tailStream": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExportedHandler.test": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExportedHandler.trace": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExportedHandlerConnectHandler": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExportedHandlerFetchHandler": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExportedHandlerQueueHandler": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExportedHandlerScheduledHandler": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExportedHandlerTailHandler": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExportedHandlerTailStreamHandler": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExportedHandlerTestHandler": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ExportedHandlerTraceHandler": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.FacetStartupOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.Fetcher": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.File": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.FileOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.FormData": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ForwardableEmailMessage": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.Headers": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.HeadersInit": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.IncomingRequestCfProperties": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.IncomingRequestCfPropertiesBase": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.IncomingRequestCfPropertiesBotManagementBase": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.IncomingRequestCfPropertiesBotManagementEnterprise": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.IncomingRequestCfPropertiesCloudflareAccessOrApiShield": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.IncomingRequestCfPropertiesCloudflareForSaaSEnterprise": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.IncomingRequestCfPropertiesEdgeRequestKeepAliveStatus": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.IncomingRequestCfPropertiesExportedAuthenticatorMetadata": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.IncomingRequestCfPropertiesGeographicInformation": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.IncomingRequestCfPropertiesTLSClientAuth": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.IncomingRequestCfPropertiesTLSClientAuthPlaceholder": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.InstanceStatus": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.InstanceStatus.error": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.InstanceStatus.output": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.InstanceStatus.status": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.Iso3166Alpha2Code": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.KVNamespace": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.KVNamespace.delete": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.KVNamespace.get": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.KVNamespace.getWithMetadata": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.KVNamespace.list": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.KVNamespace.put": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.KVNamespaceGetOptions": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.KVNamespaceGetWithMetadataResult": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.KVNamespaceListKey": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.KVNamespaceListOptions": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.KVNamespaceListResult": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.KVNamespacePutOptions": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.LoopbackDurableObjectClass": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.LoopbackForExport": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.LoopbackServiceStub": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.Message": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.MessageBatch": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.MessageBatchMetadata": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.MessageBatchMetrics": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.MessageEvent": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.MessageEventInit": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.MessagePort": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.MessagePortPostMessageOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.MessageSendRequest": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.Params": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.Queue": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.Queue.metrics": {
+      "profile": "binding-adapters",
+      "target": "in-scope",
+      "unsupportedReason": "Queue.metrics is not implemented by the local queue adapter"
+    },
+    "global.Queue.send": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.Queue.sendBatch": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.QueueContentType": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.QueueMetrics": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.QueueRetryOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.QueueSendBatchMetadata": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.QueueSendBatchMetrics": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.QueueSendBatchOptions": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.QueueSendBatchResponse": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.QueueSendMetadata": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.QueueSendMetrics": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.QueueSendOptions": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.QueueSendResponse": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.QueuingStrategy": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.R2Bucket": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Bucket.createMultipartUpload": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Bucket.delete": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Bucket.get": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Bucket.head": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Bucket.list": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Bucket.put": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Bucket.resumeMultipartUpload": {
+      "profile": "binding-adapters",
+      "target": "in-scope",
+      "unsupportedReason": "resumeMultipartUpload is not implemented by the local R2 adapter"
+    },
+    "global.R2Checksums": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Conditional": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2GetOptions": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2HTTPMetadata": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2ListOptions": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2MultipartOptions": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2MultipartUpload": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Object": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Object.checksums": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Object.customMetadata": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Object.etag": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Object.httpEtag": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Object.httpMetadata": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Object.key": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Object.range": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Object.size": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Object.ssecKeyMd5": {
+      "profile": "binding-adapters",
+      "target": "in-scope",
+      "unsupportedReason": "ssecKeyMd5 is not populated by the local R2 adapter"
+    },
+    "global.R2Object.storageClass": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Object.uploaded": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Object.version": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Object.writeHttpMetadata": {
+      "profile": "binding-adapters",
+      "target": "in-scope",
+      "unsupportedReason": "writeHttpMetadata is not implemented by the local R2 adapter"
+    },
+    "global.R2ObjectBody": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2ObjectBody.arrayBuffer": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2ObjectBody.blob": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2ObjectBody.body": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2ObjectBody.bodyUsed": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2ObjectBody.bytes": {
+      "profile": "binding-adapters",
+      "target": "in-scope",
+      "unsupportedReason": "bytes() is not implemented by the local R2 adapter"
+    },
+    "global.R2ObjectBody.json": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2ObjectBody.text": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Objects": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2PutOptions": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2Range": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2StringChecksums": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2UploadedPart": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.R2UploadPartOptions": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.ReadableByteStreamController": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ReadableStream": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ReadableStreamBYOBRequest": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ReadableStreamDefaultController": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.Request": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.RequestInfo": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.RequestInit": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.RequestInitCfProperties": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.RequestInitCfPropertiesImage": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.RequestInitCfPropertiesImageDraw": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.RequestInitCfPropertiesImageMinify": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.RequestInitCfPropertiesR2": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.RequestInitCfPropertiesVary": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.RequestInitCfPropertiesVaryAcceptHeader": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.RequestInitCfPropertiesVaryAcceptLanguageHeader": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.RequestInitCfPropertiesVaryAction": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.RequestInitCfPropertiesVaryHeader": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.RequestInitCfPropertiesVaryHeaders": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.Response": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.Rpc.DurableObjectBranded": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.Rpc.EntrypointBranded": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.Rpc.Provider": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.Rpc.Serializable": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.Rpc.WorkerEntrypointBranded": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ScheduledController": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.ScriptVersion": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.Service": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.Socket": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.SocketAddress": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.SocketInfo": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.SocketOptions": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.Span": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.SqlStorage": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.SqlStorageCursor": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.SqlStorageValue": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.SyncKvListOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.SyncKvStorage": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TailStream.Onset": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TailStream.TailEvent": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TailStream.TailEventHandlerType": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TestController": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TlsOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TraceDiagnosticChannelEvent": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TraceException": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TraceItem": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TraceItemAlarmEventInfo": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TraceItemConnectEventInfo": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TraceItemCustomEventInfo": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TraceItemEmailEventInfo": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TraceItemFetchEventInfo": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TraceItemFetchEventInfoRequest": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TraceItemFetchEventInfoResponse": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TraceItemHibernatableWebSocketEventInfo": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TraceItemHibernatableWebSocketEventInfoClose": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TraceItemHibernatableWebSocketEventInfoError": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TraceItemHibernatableWebSocketEventInfoMessage": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TraceItemJsRpcEventInfo": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TraceItemQueueEventInfo": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TraceItemScheduledEventInfo": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TraceItemTailEventInfo": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TraceItemTailEventInfoTailItem": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TraceLog": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TraceLogErrorInfo": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TracePreviewInfo": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.Tracing": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TracingSpanStatus": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.TracingSpanStatusCode": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.UnderlyingByteSource": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.UnderlyingSink": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.UnderlyingSource": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.URL": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.URLSearchParams": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "global.WebSocket": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WebSocketAcceptOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WebSocketEventMap": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WebSocketRequestResponsePair": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.Workflow": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.Workflow.create": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.Workflow.createBatch": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.Workflow.deleteBatch": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.Workflow.get": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowBatchDeleteResult": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowBatchDeleteResult.deleted": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowBatchDeleteResult.errors": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowDurationLabel": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.WorkflowDurationLabel.day": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.WorkflowDurationLabel.hour": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.WorkflowDurationLabel.minute": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.WorkflowDurationLabel.month": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.WorkflowDurationLabel.second": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.WorkflowDurationLabel.week": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.WorkflowDurationLabel.year": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.WorkflowError": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.WorkflowError.code": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.WorkflowError.message": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstance": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstance.delete": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstance.id": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstance.pause": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstance.restart": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstance.resume": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstance.sendEvent": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstance.status": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstance.subscribe": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstance.terminate": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceCreateOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceCreateOptions.id": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceCreateOptions.locationHint": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceCreateOptions.params": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceCreateOptions.retention": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceEvent": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceEventType": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceLocationHint": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceLocationHint.afr": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceLocationHint.apac": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceLocationHint.apac-ne": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceLocationHint.apac-se": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceLocationHint.eeur": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceLocationHint.enam": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceLocationHint.me": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceLocationHint.oc": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceLocationHint.sam": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceLocationHint.weur": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceLocationHint.wnam": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceRestartOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceRestartOptions.from": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceSubscribeOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceSubscribeOptions.cursor": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceSubscribeOptions.filter": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceSubscription": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceSubscription.next": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceTerminateOptions": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowInstanceTerminateOptions.rollback": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WorkflowRetentionDuration": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.WorkflowSleepDuration": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.WorkflowSleepDuration.variant-0": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.WorkflowSleepDuration.variant-1": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "global.WritableStream": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WritableStreamDefaultController": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "global.WritableStreamDefaultWriter": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "semantic.at-least-once-effects": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "semantic.durable-sleep": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "semantic.event-buffering": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "semantic.hosted-only-constraints": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "semantic.pause-boundary": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "semantic.promise-race-replay": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "semantic.replay-semantics": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "semantic.rest-api-surface": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "semantic.restart-behavior": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "semantic.retention-defaults": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "semantic.retry-semantics": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "semantic.scheduled-execution": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "semantic.serialization-contract": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "semantic.subscription-semantics": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "semantic.timeout-semantics": {
+      "profile": "workflows-core",
+      "target": "in-scope"
+    },
+    "wrangler.compatibility_date": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.compatibility_flags": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.d1_databases": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "wrangler.d1_databases.binding": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "wrangler.d1_databases.database_id": {
+      "profile": "binding-adapters",
+      "target": "excluded",
+      "exclusionReason": "D1 cloud provisioning/migration metadata has no local adapter meaning"
+    },
+    "wrangler.d1_databases.database_internal_env": {
+      "profile": "binding-adapters",
+      "target": "excluded",
+      "exclusionReason": "D1 cloud provisioning/migration metadata has no local adapter meaning"
+    },
+    "wrangler.d1_databases.database_name": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "wrangler.d1_databases.migrations_dir": {
+      "profile": "binding-adapters",
+      "target": "excluded",
+      "exclusionReason": "D1 cloud provisioning/migration metadata has no local adapter meaning"
+    },
+    "wrangler.d1_databases.migrations_pattern": {
+      "profile": "binding-adapters",
+      "target": "excluded",
+      "exclusionReason": "D1 cloud provisioning/migration metadata has no local adapter meaning"
+    },
+    "wrangler.d1_databases.migrations_table": {
+      "profile": "binding-adapters",
+      "target": "excluded",
+      "exclusionReason": "D1 cloud provisioning/migration metadata has no local adapter meaning"
+    },
+    "wrangler.d1_databases.preview_database_id": {
+      "profile": "binding-adapters",
+      "target": "excluded",
+      "exclusionReason": "D1 cloud provisioning/migration metadata has no local adapter meaning"
+    },
+    "wrangler.d1_databases.remote": {
+      "profile": "binding-adapters",
+      "target": "excluded",
+      "exclusionReason": "D1 cloud provisioning/migration metadata has no local adapter meaning"
+    },
+    "wrangler.env": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.access": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.access.dev": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.account_id": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.agent_memory": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.agent_memory.binding": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.agent_memory.namespace": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.agent_memory.remote": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.ai": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.ai_search": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.ai_search_namespaces": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.ai_search_namespaces.binding": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.ai_search_namespaces.namespace": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.ai_search_namespaces.remote": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.ai_search.binding": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.ai_search.instance_name": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.ai_search.remote": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.ai.binding": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.ai.remote": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.ai.staging": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.analytics_engine_datasets": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.analytics_engine_datasets.binding": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.analytics_engine_datasets.dataset": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.artifacts": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.artifacts.binding": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.artifacts.namespace": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.artifacts.remote": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.assets": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.assets.binding": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.assets.directory": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.assets.html_handling": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.assets.not_found_handling": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.assets.run_worker_first": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.base_dir": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.browser": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.browser.binding": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.browser.remote": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.build": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.build.command": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.build.cwd": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.build.watch_dir": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.cache": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.cache.cross_version_cache": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.cache.enabled": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.cloudchamber": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.cloudchamber.image": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.cloudchamber.instance_type": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.cloudchamber.ipv4": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.cloudchamber.location": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.cloudchamber.memory": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.cloudchamber.vcpu": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.compatibility_date": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.compatibility_flags": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.compliance_region": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.connect": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.containers": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.containers.authorized_keys": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.containers.class_name": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.containers.constraints": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.containers.image": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.containers.image_build_context": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.containers.image_vars": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.containers.images": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.containers.instance_type": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.containers.max_instances": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.containers.name": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.containers.observability": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.containers.rollout_active_grace_period": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.containers.rollout_step_percentage": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.containers.scheduling_policy": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.containers.ssh": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.containers.trusted_user_ca_keys": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.d1_databases": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.d1_databases.binding": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.d1_databases.database_id": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "D1 cloud provisioning/migration metadata has no local adapter meaning"
+    },
+    "wrangler.env.d1_databases.database_internal_env": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "D1 cloud provisioning/migration metadata has no local adapter meaning"
+    },
+    "wrangler.env.d1_databases.database_name": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.d1_databases.migrations_dir": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "D1 cloud provisioning/migration metadata has no local adapter meaning"
+    },
+    "wrangler.env.d1_databases.migrations_pattern": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "D1 cloud provisioning/migration metadata has no local adapter meaning"
+    },
+    "wrangler.env.d1_databases.migrations_table": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "D1 cloud provisioning/migration metadata has no local adapter meaning"
+    },
+    "wrangler.env.d1_databases.preview_database_id": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "D1 cloud provisioning/migration metadata has no local adapter meaning"
+    },
+    "wrangler.env.d1_databases.remote": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "D1 cloud provisioning/migration metadata has no local adapter meaning"
+    },
+    "wrangler.env.define": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.dispatch_namespaces": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.dispatch_namespaces.binding": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.dispatch_namespaces.namespace": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.dispatch_namespaces.outbound": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.dispatch_namespaces.remote": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.durable_objects": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.durable_objects.bindings": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.durable_objects.code_update_strategy": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.exports": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.find_additional_modules": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.first_party_worker": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.flagship": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.flagship.app_id": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.flagship.binding": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.flagship.remote": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.hyperdrive": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.hyperdrive.binding": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.hyperdrive.id": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.hyperdrive.localConnectionString": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.images": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.images.binding": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.images.remote": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.jsx_factory": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.jsx_fragment": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.keep_names": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.kv_namespaces": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.kv_namespaces.binding": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.kv_namespaces.id": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "cloud-side KV binding identity/remote mode has no local adapter meaning"
+    },
+    "wrangler.env.kv_namespaces.preview_id": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "cloud-side KV binding identity/remote mode has no local adapter meaning"
+    },
+    "wrangler.env.kv_namespaces.remote": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "cloud-side KV binding identity/remote mode has no local adapter meaning"
+    },
+    "wrangler.env.limits": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.limits.cpu_ms": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.limits.subrequests": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.logfwdr": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.logfwdr.bindings": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.logpush": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.main": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.media": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.media.binding": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.media.remote": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.migrations": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.migrations.deleted_classes": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.migrations.new_classes": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.migrations.new_sqlite_classes": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.migrations.renamed_classes": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.migrations.tag": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.migrations.transferred_classes": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.minify": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.mtls_certificates": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.mtls_certificates.binding": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.mtls_certificates.certificate_id": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.mtls_certificates.remote": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.name": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.no_bundle": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.observability": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.observability.enabled": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.observability.head_sampling_rate": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.observability.issues": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.observability.logs": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.observability.redact_query_string": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.observability.traces": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.pipelines": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.pipelines.binding": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.pipelines.pipeline": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.pipelines.remote": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.pipelines.stream": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.placement": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.preserve_file_names": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.preview_urls": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.agent_memory": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.ai": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.ai_search": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.ai_search_namespaces": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.analytics_engine_datasets": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.artifacts": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.browser": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.cache": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.cloudchamber": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.connect": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.containers": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.d1_databases": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.define": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.dispatch_namespaces": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.durable_objects": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.flagship": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.hyperdrive": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.images": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.kv_namespaces": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.limits": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.logpush": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.media": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.mtls_certificates": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.observability": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.pipelines": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.placement": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.queues": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.r2_buckets": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.ratelimits": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.secrets": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.secrets_store_secrets": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.send_email": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.services": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.stream": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.streaming_tail_consumers": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.tail_consumers": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.unsafe": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.unsafe_hello_world": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.vars": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.vectorize": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.version_metadata": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.vpc_networks": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.vpc_services": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.worker_loaders": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.previews.workflows": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.python_modules": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.python_modules.exclude": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.queues": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.queues.consumers": {
+      "profile": "workflow-host",
+      "target": "in-scope",
+      "unsupportedReason": "consumer tuning is not implemented by the local queue adapter (loopback delivery)"
+    },
+    "wrangler.env.queues.producers": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.r2_buckets": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.r2_buckets.binding": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.r2_buckets.bucket_name": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.r2_buckets.jurisdiction": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "R2 jurisdiction/local-dev/preview/cloud-remote options have no local adapter meaning"
+    },
+    "wrangler.env.r2_buckets.local_dev": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "R2 jurisdiction/local-dev/preview/cloud-remote options have no local adapter meaning"
+    },
+    "wrangler.env.r2_buckets.preview_bucket_name": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "R2 jurisdiction/local-dev/preview/cloud-remote options have no local adapter meaning"
+    },
+    "wrangler.env.r2_buckets.remote": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "R2 jurisdiction/local-dev/preview/cloud-remote options have no local adapter meaning"
+    },
+    "wrangler.env.ratelimits": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.ratelimits.name": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.ratelimits.namespace_id": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.ratelimits.simple": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.route": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.routes": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.rules": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.rules.fallthrough": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.rules.globs": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.rules.type": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.secrets": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.secrets_store_secrets": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.secrets_store_secrets.binding": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.secrets_store_secrets.secret_name": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.secrets_store_secrets.store_id": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.secrets.required": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.send_email": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.send_email.allowed_destination_addresses": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.send_email.allowed_sender_addresses": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.send_email.destination_address": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.send_email.name": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.send_email.remote": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.services": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.services.binding": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.services.entrypoint": {
+      "profile": "workflow-host",
+      "target": "in-scope",
+      "unsupportedReason": "entrypoint/props selection is not honored by the local service-binding adapter"
+    },
+    "wrangler.env.services.props": {
+      "profile": "workflow-host",
+      "target": "in-scope",
+      "unsupportedReason": "entrypoint/props selection is not honored by the local service-binding adapter"
+    },
+    "wrangler.env.services.remote": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "cloud remote-mode binding has no local adapter meaning"
+    },
+    "wrangler.env.services.service": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.stream": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.stream.binding": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.stream.remote": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.streaming_tail_consumers": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.streaming_tail_consumers.service": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.tail_consumers": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.tail_consumers.environment": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.tail_consumers.service": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.triggers": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.triggers.crons": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.triggers.events": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.tsconfig": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.unsafe": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.unsafe_hello_world": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.unsafe_hello_world.binding": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.unsafe_hello_world.enable_timer": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.unsafe.bindings": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.unsafe.capnp": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.unsafe.metadata": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.upload_source_maps": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.vars": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.vectorize": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.vectorize.binding": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.vectorize.index_name": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.vectorize.remote": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.version_metadata": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.version_metadata.binding": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.vpc_networks": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.vpc_services": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.vpc_services.binding": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.vpc_services.remote": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.vpc_services.service_id": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.worker_loaders": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.worker_loaders.binding": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.workers_dev": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "per-environment override of a platform feature outside workflows.mbt scope"
+    },
+    "wrangler.env.workflows": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.workflows.binding": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.workflows.class_name": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.workflows.concurrency": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.workflows.default_retention": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.workflows.limits": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.workflows.name": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.workflows.schedules": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.env.workflows.script_name": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.kv_namespaces": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "wrangler.kv_namespaces.binding": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "wrangler.kv_namespaces.id": {
+      "profile": "binding-adapters",
+      "target": "excluded",
+      "exclusionReason": "cloud-side KV binding identity/remote mode has no local adapter meaning"
+    },
+    "wrangler.kv_namespaces.preview_id": {
+      "profile": "binding-adapters",
+      "target": "excluded",
+      "exclusionReason": "cloud-side KV binding identity/remote mode has no local adapter meaning"
+    },
+    "wrangler.kv_namespaces.remote": {
+      "profile": "binding-adapters",
+      "target": "excluded",
+      "exclusionReason": "cloud-side KV binding identity/remote mode has no local adapter meaning"
+    },
+    "wrangler.main": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.name": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.queues": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "wrangler.queues.consumers": {
+      "profile": "binding-adapters",
+      "target": "in-scope",
+      "unsupportedReason": "consumer tuning is not implemented by the local queue adapter (loopback delivery)"
+    },
+    "wrangler.queues.consumers.dead_letter_queue": {
+      "profile": "binding-adapters",
+      "target": "in-scope",
+      "unsupportedReason": "consumer tuning is not implemented by the local queue adapter (loopback delivery)"
+    },
+    "wrangler.queues.consumers.max_batch_size": {
+      "profile": "binding-adapters",
+      "target": "in-scope",
+      "unsupportedReason": "consumer tuning is not implemented by the local queue adapter (loopback delivery)"
+    },
+    "wrangler.queues.consumers.max_batch_timeout": {
+      "profile": "binding-adapters",
+      "target": "in-scope",
+      "unsupportedReason": "consumer tuning is not implemented by the local queue adapter (loopback delivery)"
+    },
+    "wrangler.queues.consumers.max_concurrency": {
+      "profile": "binding-adapters",
+      "target": "in-scope",
+      "unsupportedReason": "consumer tuning is not implemented by the local queue adapter (loopback delivery)"
+    },
+    "wrangler.queues.consumers.max_retries": {
+      "profile": "binding-adapters",
+      "target": "in-scope",
+      "unsupportedReason": "consumer tuning is not implemented by the local queue adapter (loopback delivery)"
+    },
+    "wrangler.queues.consumers.queue": {
+      "profile": "binding-adapters",
+      "target": "in-scope",
+      "unsupportedReason": "consumer tuning is not implemented by the local queue adapter (loopback delivery)"
+    },
+    "wrangler.queues.consumers.retry_delay": {
+      "profile": "binding-adapters",
+      "target": "in-scope",
+      "unsupportedReason": "consumer tuning is not implemented by the local queue adapter (loopback delivery)"
+    },
+    "wrangler.queues.consumers.type": {
+      "profile": "binding-adapters",
+      "target": "in-scope",
+      "unsupportedReason": "consumer tuning is not implemented by the local queue adapter (loopback delivery)"
+    },
+    "wrangler.queues.consumers.visibility_timeout_ms": {
+      "profile": "binding-adapters",
+      "target": "in-scope",
+      "unsupportedReason": "consumer tuning is not implemented by the local queue adapter (loopback delivery)"
+    },
+    "wrangler.queues.producers": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "wrangler.queues.producers.binding": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "wrangler.queues.producers.delivery_delay": {
+      "profile": "binding-adapters",
+      "target": "in-scope",
+      "unsupportedReason": "delivery_delay is not honored by the local queue adapter (immediate delivery)"
+    },
+    "wrangler.queues.producers.queue": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "wrangler.queues.producers.remote": {
+      "profile": "binding-adapters",
+      "target": "excluded",
+      "exclusionReason": "cloud remote-mode binding has no local adapter meaning"
+    },
+    "wrangler.r2_buckets": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "wrangler.r2_buckets.binding": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "wrangler.r2_buckets.bucket_name": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "wrangler.r2_buckets.jurisdiction": {
+      "profile": "binding-adapters",
+      "target": "excluded",
+      "exclusionReason": "R2 jurisdiction/local-dev/preview/cloud-remote options have no local adapter meaning"
+    },
+    "wrangler.r2_buckets.local_dev": {
+      "profile": "binding-adapters",
+      "target": "excluded",
+      "exclusionReason": "R2 jurisdiction/local-dev/preview/cloud-remote options have no local adapter meaning"
+    },
+    "wrangler.r2_buckets.local_dev.experimental_s3_credentials": {
+      "profile": "binding-adapters",
+      "target": "excluded",
+      "exclusionReason": "R2 jurisdiction/local-dev/preview/cloud-remote options have no local adapter meaning"
+    },
+    "wrangler.r2_buckets.preview_bucket_name": {
+      "profile": "binding-adapters",
+      "target": "excluded",
+      "exclusionReason": "R2 jurisdiction/local-dev/preview/cloud-remote options have no local adapter meaning"
+    },
+    "wrangler.r2_buckets.remote": {
+      "profile": "binding-adapters",
+      "target": "excluded",
+      "exclusionReason": "R2 jurisdiction/local-dev/preview/cloud-remote options have no local adapter meaning"
+    },
+    "wrangler.secrets": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.secrets.required": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.services": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "wrangler.services.binding": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "wrangler.services.entrypoint": {
+      "profile": "binding-adapters",
+      "target": "in-scope",
+      "unsupportedReason": "entrypoint/props selection is not honored by the local service-binding adapter"
+    },
+    "wrangler.services.props": {
+      "profile": "binding-adapters",
+      "target": "in-scope",
+      "unsupportedReason": "entrypoint/props selection is not honored by the local service-binding adapter"
+    },
+    "wrangler.services.remote": {
+      "profile": "binding-adapters",
+      "target": "excluded",
+      "exclusionReason": "cloud remote-mode binding has no local adapter meaning"
+    },
+    "wrangler.services.service": {
+      "profile": "binding-adapters",
+      "target": "in-scope"
+    },
+    "wrangler.triggers": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "Worker cron/event triggers are outside workflows.mbt scope; workflow schedules live under workflows[].schedules"
+    },
+    "wrangler.triggers.crons": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "Worker cron/event triggers are outside workflows.mbt scope; workflow schedules live under workflows[].schedules"
+    },
+    "wrangler.triggers.events": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "Worker cron/event triggers are outside workflows.mbt scope; workflow schedules live under workflows[].schedules"
+    },
+    "wrangler.triggers.events.filter": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "Worker cron/event triggers are outside workflows.mbt scope; workflow schedules live under workflows[].schedules"
+    },
+    "wrangler.triggers.events.targets": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "Worker cron/event triggers are outside workflows.mbt scope; workflow schedules live under workflows[].schedules"
+    },
+    "wrangler.triggers.events.type": {
+      "profile": "workflow-host",
+      "target": "excluded",
+      "exclusionReason": "Worker cron/event triggers are outside workflows.mbt scope; workflow schedules live under workflows[].schedules"
+    },
+    "wrangler.vars": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.workflows": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.workflows.binding": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.workflows.class_name": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.workflows.concurrency": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.workflows.concurrency.limit": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.workflows.default_retention": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.workflows.default_retention.error_retention": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.workflows.default_retention.success_retention": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.workflows.limits": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.workflows.limits.steps": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.workflows.name": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.workflows.schedules": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    },
+    "wrangler.workflows.script_name": {
+      "profile": "workflow-host",
+      "target": "in-scope"
+    }
+  }
+}

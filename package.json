@@ -42,7 +42,7 @@
     "test:host": "node --test tests/host.test.mjs",
     "test:storage": "node --test tests/storage.test.mjs",
     "test:e2e": "node --test tests/e2e.test.mjs",
-    "test": "npm run check:moon && npm run build:core && npm run test:moon && npm run test:host && npm run test:storage && npm run test:compat && npm run test:upstream-ops && npm run test:e2e",
+    "test": "npm run check:moon && npm run build:core && npm run test:moon && npm run test:host && npm run test:storage && npm run test:compat && npm run test:upstream-ops && npm run test:inventory && npm run test:e2e",
     "test:consumer": "node scripts/consumer-smoke.mjs",
     "compat:typecheck": "tsc -p compat/typecheck/tsconfig.json",
     "compat:pinned": "npm run compat:typecheck && node compat/oracle/check.mjs --mode pinned && node compat/run-differential.mjs --oracle pinned && node compat/check-capabilities.mjs --require-pinned",
@@ -54,7 +54,9 @@
     "prepack": "node scripts/prepare-pack.mjs",
     "postpack": "node scripts/prepare-pack.mjs --cleanup",
     "test:scenario": "node scripts/consumer-scenario.mjs",
-    "test:upstream-ops": "node --test tests/upstream-ops.test.mjs"
+    "test:upstream-ops": "node --test tests/upstream-ops.test.mjs",
+    "test:inventory": "node --test tests/coverage-inventory.test.mjs",
+    "check:inventory": "node compat/check-inventory.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.1",

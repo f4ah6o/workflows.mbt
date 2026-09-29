@@ -1,0 +1,97 @@
+{
+  "formatVersion": 1,
+  "notes": "Human-authored semantic inventory (issue §2 'Semantic inventory'): behavior the API shape alone cannot express — durable/replay/ordering semantics and documented constraints. Stable IDs are semantic.<slug>. Items here are registered by hand; docs changes emit investigation_required via docs-watch and never auto-edit this file.",
+  "source": "semantic",
+  "items": [
+    {
+      "id": "semantic.replay-semantics",
+      "title": "Completed steps replay their recorded result without re-executing the callback",
+      "source": "semantic",
+      "kind": "semantic"
+    },
+    {
+      "id": "semantic.retry-semantics",
+      "title": "Failed steps retry per retries.limit/delay/backoff before terminal failure",
+      "source": "semantic",
+      "kind": "semantic"
+    },
+    {
+      "id": "semantic.timeout-semantics",
+      "title": "Step and waitForEvent timeouts fail with the documented error shapes",
+      "source": "semantic",
+      "kind": "semantic"
+    },
+    {
+      "id": "semantic.durable-sleep",
+      "title": "step.sleep/sleepUntil timers persist across process restarts",
+      "source": "semantic",
+      "kind": "semantic"
+    },
+    {
+      "id": "semantic.event-buffering",
+      "title": "Events sent while an instance is not waiting are buffered for the next waitForEvent",
+      "source": "semantic",
+      "kind": "semantic"
+    },
+    {
+      "id": "semantic.pause-boundary",
+      "title": "pause() drains to a pause boundary instead of aborting mid-step",
+      "source": "semantic",
+      "kind": "semantic"
+    },
+    {
+      "id": "semantic.restart-behavior",
+      "title": "restart({from}) re-executes from the named step with prior history preserved",
+      "source": "semantic",
+      "kind": "semantic"
+    },
+    {
+      "id": "semantic.at-least-once-effects",
+      "title": "External side effects in steps are at-least-once: a crash after the effect but before commit may re-run it",
+      "source": "semantic",
+      "kind": "semantic"
+    },
+    {
+      "id": "semantic.promise-race-replay",
+      "title": "Promise.race losers are not re-executed after replay; documented replay limitation for race semantics",
+      "source": "semantic",
+      "kind": "semantic"
+    },
+    {
+      "id": "semantic.retention-defaults",
+      "title": "Instance retention follows default_retention / per-instance overrides; absent a plan context the default differs from hosted",
+      "source": "semantic",
+      "kind": "semantic"
+    },
+    {
+      "id": "semantic.subscription-semantics",
+      "title": "Subscriptions stream WorkflowInstanceEvent with filters and cursor resume semantics",
+      "source": "semantic",
+      "kind": "semantic"
+    },
+    {
+      "id": "semantic.scheduled-execution",
+      "title": "workflows[].schedules cron entries fire the workflow with schedule metadata",
+      "source": "semantic",
+      "kind": "semantic"
+    },
+    {
+      "id": "semantic.serialization-contract",
+      "title": "Step inputs/outputs persist through the runtime's serialization contract (structured-clone-compatible values)",
+      "source": "semantic",
+      "kind": "semantic"
+    },
+    {
+      "id": "semantic.rest-api-surface",
+      "title": "Workflow instance operations are also reachable over the hosted Workers REST API surface",
+      "source": "semantic",
+      "kind": "semantic"
+    },
+    {
+      "id": "semantic.hosted-only-constraints",
+      "title": "Behaviors only observable on hosted Cloudflare (account plan retention, hosted-only error classes) cannot be verified by local oracles",
+      "source": "semantic",
+      "kind": "semantic"
+    }
+  ]
+}

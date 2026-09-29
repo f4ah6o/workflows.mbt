@@ -976,3 +976,117 @@ backfill する。新方式導入だけで既存 coverage をゼロから書き�
   coverage を上げる目的の変換は validator/gate が検出する。
 - COMPATIBILITY.md の checkbox は人間向け説明として維持し、coverage 数値の
   source of truth は coverage.json に移す
+
+## 進捗記録
+
+### 2026-09-29 — Phase 1–3 実装完了 (Task C)
+
+Phase 1–3 を実装した。Phase 4–7 は本 Issue を引き継ぐ後続 session が
+`origin/main` 上で実施する。
+
+**Phase 1 — foundation**
+
+- `compat/coverage-model.mjs`: profile taxonomy + lifecycle
+  (active/deferred) を discovery spec から読む単一 import 面、
+  oracle-specific coverage state (VERIFIED/DIVERGENT/UNSUPPORTED/UNTESTED/
+  BLOCKED/STALE)、first-match reduction (`reduceProbeVerdicts` /
+  `reduceRequirementStates`)、dependencyGraph hash を含む candidate
+  identity (candidate.id は graph を含まないため coverage 側で再計算)、
+  relevant-input hash bundle (`computeRelevantInputs`)、run-result
+  fingerprint schema (`buildResultFingerprint`、commit は provenance のみ)、
+  freshness 等価判定 (`evidenceIsStale` — commit 差だけでは STALE にしない)。
+
+**Phase 2 — discovery + inventory extraction**
+
+- `compat/inventory/discovery-roots.json`: 4 profile
+  (workflows-core / workflow-host / binding-adapters = active、
+  workers-platform = deferred) の discovery boundary
+  (workers-types container root + wrangler schema root)。
+- `compat/inventory/extract.mjs`: candidate の
+  `@cloudflare/workers-types` を TypeScript AST で、wrangler
+  `config-schema.json` を $ref 解決 walk で走査。stable ID 採番、
+  fnv1a contract fingerprint + membersHash、member closure +
+  transitive reference closure (`via` attribution)、profile root の
+  overlap / unmatched は fail、deferred profile は unmatched +
+  unreferenced を引き取る。`--baseline` で committed baseline 生成、
+  `--types/--schema` で fixture 対応。
+- committed baselines: `upstream-api.json` (461 items + 932 deferred)、
+  `upstream-config.json` (353 items)、`semantic.json` (15 items、
+  durable/replay/ordering semantics + documented constraints)。
+- `compat/check-inventory.mjs`: resolved inventory (baseline ⋈
+  classification on stable ID) の validator。classification coverage =
+  100%、unclassified / stale classification / contract 欠損を検出。
+  `--verify` で candidate から再抽出し committed baseline と
+  added/changed/removed で diff (undetected chain 検出)。
+
+**Phase 3 — classification + chain mapping**
+
+- `compat/inventory/classification.json`: 829 行、100% classified。
+  profile と target (in-scope/excluded + exclusionReason) + 任意
+  unsupportedReason を stable ID keyed で持つ。Backfill 方針どおり、
+  cloud provisioning / remote-mode の config key は excluded、local
+  adapter 未実装の member/config key は in-scope + unsupportedReason。
+- `compat/capabilities.json` formatVersion 2: 38 capability に
+  profile + upstream refs (symbols + semantic IDs) + requirements を付与。
+  requirement は top-level registry (`req.<profile>.<area>.<name>`) で
+  一次定義し capability は ID 参照。旧 `evidence` block は
+  `declaredSupport` に改名し declared (legacy-unverified) として保持 —
+  fabrication した provenance ではなく、VERIFIED 判定には使われない。
+  `intentionally_unsupported` 行 (serialization.durable-values) は
+  `unsupported: {reason}` 付きで denominator に残る。
+- `compat/check-capabilities.mjs` 拡張: formatVersion 2 検証、
+  capability ↔ requirement ↔ probe の chain 整合 (requiredProbes の
+  union が row.probes と一致)、upstream ref の存在 + classified
+  profile と capability profile の一致、requirement scope derivation
+  (refs なし → explicit target 必須、contradictory target は fail、
+  derived excluded + requiredProbes は fail)、oracle-specific
+  result を evidence として読み requirement state を導出 →
+  `compat-results/capability-check.json`。in-scope 未参照 item は
+  coverage gap として report (現時点 505 件 — binding-adapters 系を
+  主とする discovery backlog、non-fatal)。
+- `compat/report.mjs`: validator (check-capabilities) の exit status を
+  伝播 — validator 失敗で正常 report を出さない。
+
+**決定事項 / 既知の deviation**
+
+- baseline item は machine field として `matchedBy` (一致した profile
+  root) と `via` (referrer ID 列) の抽出 provenance を持つ。canonical
+  profile は `classification.json` だけが持つ (field ownership 分離は
+  維持、baseline 側はあくまで機械属性)。
+- capability の `upstream` refs は同 profile の item に限定する
+  (validator が強制)。profile を跨ぐ behavioral claim は同 profile の
+  semantic anchor 経由で表す (例: subscribe.sensitive-redaction は
+  `cloudflare:workers.WorkflowStepConfig.sensitive` に anchor)。
+- `wrangler.env.*` の per-env override は、in-scope family
+  (workflows / bindings / vars / compat 系) のみ in-scope、その他は
+  excluded ("platform feature outside scope")。
+- `WORKFLOWS_MBT_INVENTORY_DIR` / `WORKFLOWS_MBT_CAPABILITIES` の env
+  override を validator に追加 (hermetic test 用)。
+- coverage gap 検出は現 phase では non-fatal (adapter / host surface の
+  capability 未整備は既知の backlog)。hard-fail は ledger 破壊系のみ。
+
+**検証**
+
+- `npm run test` (moon check + build:core + moon test + host + storage +
+  compat + upstream-ops + inventory + e2e): 全 pass。
+- `npm run compat:pinned`: typecheck + pinned oracle + differential
+  (32 probes) + check-capabilities --require-pinned: pass。
+- `npm run compat:latest`: run-latest 全 phase exit 0、verdict
+  "compatible"、check-capabilities --require-latest: pass。
+- hermetic tests `tests/coverage-inventory.test.mjs` (13 cases):
+  reduction / fingerprint freshness / fixture extraction (stable ID・
+  member・reference closure・deferred・overlap reject) /
+  check-inventory committed + --verify drift + unclassified /
+  check-capabilities chain violations。
+- CI wiring: `check:inventory` step を PR-level checks に追加
+  (credential-free)、`test:inventory` を `npm test` chain に追加。
+
+**残件 (Phase 4–7)**
+
+- Phase 4: run result fingerprint 記録 (run-differential / run-latest 拡張)、
+  stale detection、lastVerifiedEvidence / currentRunStatus 書き込み
+- Phase 5: `compat/coverage.mjs` → coverage.json、coverage-baseline.json、
+  report.mjs per-profile table、INVALID/non-zero 伝播
+- Phase 6: CI wiring (PR coverage gate、daily extract/compare、
+  hosted final report)
+- Phase 7: docs + maintenance 手順

@@ -93,6 +93,13 @@ jobs:
       - name: Clean-consumer practical scenario
         run: npm run test:scenario
 
+      # Credential-free inventory + capability chain validation (issue
+      # 20260929 PR phase): resolved inventory ⋈ classification coverage,
+      # and the capabilities ↔ requirements ↔ probes chain inside
+      # compat:pinned.
+      - name: Inventory validation
+        run: npm run check:inventory
+
       - name: Pinned Cloudflare compatibility oracle
         run: npm run compat:pinned
 

@@ -1,6 +1,6 @@
 {
-  "formatVersion": 1,
-  "notes": "Machine-readable compatibility matrix. Evidence flags are verified by compat/check-capabilities.mjs: a differential flag may only be set when the corresponding compat-results run covered every probe mapped to the row and reported no difference. repository_tested is a declared flag for repository regression/E2E coverage (tests/); it is not upstream evidence. intentionally_unsupported rows record documented, accepted differences.",
+  "formatVersion": 2,
+  "notes": "Canonical coverage ledger (issue 20260929 §3). Each capability declares its owning profile, upstream refs (stable inventory IDs — machine-verified against compat/inventory/*), and requirements — the canonical counting unit, defined once in requirements[] and referenced by ID. declaredSupport is the legacy declared-evidence block (implemented/repository_tested/*_differential flags): declared, legacy-unverified, and never feeds VERIFIED coverage — verification comes from current-run/lastVerifiedEvidence per §7.",
   "categories": [
     "lifecycle",
     "binding",
@@ -13,278 +13,1486 @@
     "durability",
     "rest"
   ],
+  "profiles": [
+    "workflows-core",
+    "workflow-host",
+    "binding-adapters"
+  ],
+  "requirements": [
+    {
+      "id": "req.workflows-core.step.do",
+      "title": "step.do executes a durable named step",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStep.do"
+      ],
+      "requiredProbes": [
+        "basic"
+      ]
+    },
+    {
+      "id": "req.workflows-core.step.retry",
+      "title": "step retries with limit, delay and backoff",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStep.do",
+        "cloudflare:workers.WorkflowStepConfig.retries",
+        "semantic.retry-semantics"
+      ],
+      "requiredProbes": [
+        "retry"
+      ]
+    },
+    {
+      "id": "req.workflows-core.step.sleep",
+      "title": "step.sleep relative timer",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStep.sleep",
+        "semantic.durable-sleep"
+      ],
+      "requiredProbes": [
+        "sleep"
+      ]
+    },
+    {
+      "id": "req.workflows-core.step.sleep-until",
+      "title": "step.sleepUntil absolute timer",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStep.sleepUntil",
+        "semantic.durable-sleep"
+      ],
+      "requiredProbes": [
+        "sleep-until"
+      ]
+    },
+    {
+      "id": "req.workflows-core.step.wait-for-event",
+      "title": "step.waitForEvent delivers sendEvent payloads",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStep.waitForEvent",
+        "semantic.event-buffering"
+      ],
+      "requiredProbes": [
+        "wait-for-event"
+      ]
+    },
+    {
+      "id": "req.workflows-core.step.wait-timeout",
+      "title": "waitForEvent timeout rejects with Execution timed out error",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStep.waitForEvent",
+        "cloudflare:workers.WorkflowStepConfig.timeout",
+        "semantic.timeout-semantics"
+      ],
+      "requiredProbes": [
+        "wait-timeout"
+      ]
+    },
+    {
+      "id": "req.workflows-core.step.non-retryable-error",
+      "title": "NonRetryableError fails the instance immediately (WorkflowFatalError event surface)",
+      "upstreamRefs": [
+        "cloudflare:workflows.NonRetryableError"
+      ],
+      "requiredProbes": [
+        "nonretryable"
+      ]
+    },
+    {
+      "id": "req.workflows-core.step.identity",
+      "title": "repeated step names get counted identities (name-1, name-2)",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStep.do",
+        "semantic.replay-semantics"
+      ],
+      "requiredProbes": [
+        "duplicate-names"
+      ]
+    },
+    {
+      "id": "req.workflows-core.step.context",
+      "title": "step callback ctx.step/ctx.attempt/ctx.config surface",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStepContext"
+      ],
+      "requiredProbes": [
+        "step-context"
+      ]
+    },
+    {
+      "id": "req.workflows-core.step.dynamic-delay",
+      "title": "retries.delay callback; function leaf absent from ctx.config",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowDynamicDelayContext",
+        "cloudflare:workers.WorkflowDelayFunction"
+      ],
+      "requiredProbes": [
+        "dynamic-delay"
+      ]
+    },
+    {
+      "id": "req.workflows-core.promise.all",
+      "title": "Promise.all over durable steps",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStep.do",
+        "semantic.replay-semantics"
+      ],
+      "requiredProbes": [
+        "promise-all"
+      ]
+    },
+    {
+      "id": "req.workflows-core.promise.allsettled",
+      "title": "Promise.allSettled over durable steps",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStep.do",
+        "semantic.replay-semantics"
+      ],
+      "requiredProbes": [
+        "promise-allsettled"
+      ]
+    },
+    {
+      "id": "req.workflows-core.promise.race",
+      "title": "Promise.race winner/loser durable behavior",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStep.do",
+        "semantic.replay-semantics",
+        "semantic.promise-race-replay"
+      ],
+      "requiredProbes": [
+        "promise-race"
+      ]
+    },
+    {
+      "id": "req.workflows-core.promise.any",
+      "title": "Promise.any resolution",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStep.do",
+        "semantic.replay-semantics"
+      ],
+      "requiredProbes": [
+        "promise-any"
+      ]
+    },
+    {
+      "id": "req.workflows-core.promise.concurrent-retry",
+      "title": "retry inside one concurrent branch",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStep.do",
+        "semantic.replay-semantics"
+      ],
+      "requiredProbes": [
+        "retry-in-branch"
+      ]
+    },
+    {
+      "id": "req.workflows-core.promise.wrapped-race",
+      "title": "wrapped durable race winner behavior",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStep.do",
+        "semantic.replay-semantics",
+        "semantic.promise-race-replay"
+      ],
+      "requiredProbes": [
+        "wrapped-race"
+      ]
+    },
+    {
+      "id": "req.workflows-core.promise.mixed-durable-event",
+      "title": "durable operation mixed with event wait",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStep.do",
+        "semantic.replay-semantics",
+        "semantic.promise-race-replay"
+      ],
+      "requiredProbes": [
+        "durable-with-event"
+      ]
+    },
+    {
+      "id": "req.workflows-core.rollback.auto",
+      "title": "registered rollback handlers run on terminal failure",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStepRollbackOptions.rollback",
+        "cloudflare:workers.WorkflowStepRollbackOptions.rollbackConfig",
+        "cloudflare:workers.WorkflowRollbackContext"
+      ],
+      "requiredProbes": [
+        "rollback"
+      ]
+    },
+    {
+      "id": "req.workflow-host.lifecycle.pause-resume",
+      "title": "pause and resume an instance via binding",
+      "upstreamRefs": [
+        "global.WorkflowInstance.pause",
+        "global.WorkflowInstance.resume",
+        "global.WorkflowInstance.status",
+        "semantic.pause-boundary"
+      ],
+      "requiredProbes": [
+        "pause-resume"
+      ]
+    },
+    {
+      "id": "req.workflow-host.lifecycle.terminate-rollback",
+      "title": "terminate with rollback executes registered handlers",
+      "upstreamRefs": [
+        "global.WorkflowInstance.terminate",
+        "global.WorkflowInstanceTerminateOptions"
+      ],
+      "requiredProbes": [
+        "terminate-rollback"
+      ]
+    },
+    {
+      "id": "req.workflow-host.lifecycle.restart-from",
+      "title": "restart({from:{name}}) re-executes the named step",
+      "upstreamRefs": [
+        "global.WorkflowInstance.restart",
+        "global.WorkflowInstanceRestartOptions",
+        "semantic.restart-behavior"
+      ],
+      "requiredProbes": [
+        "restart-from"
+      ]
+    },
+    {
+      "id": "req.workflow-host.lifecycle.delete",
+      "title": "delete removes instance state; create on deleted id works",
+      "upstreamRefs": [
+        "global.WorkflowInstance.delete"
+      ],
+      "requiredProbes": [
+        "delete-instance"
+      ]
+    },
+    {
+      "id": "req.workflow-host.binding.crud",
+      "title": "binding create/get/createBatch/deleteBatch, duplicate-id error shape, missing-id code 10400",
+      "upstreamRefs": [
+        "global.Workflow.get",
+        "global.Workflow.create",
+        "global.Workflow.createBatch",
+        "global.Workflow.deleteBatch",
+        "global.WorkflowInstanceCreateOptions"
+      ],
+      "requiredProbes": [
+        "binding-crud"
+      ]
+    },
+    {
+      "id": "req.workflow-host.binding.retention",
+      "title": "per-instance retention options and Workflow default_retention",
+      "upstreamRefs": [
+        "wrangler.workflows.default_retention",
+        "global.WorkflowInstanceCreateOptions.retention",
+        "semantic.retention-defaults"
+      ],
+      "requiredProbes": []
+    },
+    {
+      "id": "req.workflow-host.subscribe.filter-cursor",
+      "title": "subscription event filters and cursor resume",
+      "upstreamRefs": [
+        "global.WorkflowInstance.subscribe",
+        "global.WorkflowInstanceSubscribeOptions",
+        "global.WorkflowInstanceSubscription",
+        "semantic.subscription-semantics"
+      ],
+      "requiredProbes": [
+        "subscribe-filter"
+      ]
+    },
+    {
+      "id": "req.workflows-core.subscribe.sensitive-redaction",
+      "title": "sensitive: 'output' redacts step output from event stream",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStepConfig.sensitive"
+      ],
+      "requiredProbes": [
+        "sensitive"
+      ]
+    },
+    {
+      "id": "req.workflows-core.serialization.structured",
+      "title": "Date, RegExp, nested structured step values round-trip",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStep.do",
+        "semantic.serialization-contract"
+      ],
+      "requiredProbes": [
+        "ser-structured"
+      ]
+    },
+    {
+      "id": "req.workflows-core.serialization.collections",
+      "title": "Map and Set step values round-trip",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStep.do",
+        "semantic.serialization-contract"
+      ],
+      "requiredProbes": [
+        "ser-collections"
+      ]
+    },
+    {
+      "id": "req.workflows-core.serialization.binary",
+      "title": "ArrayBuffer, DataView and typed-array step values round-trip",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStep.do",
+        "semantic.serialization-contract"
+      ],
+      "requiredProbes": [
+        "ser-binary"
+      ]
+    },
+    {
+      "id": "req.workflows-core.serialization.error",
+      "title": "Error step values round-trip with name/message/cause; custom own-properties dropped",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStep.do",
+        "semantic.serialization-contract"
+      ],
+      "requiredProbes": [
+        "ser-error"
+      ]
+    },
+    {
+      "id": "req.workflows-core.serialization.unsupported",
+      "title": "cyclic step output rejects with catchable TypeError",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStep.do",
+        "semantic.serialization-contract"
+      ],
+      "requiredProbes": [
+        "ser-cyclic"
+      ]
+    },
+    {
+      "id": "req.workflows-core.serialization.durable-values",
+      "title": "BigInt step output",
+      "upstreamRefs": [
+        "cloudflare:workers.WorkflowStep.do",
+        "semantic.serialization-contract"
+      ],
+      "requiredProbes": [],
+      "unsupported": {
+        "reason": "Upstream aborts the isolate on BigInt step output (uncatchable, no trace); workflows.mbt serializes bigint natively. Local behavior is a strict superset — recorded as an intentional difference."
+      }
+    },
+    {
+      "id": "req.workflow-host.worker.entrypoint-ctx",
+      "title": "WorkflowEntrypoint ctx/env surface inside run()",
+      "upstreamRefs": [
+        "global.ExecutionContext",
+        "cloudflare:workers.WorkerEntrypoint"
+      ],
+      "requiredProbes": [
+        "entrypoint-ctx"
+      ]
+    },
+    {
+      "id": "req.workflow-host.worker.http",
+      "title": "default Worker fetch binding creation through env",
+      "upstreamRefs": [
+        "global.ExportedHandler.fetch"
+      ],
+      "requiredProbes": [
+        "worker-fetch"
+      ]
+    },
+    {
+      "id": "req.workflow-host.worker.wait-until",
+      "title": "ctx.waitUntil tasks drain before runtime close",
+      "upstreamRefs": [
+        "global.ExecutionContext.waitUntil",
+        "cloudflare:workers.waitUntil"
+      ],
+      "requiredProbes": []
+    },
+    {
+      "id": "req.workflow-host.schedule.cron",
+      "title": "cron schedules fire WorkflowEntrypoint with schedule metadata",
+      "upstreamRefs": [
+        "wrangler.workflows.schedules",
+        "semantic.scheduled-execution"
+      ],
+      "requiredProbes": []
+    },
+    {
+      "id": "req.workflows-core.durability.replay-restart",
+      "title": "SIGKILL/restart replays persisted steps without re-executing",
+      "upstreamRefs": [
+        "semantic.replay-semantics",
+        "semantic.at-least-once-effects"
+      ],
+      "requiredProbes": []
+    },
+    {
+      "id": "req.workflow-host.rest.core",
+      "title": "core REST facade for instance operations",
+      "upstreamRefs": [
+        "semantic.rest-api-surface"
+      ],
+      "requiredProbes": []
+    }
+  ],
   "capabilities": [
     {
       "id": "step.do",
       "category": "step",
+      "profile": "workflows-core",
       "title": "step.do executes a durable named step",
-      "probes": ["basic"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStep.do"
+        ],
+        "semantic": []
+      },
+      "requirements": [
+        "req.workflows-core.step.do"
+      ],
+      "probes": [
+        "basic"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "step.retry",
       "category": "step",
+      "profile": "workflows-core",
       "title": "step retries with limit, delay and backoff",
-      "probes": ["retry"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStep.do",
+          "cloudflare:workers.WorkflowStepConfig.retries"
+        ],
+        "semantic": [
+          "semantic.retry-semantics"
+        ]
+      },
+      "requirements": [
+        "req.workflows-core.step.retry"
+      ],
+      "probes": [
+        "retry"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "step.sleep",
       "category": "step",
+      "profile": "workflows-core",
       "title": "step.sleep relative timer",
-      "probes": ["sleep"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStep.sleep"
+        ],
+        "semantic": [
+          "semantic.durable-sleep"
+        ]
+      },
+      "requirements": [
+        "req.workflows-core.step.sleep"
+      ],
+      "probes": [
+        "sleep"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "step.sleep-until",
       "category": "step",
+      "profile": "workflows-core",
       "title": "step.sleepUntil absolute timer",
-      "probes": ["sleep-until"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStep.sleepUntil"
+        ],
+        "semantic": [
+          "semantic.durable-sleep"
+        ]
+      },
+      "requirements": [
+        "req.workflows-core.step.sleep-until"
+      ],
+      "probes": [
+        "sleep-until"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "step.wait-for-event",
       "category": "step",
+      "profile": "workflows-core",
       "title": "step.waitForEvent delivers sendEvent payloads",
-      "probes": ["wait-for-event"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStep.waitForEvent"
+        ],
+        "semantic": [
+          "semantic.event-buffering"
+        ]
+      },
+      "requirements": [
+        "req.workflows-core.step.wait-for-event"
+      ],
+      "probes": [
+        "wait-for-event"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "step.wait-timeout",
       "category": "step",
+      "profile": "workflows-core",
       "title": "waitForEvent timeout rejects with Execution timed out error",
-      "probes": ["wait-timeout"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStep.waitForEvent",
+          "cloudflare:workers.WorkflowStepConfig.timeout"
+        ],
+        "semantic": [
+          "semantic.timeout-semantics"
+        ]
+      },
+      "requirements": [
+        "req.workflows-core.step.wait-timeout"
+      ],
+      "probes": [
+        "wait-timeout"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "step.non-retryable-error",
       "category": "step",
+      "profile": "workflows-core",
       "title": "NonRetryableError fails the instance immediately (WorkflowFatalError event surface)",
-      "probes": ["nonretryable"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workflows.NonRetryableError"
+        ],
+        "semantic": []
+      },
+      "requirements": [
+        "req.workflows-core.step.non-retryable-error"
+      ],
+      "probes": [
+        "nonretryable"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "step.identity",
       "category": "step",
+      "profile": "workflows-core",
       "title": "repeated step names get counted identities (name-1, name-2)",
-      "probes": ["duplicate-names"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStep.do"
+        ],
+        "semantic": [
+          "semantic.replay-semantics"
+        ]
+      },
+      "requirements": [
+        "req.workflows-core.step.identity"
+      ],
+      "probes": [
+        "duplicate-names"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "step.context",
       "category": "step",
+      "profile": "workflows-core",
       "title": "step callback ctx.step/ctx.attempt/ctx.config surface",
-      "probes": ["step-context"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStepContext"
+        ],
+        "semantic": []
+      },
+      "requirements": [
+        "req.workflows-core.step.context"
+      ],
+      "probes": [
+        "step-context"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "step.dynamic-delay",
       "category": "step",
+      "profile": "workflows-core",
       "title": "retries.delay callback; function leaf absent from ctx.config",
-      "probes": ["dynamic-delay"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowDynamicDelayContext",
+          "cloudflare:workers.WorkflowDelayFunction"
+        ],
+        "semantic": []
+      },
+      "requirements": [
+        "req.workflows-core.step.dynamic-delay"
+      ],
+      "probes": [
+        "dynamic-delay"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "promise.all",
       "category": "promise",
+      "profile": "workflows-core",
       "title": "Promise.all over durable steps",
-      "probes": ["promise-all"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStep.do"
+        ],
+        "semantic": [
+          "semantic.replay-semantics"
+        ]
+      },
+      "requirements": [
+        "req.workflows-core.promise.all"
+      ],
+      "probes": [
+        "promise-all"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "promise.allsettled",
       "category": "promise",
+      "profile": "workflows-core",
       "title": "Promise.allSettled over durable steps",
-      "probes": ["promise-allsettled"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStep.do"
+        ],
+        "semantic": [
+          "semantic.replay-semantics"
+        ]
+      },
+      "requirements": [
+        "req.workflows-core.promise.allsettled"
+      ],
+      "probes": [
+        "promise-allsettled"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "promise.race",
       "category": "promise",
+      "profile": "workflows-core",
       "title": "Promise.race winner/loser durable behavior",
-      "probes": ["promise-race"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStep.do"
+        ],
+        "semantic": [
+          "semantic.replay-semantics",
+          "semantic.promise-race-replay"
+        ]
+      },
+      "requirements": [
+        "req.workflows-core.promise.race"
+      ],
+      "probes": [
+        "promise-race"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "promise.any",
       "category": "promise",
+      "profile": "workflows-core",
       "title": "Promise.any resolution",
-      "probes": ["promise-any"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStep.do"
+        ],
+        "semantic": [
+          "semantic.replay-semantics"
+        ]
+      },
+      "requirements": [
+        "req.workflows-core.promise.any"
+      ],
+      "probes": [
+        "promise-any"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "promise.concurrent-retry",
       "category": "promise",
+      "profile": "workflows-core",
       "title": "retry inside one concurrent branch",
-      "probes": ["retry-in-branch"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStep.do"
+        ],
+        "semantic": [
+          "semantic.replay-semantics"
+        ]
+      },
+      "requirements": [
+        "req.workflows-core.promise.concurrent-retry"
+      ],
+      "probes": [
+        "retry-in-branch"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "promise.wrapped-race",
       "category": "promise",
+      "profile": "workflows-core",
       "title": "wrapped durable race winner behavior",
-      "probes": ["wrapped-race"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStep.do"
+        ],
+        "semantic": [
+          "semantic.replay-semantics",
+          "semantic.promise-race-replay"
+        ]
+      },
+      "requirements": [
+        "req.workflows-core.promise.wrapped-race"
+      ],
+      "probes": [
+        "wrapped-race"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "promise.mixed-durable-event",
       "category": "promise",
+      "profile": "workflows-core",
       "title": "durable operation mixed with event wait",
-      "probes": ["durable-with-event"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStep.do"
+        ],
+        "semantic": [
+          "semantic.replay-semantics",
+          "semantic.promise-race-replay"
+        ]
+      },
+      "requirements": [
+        "req.workflows-core.promise.mixed-durable-event"
+      ],
+      "probes": [
+        "durable-with-event"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "rollback.auto",
       "category": "lifecycle",
+      "profile": "workflows-core",
       "title": "registered rollback handlers run on terminal failure",
-      "probes": ["rollback"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStepRollbackOptions.rollback",
+          "cloudflare:workers.WorkflowStepRollbackOptions.rollbackConfig",
+          "cloudflare:workers.WorkflowRollbackContext"
+        ],
+        "semantic": []
+      },
+      "requirements": [
+        "req.workflows-core.rollback.auto"
+      ],
+      "probes": [
+        "rollback"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "lifecycle.pause-resume",
       "category": "lifecycle",
+      "profile": "workflow-host",
       "title": "pause and resume an instance via binding",
-      "probes": ["pause-resume"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "global.WorkflowInstance.pause",
+          "global.WorkflowInstance.resume",
+          "global.WorkflowInstance.status"
+        ],
+        "semantic": [
+          "semantic.pause-boundary"
+        ]
+      },
+      "requirements": [
+        "req.workflow-host.lifecycle.pause-resume"
+      ],
+      "probes": [
+        "pause-resume"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "lifecycle.terminate-rollback",
       "category": "lifecycle",
+      "profile": "workflow-host",
       "title": "terminate with rollback executes registered handlers",
-      "probes": ["terminate-rollback"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "global.WorkflowInstance.terminate",
+          "global.WorkflowInstanceTerminateOptions"
+        ],
+        "semantic": []
+      },
+      "requirements": [
+        "req.workflow-host.lifecycle.terminate-rollback"
+      ],
+      "probes": [
+        "terminate-rollback"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "lifecycle.restart-from",
       "category": "lifecycle",
+      "profile": "workflow-host",
       "title": "restart({from:{name}}) re-executes the named step",
-      "probes": ["restart-from"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false },
+      "upstream": {
+        "symbols": [
+          "global.WorkflowInstance.restart",
+          "global.WorkflowInstanceRestartOptions"
+        ],
+        "semantic": [
+          "semantic.restart-behavior"
+        ]
+      },
+      "requirements": [
+        "req.workflow-host.lifecycle.restart-from"
+      ],
+      "probes": [
+        "restart-from"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      },
       "knownDifference": "A fresh subscription created after restart replays pre-restart history locally; Cloudflare replays it too. Post-restart events are identified by timestamp in both traces."
     },
     {
       "id": "lifecycle.delete",
       "category": "lifecycle",
+      "profile": "workflow-host",
       "title": "delete removes instance state; create on deleted id works",
-      "probes": ["delete-instance"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "global.WorkflowInstance.delete"
+        ],
+        "semantic": []
+      },
+      "requirements": [
+        "req.workflow-host.lifecycle.delete"
+      ],
+      "probes": [
+        "delete-instance"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "binding.crud",
       "category": "binding",
+      "profile": "workflow-host",
       "title": "binding create/get/createBatch/deleteBatch, duplicate-id error shape, missing-id code 10400",
-      "probes": ["binding-crud"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "global.Workflow.get",
+          "global.Workflow.create",
+          "global.Workflow.createBatch",
+          "global.Workflow.deleteBatch",
+          "global.WorkflowInstanceCreateOptions"
+        ],
+        "semantic": []
+      },
+      "requirements": [
+        "req.workflow-host.binding.crud"
+      ],
+      "probes": [
+        "binding-crud"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "binding.retention",
       "category": "binding",
+      "profile": "workflow-host",
       "title": "per-instance retention options and Workflow default_retention",
+      "upstream": {
+        "symbols": [
+          "wrangler.workflows.default_retention",
+          "global.WorkflowInstanceCreateOptions.retention"
+        ],
+        "semantic": [
+          "semantic.retention-defaults"
+        ]
+      },
+      "requirements": [
+        "req.workflow-host.binding.retention"
+      ],
       "probes": [],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": false, "latest_differential": false, "hosted_differential": false, "intentionally_unsupported": false },
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": false,
+        "latest_differential": false,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      },
       "knownDifference": "Cloudflare applies account-plan defaults when no retention is configured; local runtime has no account-plan context and retains indefinitely."
     },
     {
       "id": "subscribe.filter-cursor",
       "category": "subscription",
+      "profile": "workflow-host",
       "title": "subscription event filters and cursor resume",
-      "probes": ["subscribe-filter"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "global.WorkflowInstance.subscribe",
+          "global.WorkflowInstanceSubscribeOptions",
+          "global.WorkflowInstanceSubscription"
+        ],
+        "semantic": [
+          "semantic.subscription-semantics"
+        ]
+      },
+      "requirements": [
+        "req.workflow-host.subscribe.filter-cursor"
+      ],
+      "probes": [
+        "subscribe-filter"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "subscribe.sensitive-redaction",
       "category": "subscription",
+      "profile": "workflows-core",
       "title": "sensitive: 'output' redacts step output from event stream",
-      "probes": ["sensitive"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStepConfig.sensitive"
+        ],
+        "semantic": []
+      },
+      "requirements": [
+        "req.workflows-core.subscribe.sensitive-redaction"
+      ],
+      "probes": [
+        "sensitive"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "serialization.structured",
       "category": "serialization",
+      "profile": "workflows-core",
       "title": "Date, RegExp, nested structured step values round-trip",
-      "probes": ["ser-structured"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStep.do"
+        ],
+        "semantic": [
+          "semantic.serialization-contract"
+        ]
+      },
+      "requirements": [
+        "req.workflows-core.serialization.structured"
+      ],
+      "probes": [
+        "ser-structured"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "serialization.collections",
       "category": "serialization",
+      "profile": "workflows-core",
       "title": "Map and Set step values round-trip",
-      "probes": ["ser-collections"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStep.do"
+        ],
+        "semantic": [
+          "semantic.serialization-contract"
+        ]
+      },
+      "requirements": [
+        "req.workflows-core.serialization.collections"
+      ],
+      "probes": [
+        "ser-collections"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "serialization.binary",
       "category": "serialization",
+      "profile": "workflows-core",
       "title": "ArrayBuffer, DataView and typed-array step values round-trip",
-      "probes": ["ser-binary"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStep.do"
+        ],
+        "semantic": [
+          "semantic.serialization-contract"
+        ]
+      },
+      "requirements": [
+        "req.workflows-core.serialization.binary"
+      ],
+      "probes": [
+        "ser-binary"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "serialization.error",
       "category": "serialization",
+      "profile": "workflows-core",
       "title": "Error step values round-trip with name/message/cause; custom own-properties dropped",
-      "probes": ["ser-error"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStep.do"
+        ],
+        "semantic": [
+          "semantic.serialization-contract"
+        ]
+      },
+      "requirements": [
+        "req.workflows-core.serialization.error"
+      ],
+      "probes": [
+        "ser-error"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "serialization.unsupported",
       "category": "serialization",
+      "profile": "workflows-core",
       "title": "cyclic step output rejects with catchable TypeError",
-      "probes": ["ser-cyclic"],
-      "skippedProbes": ["ser-unsupported"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false },
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStep.do"
+        ],
+        "semantic": [
+          "semantic.serialization-contract"
+        ]
+      },
+      "requirements": [
+        "req.workflows-core.serialization.unsupported"
+      ],
+      "probes": [
+        "ser-cyclic"
+      ],
+      "skippedProbes": [
+        "ser-unsupported"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      },
       "knownDifference": "Unserializable (function-valued) step output aborts the upstream isolate uncatchably; workflows.mbt rejects with a catchable error. ser-unsupported is catalogued differential:false."
     },
     {
       "id": "serialization.durable-values",
       "category": "serialization",
+      "profile": "workflows-core",
       "title": "BigInt step output",
+      "upstream": {
+        "symbols": [
+          "cloudflare:workers.WorkflowStep.do"
+        ],
+        "semantic": [
+          "semantic.serialization-contract"
+        ]
+      },
+      "requirements": [
+        "req.workflows-core.serialization.durable-values"
+      ],
       "probes": [],
-      "skippedProbes": ["ser-bigint"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": false, "latest_differential": false, "hosted_differential": false, "intentionally_unsupported": true },
+      "skippedProbes": [
+        "ser-bigint"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": false,
+        "latest_differential": false,
+        "hosted_differential": false,
+        "intentionally_unsupported": true
+      },
       "knownDifference": "Upstream aborts the isolate on BigInt step output (uncatchable, no trace); workflows.mbt serializes bigint natively. Local behavior is a strict superset — recorded as an intentional difference."
     },
     {
       "id": "worker.entrypoint-ctx",
       "category": "worker",
+      "profile": "workflow-host",
       "title": "WorkflowEntrypoint ctx/env surface inside run()",
-      "probes": ["entrypoint-ctx"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "global.ExecutionContext",
+          "cloudflare:workers.WorkerEntrypoint"
+        ],
+        "semantic": []
+      },
+      "requirements": [
+        "req.workflow-host.worker.entrypoint-ctx"
+      ],
+      "probes": [
+        "entrypoint-ctx"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "worker.http",
       "category": "worker",
+      "profile": "workflow-host",
       "title": "default Worker fetch binding creation through env",
-      "probes": ["worker-fetch"],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": true, "latest_differential": true, "hosted_differential": false, "intentionally_unsupported": false }
+      "upstream": {
+        "symbols": [
+          "global.ExportedHandler.fetch"
+        ],
+        "semantic": []
+      },
+      "requirements": [
+        "req.workflow-host.worker.http"
+      ],
+      "probes": [
+        "worker-fetch"
+      ],
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": true,
+        "latest_differential": true,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "worker.wait-until",
       "category": "worker",
+      "profile": "workflow-host",
       "title": "ctx.waitUntil tasks drain before runtime close",
+      "upstream": {
+        "symbols": [
+          "global.ExecutionContext.waitUntil",
+          "cloudflare:workers.waitUntil"
+        ],
+        "semantic": []
+      },
+      "requirements": [
+        "req.workflow-host.worker.wait-until"
+      ],
       "probes": [],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": false, "latest_differential": false, "hosted_differential": false, "intentionally_unsupported": false }
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": false,
+        "latest_differential": false,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "schedule.cron",
       "category": "schedule",
+      "profile": "workflow-host",
       "title": "cron schedules fire WorkflowEntrypoint with schedule metadata",
+      "upstream": {
+        "symbols": [
+          "wrangler.workflows.schedules"
+        ],
+        "semantic": [
+          "semantic.scheduled-execution"
+        ]
+      },
+      "requirements": [
+        "req.workflow-host.schedule.cron"
+      ],
       "probes": [],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": false, "latest_differential": false, "hosted_differential": false, "intentionally_unsupported": false }
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": false,
+        "latest_differential": false,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "durability.replay-restart",
       "category": "durability",
+      "profile": "workflows-core",
       "title": "SIGKILL/restart replays persisted steps without re-executing",
+      "upstream": {
+        "symbols": [],
+        "semantic": [
+          "semantic.replay-semantics",
+          "semantic.at-least-once-effects"
+        ]
+      },
+      "requirements": [
+        "req.workflows-core.durability.replay-restart"
+      ],
       "probes": [],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": false, "latest_differential": false, "hosted_differential": false, "intentionally_unsupported": false }
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": false,
+        "latest_differential": false,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      }
     },
     {
       "id": "rest.core",
       "category": "rest",
+      "profile": "workflow-host",
       "title": "core REST facade for instance operations",
+      "upstream": {
+        "symbols": [],
+        "semantic": [
+          "semantic.rest-api-surface"
+        ]
+      },
+      "requirements": [
+        "req.workflow-host.rest.core"
+      ],
       "probes": [],
-      "evidence": { "implemented": true, "repository_tested": true, "pinned_differential": false, "latest_differential": false, "hosted_differential": false, "intentionally_unsupported": false },
+      "declaredSupport": {
+        "implemented": true,
+        "repository_tested": true,
+        "pinned_differential": false,
+        "latest_differential": false,
+        "hosted_differential": false,
+        "intentionally_unsupported": false
+      },
       "knownDifference": "REST subscription streaming transport and step-output endpoint are optional transports not yet implemented."
     }
   ]
