@@ -349,6 +349,30 @@ topic label として残し、`profile` を新規必須フィールドにする�
   増えない (ID で dedup)。
 - requirement が複数 upstream item を参照してもよい (many-to-many 許容)。
 
+#### Requirement scope derivation
+
+`target: in-scope|excluded` は resolved inventory item (upstream feature)
+の属性であり、requirement は複数 upstream item を参照できるため、
+requirement の scope は以下で deterministic に導出する:
+
+```text
+1. upstreamRefs を持たない requirement (pure semantic requirement)
+   → requirement registry で `target` を明示宣言する (validator が必須化)
+2. upstreamRefs を持つ requirement
+   → 参照先の resolved inventory item がすべて `target: excluded` かつ
+     各 item が `exclusionReason` を持つ場合に限り `excluded`
+   → それ以外 (in-scope ref が 1 件でもあれば) は `in-scope`
+   → derived scope と矛盾する `target` を requirement が宣言するのは禁止
+     (validator failure)
+```
+
+つまり in-scope item と excluded item の両方を参照する requirement は
+`in-scope` で denominator に 1 回入る。excluded 側の item は upstream
+item 単位で引き続き追跡され、requirement counting を減らさない。
+excluded requirement は `exclusionReason` を持たない excluded ref や
+in-scope ref の存在では成立しないため、「requirement 経由の denominator
+縮小」も gated になる。
+
 #### Probe verdict → requirement state への deterministic reduce
 
 各 requirement の state は、その `requiredProbes` の今回 run での
@@ -496,6 +520,7 @@ comparison / normalization revision/hash  # normalize.mjs / probe-client.mjs 等
 relevant implementation source hash       # runtime/host/kernel 等、coverage に影響する source tree の hash
 relevant config/binding hash              # probes/wrangler.jsonc + adapters 設定の hash
 upstream candidate identity        # candidate-*.json の id + exact versions
+upstream resolved dependencyGraph hash   # 下記参照。candidate.id に現状含まれないため別途保持
 wrangler exact version
 workerd exact version
 workers-types exact version
@@ -522,12 +547,26 @@ inventory revision/hash
 capability/requirement matrix hash
 relevant config/binding hash
 upstream candidate identity
+upstream resolved dependencyGraph hash
 compatibility_date / flags
 ```
 
 これらのいずれかが lastVerifiedEvidence と現在値で一致しない場合にのみ
 STALE。必要なら requirement / probe ごとの dependency hash に精細化して
 構わないが、repository commit SHA が違うだけでは STALE にしない。
+
+**upstream candidate identity に dependencyGraph hash を含める**。
+現行 `compat/candidate.mjs` の `candidate.id` は tracked package の
+`{ versions, integrity }` の sha256 で、`dependencyGraph` / `runtime`
+(miniflare / workerd / esbuild / unenv 等の transitive runtime graph)
+は candidate file に記録されるが identity に入っていない。このため
+top-level tuple が同じまま transitive dependency だけが変わると、実際に
+起動する Wrangler runtime が変化していても過去 evidence を fresh と
+判定し得る。coverage 用の candidate identity は canonical な resolved
+dependencyGraph hash (pinned: repo lockfile 由来の install graph、latest:
+candidate dir に生成された lockfile 由来の graph、少なくとも Wrangler が
+起動する runtime graph) を含めなければならない。graph hash が変われば
+identity が変わり、旧 evidence は STALE になる。
 
 #### Hosted evidence
 
@@ -609,6 +648,10 @@ upstream inventory (resolved)
 - inventory item の classified profile と capability profile の不一致
 - `in-scope (UNSUPPORTED)` → `excluded` への再分類 (coverage 水増し防止)
 - generated inventory 再生成で human classification が失われた場合
+- upstreamRefs を持たない requirement で `target` 未宣言
+- requirement の宣言 `target` と derived scope の矛盾 (in-scope ref を持つ
+  excluded requirement 等)
+- excluded requirement が `exclusionReason` を欠く upstream ref を参照
 
 ### 11. Report
 
@@ -652,7 +695,10 @@ daily latest run は committed baseline を直接変更しない。
 3. classification / capability / requirement / probe の必要変更を
    human または coding agent がレビュー
 4. reviewed PR で committed baseline (`compat/inventory/upstream-*.json` +
-   `classification.json` + 必要なら `coverage-baseline.json`) を更新
+   `classification.json` + 必要なら `coverage-baseline.json`) を更新。
+   baseline 更新 PR も同じ regression gate (§13) を通り、比較対象は
+   merge-base 時点の前 baseline。意図的な denominator 縮小は waiver
+   metadata を要求する
 5. promotion 後は stable ID + drift kind identity で dedup し、同じ drift
    が再通知されない
 6. `firstSeen` は baseline に一度記録したら extractor が上書きしない。
@@ -686,14 +732,27 @@ baseline として使えないため、baseline source を明示する。
   で再生成し、reviewed PR でのみ更新 (api-surface.json `--write` と同じ
   運用)。upstream pin tuple 変更 (`update-candidate` 適用) 時は同じ PR で
   baseline も refresh する。
-- **比較規則** (PR gate): 現在 coverage と baseline を profile ごとに比較:
-  - VERIFIED numerator が baseline を下回る → fail
-  - denominator が baseline から縮小 → fail (「percentage が上がったが
-    denominator が減った」ケースを見逃さない)
-  - denominator 縮小が意図的な場合は同じ PR で baseline manifest を更新
-    しなければ gate は通らない
-  - `in-scope → excluded` 変更は exclusionReason 付きで明示、
-    unsupported→excluded の coverage 水増しを gate が検出
+- **比較規則** (PR gate): gate が比較するのは HEAD の current coverage
+  と **merge-base / base branch 上の `compat/coverage-baseline.json`**
+  であり、HEAD 側の baseline manifest ではない。これにより同じ PR で
+  baseline を下げて regression を自己承認することを防ぐ。
+  - VERIFIED numerator が base baseline を下回る → fail
+  - denominator が base baseline から縮小 → fail (「percentage が
+    上がったが denominator が減った」ケースを見逃さない)
+- **proposed baseline**: HEAD で `coverage-baseline.json` が変更されて
+  いる場合、それは「proposed baseline」として別途検証する:
+  - proposed baseline は同じ PR の current coverage と整合すること
+    (numerator / denominator が一致)
+  - base baseline 対比で non-regressive でない変更 (numerator 減少、
+    denominator 縮小) は baseline manifest 内の `waivers[]` エントリを
+    必須とする: `{ kind: "denominator-shrink" | "metric-drop" |
+    "upstream-pin-update", reason, issue }`。waiver なし → fail
+  - upstream pin tuple 変更 (`update-candidate` 適用) による baseline
+    refresh は waiver kind `upstream-pin-update` で明示し、per-profile
+    差分を drift packet として report する
+- `in-scope → excluded` 変更は exclusionReason 付きで明示、
+  unsupported→excluded の coverage 水増しを gate が検出 (§10
+  validator と同じ規則を baseline diff にも適用)
 
 ### 14. 二本立て coverage
 
@@ -799,6 +858,14 @@ Review で追加された acceptance criteria:
 - active discovery boundary 外の surface を coverage denominator と
   誤表示しない
 - new upstream item の candidate → reviewed baseline promotion が追跡可能
+- regression gate は base-branch baseline との比較のみで判定し、同じ PR
+  での baseline 更新 (proposed baseline) で regression を自己承認できない
+- intentional denominator 縮小 / metric 低下は `waivers[]` metadata なしに
+  gate を通らない
+- in-scope ref を持つ requirement は excluded にできない (scope は
+  deterministic に導出)
+- transitive dependency graph の変化で upstream candidate identity が
+  変わり、旧 evidence が STALE になる
 
 ## Non-goals
 
