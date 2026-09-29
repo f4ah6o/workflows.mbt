@@ -83,7 +83,7 @@ MoonBit durable-execution kernel
         |
         v
 host storage/scheduler bridge
-  - SQLite adapter (WAL)
+  - SQLite adapter (WAL) or PostgreSQL adapter
   - atomic state transitions
   - concurrent durable branches
   - rollback / compensation state
@@ -94,7 +94,8 @@ host storage/scheduler bridge
 
 The generated MoonBit JS foreign library is loaded by the host. JavaScript is
 the compatibility and OS bridge; it is not a second user-facing workflow DSL.
-SQLite SQL is isolated in `host/storage/sqlite.mjs`.
+Storage SQL is isolated per backend in `host/storage/` (`sqlite.mjs`,
+`postgres.mjs`) behind the workflow-semantic contract in `storage.mjs`.
 
 MoonBit's JS target is used because it provides a narrow, stable boundary to the
 JavaScript callback host. Moving SQLite I/O behind a native MoonBit/C adapter is
@@ -106,8 +107,8 @@ The runtime does **not** persist a JavaScript VM stack or continuation. On resum
 it invokes `run(event, step)` from the beginning.
 
 Completed steps return their persisted output without invoking the callback.
-Sleeping, retrying, and event-waiting steps persist deadlines/state in SQLite and
-suspend the workflow process-free. Concurrent durable branches can commit
+Sleeping, retrying, and event-waiting steps persist deadlines/state in
+storage and suspend the workflow process-free. Concurrent durable branches can commit
 independently; replay reuses the committed branch outputs. Rollback registrations,
 retry deadlines, scheduled firings, and subscription history are durable as well.
 
@@ -164,6 +165,27 @@ Optional local-only settings belong in `workflows.mbt.json`:
   "storage": {
     "type": "sqlite",
     "path": ".workflows/workflows.db"
+  }
+}
+```
+
+Two storage backends implement the same workflow-semantic contract:
+
+- **`sqlite`** (default) — `storage.path` (default `.workflows/workflows.db`),
+  WAL mode; multiple executor processes on one machine may share the file.
+- **`postgres`** — `storage.url` is a `postgres://`/`postgresql://` connection
+  string, `storage.schema` optionally isolates the runtime's tables. The same
+  lease, fencing, and atomic-step semantics hold across connections and
+  machines. Requires the optional `pg` dependency (`npm install pg`; it is
+  declared under `optionalDependencies`, so the default install does not need
+  it or a running server). The CLI `--storage` flag accepts a `postgres://`
+  URL directly instead of a file path:
+
+```json
+{
+  "storage": {
+    "type": "postgres",
+    "url": "postgres://user:pass@localhost:5432/workflows"
   }
 }
 ```
@@ -243,10 +265,16 @@ npm run check:moon
 npm run build:core
 npm run test:moon
 npm run test:host
+npm run test:storage
 npm run test:compat
 npm run test:e2e
 npm run test:consumer
 ```
+
+`test:storage` runs the shared storage contract and runtime suite against
+SQLite always, and additionally against PostgreSQL when
+`WORKFLOWS_POSTGRES_URL=postgres://...` is set (clean skip otherwise; CI runs
+it against a postgres service container).
 
 `test:consumer` is the clean-machine journey: `npm pack`, extract to a temp
 dir, `npm ci --omit=dev`, `doctor`, `dev`, an instance killed with `SIGKILL`
@@ -328,7 +356,9 @@ Kafka, Kubernetes, distributed consensus, or a multi-node scheduler. Executor
 processes on one machine may share a SQLite database — instances are claimed by
 a lease (`lease_owner`/`lease_expires_at`) with heartbeat renewal and
 commit-time fencing, so a crashed executor's work is reclaimed without
-duplicating committed steps.
+duplicating committed steps. The PostgreSQL backend holds the same lease and
+fencing semantics across connections (and machines), but multi-host scheduling
+remains out of scope.
 
 KV, D1, R2, Queue producers, and Service Bindings have local adapters (configure
 `adapters` in `workflows.mbt.json`; see `host/adapters.mjs`). Workers AI and

@@ -32,17 +32,27 @@ function parse(argv) {
   return { positionals, flags };
 }
 
+// --storage takes a SQLite file path, or a postgres:// connection string to
+// select the PostgreSQL backend for this invocation.
+function storageOverride(flag) {
+  const value = flag === true ? undefined : flag;
+  if (typeof value === "string" && /^postgres(ql)?:\/\//i.test(value)) {
+    return { storageUrl: value };
+  }
+  return { storagePath: value };
+}
+
 function usage(stream = console.error) {
   stream(`Usage:
   workflows dev --config wrangler.jsonc [--env <name>] [--host 127.0.0.1] [--port 8787] [--no-http]
-  workflows doctor --config wrangler.jsonc [--env <name>] [--storage <sqlite-path>] [--json]
+  workflows doctor --config wrangler.jsonc [--env <name>] [--storage <sqlite-path|postgres-url>] [--json]
   workflows trigger <workflow> --params '{"name":"Alice"}' [--id <id>]
   workflows status <workflow> <instance-id>
   workflows event <workflow> <instance-id> <type> --payload '{"approved":true}'
   workflows pause|resume|terminate <workflow> <instance-id>
   workflows restart <workflow> <instance-id> [--from <name>] [--count 2] [--type do]
   workflows --version | --help | -h
-Common options: --config <wrangler.jsonc> --env <name> --storage <sqlite-path>`);
+Common options: --config <wrangler.jsonc> --env <name> --storage <sqlite-path|postgres-url>`);
 }
 
 const COMMANDS = new Set([
@@ -66,7 +76,7 @@ if (flags.help === true || command === "help") {
 } else if (command === "doctor") {
   const report = await runDoctor({
     configPath: flags.config ?? "wrangler.jsonc",
-    storagePath: flags.storage === true ? undefined : flags.storage,
+    ...storageOverride(flags.storage),
     buildDir: flags["build-dir"] === true ? undefined : flags["build-dir"],
     envName: flags.env === true ? undefined : flags.env,
   });
@@ -79,7 +89,7 @@ if (flags.help === true || command === "help") {
 } else {
   const runtime = await WorkflowRuntime.open({
     configPath: flags.config ?? "wrangler.jsonc",
-    storagePath: flags.storage === true ? undefined : flags.storage,
+    ...storageOverride(flags.storage),
     buildDir: flags["build-dir"] === true ? undefined : flags["build-dir"],
     envName: flags.env === true ? undefined : flags.env,
   });

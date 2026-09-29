@@ -1,7 +1,17 @@
 # Practical-value readiness — install, preflight, and an honest consumer path
 
-Status: open
+Status: done
 Created: 2026-09-28
+Verified: 2026-09-29 — every acceptance criterion re-checked against main:
+`npm pack --dry-run` lists `dist/workflows_core.mjs`,
+`compat/cloudflare-workers/`, `host/`, and `npm-shrinkwrap.json`, and none of
+`tests/`, `issues/`, `.github/`; `npm run test:consumer` passes end to end
+(pack -> extract -> `npm ci --omit=dev` -> doctor -> dev -> SIGKILL mid-sleep
+-> restart -> complete, plus `npm install <tgz>` + `workflows --version`);
+`doctor` exits non-zero on missing config, bad `class_name`, missing required
+secret, unwritable storage, and missing kernel; README and the fallback
+runbook match verified behavior (including the PostgreSQL storage option
+added since).
 Baseline: main @ 18c79c169470a094baf72588315e8fbdab3f1e79
 
 ## Goal

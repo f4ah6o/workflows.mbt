@@ -25,7 +25,7 @@ import {
   serializeJson,
 } from "./serialization.mjs";
 import { buildLocalAdapters } from "./adapters.mjs";
-import { SQLiteStorage } from "./storage/sqlite.mjs";
+import { openStorage } from "./storage/index.mjs";
 import { WorkflowSubscription } from "./subscription.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -90,14 +90,21 @@ export class WorkflowRuntime {
   static async open({
     configPath = "wrangler.jsonc",
     storagePath,
+    storageUrl,
     buildDir,
     env = {},
     envName = null,
     kernelPath = resolve(packageRoot, "dist/workflows_core.mjs"),
+    storage: storageOverride = null,
   } = {}) {
-    const config = loadProjectConfig(configPath, { storagePath, buildDir, envName });
+    const config = loadProjectConfig(configPath, {
+      storagePath,
+      storageUrl,
+      buildDir,
+      envName,
+    });
     const kernel = await loadKernel(kernelPath);
-    const storage = new SQLiteStorage(config.storagePath);
+    const storage = storageOverride ?? openStorage(config);
     const runtime = new WorkflowRuntime({ config, kernel, storage, env });
     await runtime.prepare();
     return runtime;

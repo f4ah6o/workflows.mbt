@@ -15,7 +15,7 @@ import { buildLocalAdapters } from "./adapters.mjs";
 import { loadProjectConfig } from "./config.mjs";
 import { loadKernel } from "./kernel.mjs";
 import { bundleWorkflow, loadWorkflowModule } from "./loader.mjs";
-import { SQLiteStorage } from "./storage/sqlite.mjs";
+import { openStorage } from "./storage/index.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -33,6 +33,7 @@ const STAGES = [
 export async function runDoctor({
   configPath = "wrangler.jsonc",
   storagePath,
+  storageUrl,
   buildDir,
   envName = null,
   kernelPath = resolve(packageRoot, "dist/workflows_core.mjs"),
@@ -62,7 +63,7 @@ export async function runDoctor({
 
   let config = null;
   if (!(await run("config", async () => {
-    config = loadProjectConfig(configPath, { storagePath, buildDir, envName });
+    config = loadProjectConfig(configPath, { storagePath, storageUrl, buildDir, envName });
     return `${config.workflows.length} workflow(s); env ${config.envName ?? "top-level"}; config ${config.configPath}`;
   }))) {
     skipRest("workflow bindings", "config failed");
@@ -95,9 +96,11 @@ export async function runDoctor({
   await run("storage", async () => {
     // Opening runs the schema migration and creates the file/directory —
     // the same writability surface `dev` needs.
-    const storage = new SQLiteStorage(config.storagePath);
+    const storage = openStorage(config);
     storage.close();
-    return `sqlite opened at ${config.storagePath}`;
+    return config.storageType === "postgres"
+      ? "postgres connected (storage.url)"
+      : `sqlite opened at ${config.storagePath}`;
   });
 
   await run("kernel", async () => {

@@ -12,6 +12,20 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: devin
+          POSTGRES_PASSWORD: devin
+          POSTGRES_DB: workflows_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U devin -d workflows_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -46,6 +60,14 @@ jobs:
 
       - name: Compatibility host tests
         run: npm run test:host
+
+      # Shared storage contract + runtime suite; PostgreSQL runs against the
+      # service container, SQLite always. Skips Postgres cleanly when the env
+      # var is unset.
+      - name: Storage contract tests
+        run: npm run test:storage
+        env:
+          WORKFLOWS_POSTGRES_URL: postgres://devin:devin@localhost:5432/workflows_test
 
       - name: Compatibility probe-client tests
         run: npm run test:compat
