@@ -100,6 +100,27 @@ Refreshing the baseline is a reviewed, deliberate step —
 `node compat/coverage.mjs --update-baseline` inside a PR — never something
 a scheduled run does.
 
+**Upstream-item coverage**: `node compat/upstream-coverage.mjs`
+(`npm run compat:upstream-coverage`) flips the denominator: instead of
+requirements, it counts the in-scope upstream inventory items (active
+profiles only; excluded and deferred-profile items are reported separately,
+never counted) and asks which requirement(s) — via the committed
+`upstreamRefs`/`capability.upstream` linkage — cover each one. An item with
+no requirement reference is `UNMAPPED`; otherwise its per-oracle state is the
+same first-match reduction over its requirements' states (`UNSUPPORTED`
+requirements are declared intent and never drag a mixed item down). The
+command writes `compat-results/upstream-coverage.json` (machine-readable,
+stable ordering, per-item records) and `upstream-coverage.md` (summary table
++ unmapped gap list grouped by container), and prints a one-line summary.
+Flags: `--oracle <pinned|latest|hosted>` restricts the report;
+`--json-only` skips the markdown; `--min-mapped <pct>` / `--min-verified
+<pct>` exit non-zero below the threshold. It runs with no compat results
+(everything UNTESTED) and after a compat run (real verified numbers); a
+validator failure yields `status:"INVALID"` and a non-zero exit, never a
+report on unvalidated data. To wire into CI later, run it after
+`compat:pinned` (e.g. `--oracle pinned --min-mapped <pct>`) — it needs no
+credentials and no network.
+
 ## The response path
 
 On drift, `compat/drift-record.mjs` writes `compat-results/drift-<key>.md` —

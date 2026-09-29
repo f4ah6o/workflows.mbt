@@ -42,13 +42,14 @@
     "test:host": "node --test tests/host.test.mjs",
     "test:storage": "node --test tests/storage.test.mjs",
     "test:e2e": "node --test tests/e2e.test.mjs",
-    "test": "npm run check:moon && npm run build:core && npm run test:moon && npm run test:host && npm run test:storage && npm run test:compat && npm run test:upstream-ops && npm run test:inventory && npm run test:coverage && npm run test:e2e",
+    "test": "npm run check:moon && npm run build:core && npm run test:moon && npm run test:host && npm run test:storage && npm run test:compat && npm run test:upstream-ops && npm run test:inventory && npm run test:coverage && npm run test:upstream-coverage && npm run test:e2e",
     "test:consumer": "node scripts/consumer-smoke.mjs",
     "compat:typecheck": "tsc -p compat/typecheck/tsconfig.json",
     "compat:pinned": "npm run compat:typecheck && node compat/oracle/check.mjs --mode pinned && node compat/run-differential.mjs --oracle pinned && node compat/check-capabilities.mjs --require-pinned",
     "compat:latest": "node compat/run-latest.mjs && node compat/check-capabilities.mjs --require-latest",
     "compat:report": "node compat/report.mjs",
     "compat:coverage": "node compat/coverage.mjs",
+    "compat:upstream-coverage": "node compat/upstream-coverage.mjs",
     "compat:drill": "node compat/run-drill.mjs",
     "check:toolchain": "node scripts/check-toolchain.mjs",
     "test:compat": "node --test tests/compat-probe-client.test.mjs tests/release-pin.test.mjs",
@@ -58,6 +59,7 @@
     "test:upstream-ops": "node --test tests/upstream-ops.test.mjs",
     "test:inventory": "node --test tests/coverage-inventory.test.mjs",
     "test:coverage": "node --test tests/coverage-pipeline.test.mjs",
+    "test:upstream-coverage": "node --test tests/upstream-coverage.test.mjs",
     "check:inventory": "node compat/check-inventory.mjs"
   },
   "dependencies": {

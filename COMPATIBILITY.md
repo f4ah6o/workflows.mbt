@@ -15,6 +15,15 @@ and scenario coverage. `compat/coverage-baseline.json` is the reviewed
 baseline the PR regression gate compares against; refresh it only in a
 reviewed PR via `node compat/coverage.mjs --update-baseline`.
 
+For the upstream-item view — which of the discovered workers-types /
+wrangler-schema / semantic inventory items any requirement covers —
+`npm run compat:upstream-coverage` writes
+`compat-results/upstream-coverage.{json,md}`: per item, the referencing
+requirements/capabilities and the per-oracle state (`UNMAPPED` when nothing
+references it), plus mapped/verified aggregates overall and per profile,
+source, kind, and container. See `docs/upstream-tracking.md` for flags and
+planned CI wiring.
+
 ## Compatibility target
 
 `workflows.mbt` targets existing Cloudflare Workflows TypeScript/JavaScript
