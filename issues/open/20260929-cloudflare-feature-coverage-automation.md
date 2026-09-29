@@ -736,20 +736,36 @@ baseline として使えないため、baseline source を明示する。
   と **merge-base / base branch 上の `compat/coverage-baseline.json`**
   であり、HEAD 側の baseline manifest ではない。これにより同じ PR で
   baseline を下げて regression を自己承認することを防ぐ。
-  - VERIFIED numerator が base baseline を下回る → fail
-  - denominator が base baseline から縮小 → fail (「percentage が
+  - VERIFIED numerator が base baseline を下回る → fail (後述の
+    scoped waiver で override される差分を除く)
+  - denominator が base baseline から縮小 → fail (同。「percentage が
     上がったが denominator が減った」ケースを見逃さない)
 - **proposed baseline**: HEAD で `coverage-baseline.json` が変更されて
   いる場合、それは「proposed baseline」として別途検証する:
   - proposed baseline は同じ PR の current coverage と整合すること
     (numerator / denominator が一致)
-  - base baseline 対比で non-regressive でない変更 (numerator 減少、
-    denominator 縮小) は baseline manifest 内の `waivers[]` エントリを
-    必須とする: `{ kind: "denominator-shrink" | "metric-drop" |
-    "upstream-pin-update", reason, issue }`。waiver なし → fail
-  - upstream pin tuple 変更 (`update-candidate` 適用) による baseline
-    refresh は waiver kind `upstream-pin-update` で明示し、per-profile
-    差分を drift packet として report する
+  - proposed baseline に含まれる意図的な regression 差分は scoped
+    waiver で明示する (下記)
+- **Waiver semantics**: base comparison で検出した regression 差分は
+  原則 fail であり、**対応する scoped waiver が存在する差分だけ**
+  override される。gate は regression 差分を `{ oracle, profile,
+  metric, requirementIds, before, after }` の record として生成し、
+  waiver と 1:1 で exhaustive に照合する。waiver でカバーされない
+  regression が 1 件でも残れば fail。
+  - waiver entry: `{ kind, oracle, profile, metric, scope, before,
+    after, reason, issue }`
+    - `kind`: `"denominator-shrink" | "metric-drop" |
+      "upstream-pin-update"`
+    - `oracle` / `profile` / `metric` (`verified-numerator` |
+      `denominator` 等): 差分を一意に絞るため必須
+    - `scope`: 影響を受ける requirement ID / inventory item ID の列挙。
+      profile 全体を包括する blanket waiver は不可
+    - `before` / `after`: 期待 delta。実測差分と一致しなければ照合
+      失敗
+  - `upstream-pin-update` waiver は「pin が変わった」事実だけでは
+    metric drop / denominator shrink を自動許可しない。pin 変更に
+    起因する個別差分も同じ scope で列挙し、照合に残った未カバー
+    regression は通常通り fail
 - `in-scope → excluded` 変更は exclusionReason 付きで明示、
   unsupported→excluded の coverage 水増しを gate が検出 (§10
   validator と同じ規則を baseline diff にも適用)
@@ -860,8 +876,10 @@ Review で追加された acceptance criteria:
 - new upstream item の candidate → reviewed baseline promotion が追跡可能
 - regression gate は base-branch baseline との比較のみで判定し、同じ PR
   での baseline 更新 (proposed baseline) で regression を自己承認できない
-- intentional denominator 縮小 / metric 低下は `waivers[]` metadata なしに
-  gate を通らない
+- intentional denominator 縮小 / metric 低下は scoped `waivers[]` entry
+  (oracle / profile / metric / requirementIds / delta) なしに gate を
+  通らない。waiver と regression 差分の照合は 1:1 exhaustive で、
+  未照合 regression は fail
 - in-scope ref を持つ requirement は excluded にできない (scope は
   deterministic に導出)
 - transitive dependency graph の変化で upstream candidate identity が
