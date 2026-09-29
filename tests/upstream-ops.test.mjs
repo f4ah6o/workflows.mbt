@@ -6,7 +6,7 @@
 
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
@@ -478,12 +478,19 @@ test("publish never claims success without a working destination", () => {
 });
 
 test("update candidates never promote a baseline without a compatible verdict", () => {
-  // compatible -> proposed file, and manifest.json is untouched.
+  // compatible -> proposed file, and manifest.json is untouched. npm is
+  // PATH-stubbed so the apply bundle's lockfile regeneration is hermetic.
   const manifestBefore = readFileSync(join(root, "compat/oracle/manifest.json"), "utf8");
   const d = dir();
   seedPassing(d);
   write(d, "verdict-latest.json", { oracle: "latest", verdict: "compatible", pass: true, runId: "run-1" });
-  run("compat/update-candidate.mjs", ["--oracle", "latest"], d);
+  const stubBin = join(d, "bin");
+  mkdirSync(stubBin, { recursive: true });
+  const stub = join(stubBin, "npm");
+  writeFileSync(stub, "#!/bin/sh\nprintf '{\"stubbedLockfile\": true}\\n' > package-lock.json\n");
+  chmodSync(stub, 0o755);
+  run("compat/update-candidate.mjs", ["--oracle", "latest"], d,
+    { PATH: stubBin + ":" + process.env.PATH });
   const proposal = read(d, "update-candidate-latest.json");
   assert.equal(proposal.status, "proposed");
   assert.ok(existsSync(join(d, "proposed-manifest.json")));
@@ -547,5 +554,150 @@ test("registry failure produces an acquisition-failure record, not silence", () 
   const candidate = read(d, "candidate-latest.json");
   assert.equal(candidate.status, "acquisition-failure");
   assert.ok(candidate.error, "acquisition failure must record the error");
+  rmSync(d, { recursive: true, force: true });
+});
+
+// docs-watch: volatile chrome (A/B scripts, timestamps, footer text) must not
+// produce a "changed" signal; only normalized main-content sections are
+// hashed, and a real content edit reports the exact section. Fully fixture
+// driven — no network.
+function docsWatchFixture(stepsBody, stamp, noise) {
+  return `<!doctype html><html><head><script>var ab_bucket="${noise}";</script>`
+    + `<style>.x{color:red}</style></head><body data-exp="${noise}">`
+    + `<nav>site nav ${noise}</nav><header>page header</header>`
+    + `<main><p>Intro text.</p>`
+    + `<h2>Steps and retries</h2><p>Default retry limit: ${stepsBody}.</p>`
+    + `<time datetime="${stamp}">Last updated ${stamp}</time>`
+    + `<h2>Rollbacks</h2><p>Handlers run in reverse step-start order.</p>`
+    + `<footer>Feedback widget rev ${noise} · rendered ${stamp}</footer>`
+    + `</main></body></html>`;
+}
+
+const docsWatchUrls = [
+  "https://docs.example.com/workflows/steps/",
+  "https://docs.example.com/workflows/events/",
+];
+
+function writeDocsWatchFixtures(fixturesDir, stepsBody, stamp, noise) {
+  mkdirSync(fixturesDir, { recursive: true });
+  writeFileSync(join(fixturesDir, "docs-example-com-workflows-steps.html"),
+    docsWatchFixture(stepsBody, stamp, noise));
+  writeFileSync(join(fixturesDir, "docs-example-com-workflows-events.html"),
+    `<html><body><main><h2>Events</h2><p>waitForEvent times out after 24h.</p></main></body></html>`);
+}
+
+function docsWatchArgs(d) {
+  const fixtures = join(d, "fixtures");
+  writeFileSync(join(d, "VERSION.md"), "# refs\n- " + docsWatchUrls.join("\n- ") + "\n");
+  return [
+    "--source-file", join(d, "VERSION.md"),
+    "--baseline", join(d, "baseline.json"),
+    "--fixture-dir", fixtures,
+  ];
+}
+
+test("docs-watch ignores volatile markup and reports changed sections", () => {
+  const d = dir();
+  writeDocsWatchFixtures(join(d, "fixtures"), "five", "2026-09-01", "alpha");
+  const args = docsWatchArgs(d);
+  let r = run("compat/docs-watch.mjs", [...args, "--update-baseline"], d);
+  assert.equal(r.status, 0, r.stderr);
+  let rec = read(d, "docs-watch.json");
+  assert.equal(rec.changed.length, 0);
+  const baselineSources = JSON.parse(readFileSync(join(d, "baseline.json"), "utf8")).sources;
+  assert.equal(baselineSources.length, 2, "baseline stores one entry per source url");
+  assert.ok(baselineSources[0].sections["steps-and-retries"], "baseline stores per-section hashes");
+
+  // Volatile-only refresh: new timestamp, different A/B script/nav/footer
+  // text, changed chrome attributes — no section body changed.
+  writeDocsWatchFixtures(join(d, "fixtures"), "five", "2026-09-20", "beta");
+  r = run("compat/docs-watch.mjs", args, d);
+  assert.equal(r.status, 0, r.stderr);
+  rec = read(d, "docs-watch.json");
+  assert.equal(rec.changed.length, 0, "timestamps/A-B markup must not flag the page");
+  assert.equal(rec.investigationRequired, false);
+
+  // A real edit inside one section: the page is flagged and the changed
+  // section is named.
+  writeDocsWatchFixtures(join(d, "fixtures"), "six", "2026-09-20", "gamma");
+  r = run("compat/docs-watch.mjs", args, d);
+  rec = read(d, "docs-watch.json");
+  assert.deepEqual(rec.changed, ["https://docs.example.com/workflows/steps/"]);
+  assert.deepEqual(rec.changedSections, [
+    { url: "https://docs.example.com/workflows/steps/", section: "steps-and-retries", kind: "changed" },
+  ], "the record names the section that changed");
+  assert.equal(rec.investigationRequired, true);
+  assert.equal(rec.sources[0].scope, "main");
+  rmSync(d, { recursive: true, force: true });
+});
+
+// update-candidate: on a compatible verdict the bundle is prepared in an
+// isolated copy — the repo's package.json/lockfile/manifest are never
+// touched. `npm` is PATH-stubbed so lockfile regeneration is hermetic.
+function writeNpmStub(binDir, body) {
+  mkdirSync(binDir, { recursive: true });
+  const stub = join(binDir, "npm");
+  writeFileSync(stub, "#!/bin/sh\n" + body + "\n");
+  chmodSync(stub, 0o755);
+  return binDir;
+}
+
+test("update-candidate emits an isolated apply bundle and reviewable patch", () => {
+  const d = dir();
+  seedPassing(d); // candidate tuple differs from the pinned manifest
+  write(d, "verdict-latest.json", { oracle: "latest", verdict: "compatible", pass: true, runId: "run-1" });
+  const stubBin = writeNpmStub(join(d, "bin"),
+    "printf '{\"stubbedLockfile\": true}\\n' > package-lock.json");
+  const pkgBefore = readFileSync(join(root, "package.json"), "utf8");
+  const lockBefore = readFileSync(join(root, "package-lock.json"), "utf8");
+  const manifestBefore = readFileSync(join(root, "compat/oracle/manifest.json"), "utf8");
+
+  const r = run("compat/update-candidate.mjs", ["--oracle", "latest"], d,
+    { PATH: stubBin + ":" + process.env.PATH });
+  assert.equal(r.status, 0, r.stderr);
+  const proposal = read(d, "update-candidate-latest.json");
+  assert.equal(proposal.status, "proposed");
+  assert.equal(proposal.apply.status, "generated");
+  assert.equal(proposal.apply.lockfile, "regenerated");
+
+  const applyDir = join(d, "update-candidate-apply");
+  const appliedPkg = JSON.parse(readFileSync(join(applyDir, "package.json"), "utf8"));
+  assert.equal(appliedPkg.devDependencies.wrangler, "4.142.0");
+  assert.equal(appliedPkg.devDependencies["@cloudflare/workers-types"], "5.20260928.1");
+  assert.equal(appliedPkg.devDependencies.workerd, "1.20260928.1");
+  assert.match(readFileSync(join(applyDir, "package-lock.json"), "utf8"), /stubbedLockfile/,
+    "the bundle's lockfile is the one regenerated inside the isolated copy");
+  const appliedManifest = JSON.parse(readFileSync(join(applyDir, "compat/oracle/manifest.json"), "utf8"));
+  assert.equal(appliedManifest.wrangler, "4.142.0");
+
+  const patch = readFileSync(join(d, "update-candidate.patch"), "utf8");
+  assert.match(patch, /diff --git a\/package\.json b\/package\.json/);
+  assert.match(patch, /\+\s+"wrangler": "4\.142\.0"/);
+  assert.match(patch, /diff --git a\/package-lock\.json b\/package-lock\.json/);
+  assert.match(patch, /diff --git a\/compat\/oracle\/manifest\.json b\/compat\/oracle\/manifest\.json/);
+
+  // The repo working tree is untouched.
+  assert.equal(readFileSync(join(root, "package.json"), "utf8"), pkgBefore);
+  assert.equal(readFileSync(join(root, "package-lock.json"), "utf8"), lockBefore);
+  assert.equal(readFileSync(join(root, "compat/oracle/manifest.json"), "utf8"), manifestBefore);
+  rmSync(d, { recursive: true, force: true });
+});
+
+test("update-candidate records lockfile-regeneration failure honestly", () => {
+  const d = dir();
+  seedPassing(d);
+  write(d, "verdict-latest.json", { oracle: "latest", verdict: "compatible", pass: true, runId: "run-1" });
+  const stubBin = writeNpmStub(join(d, "bin"), "exit 1");
+
+  const r = run("compat/update-candidate.mjs", ["--oracle", "latest"], d,
+    { PATH: stubBin + ":" + process.env.PATH });
+  assert.equal(r.status, 0, r.stderr);
+  const proposal = read(d, "update-candidate-latest.json");
+  assert.equal(proposal.apply.lockfile, "failed");
+  assert.ok(proposal.apply.error, "the failure is recorded, not hidden");
+  const patch = readFileSync(join(d, "update-candidate.patch"), "utf8");
+  assert.match(patch, /a\/package\.json/, "non-lockfile hunks are still emitted");
+  assert.doesNotMatch(patch, /a\/package-lock\.json/,
+    "a stale copied lockfile never ships in the patch");
   rmSync(d, { recursive: true, force: true });
 });

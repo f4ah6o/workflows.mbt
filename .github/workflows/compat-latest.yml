@@ -97,6 +97,14 @@ jobs:
           for f in compat-results/verdict-latest.json compat-results/update-candidate-latest.json; do
             [ -f "$f" ] && echo "## $f" >> "$GITHUB_STEP_SUMMARY" && echo '```json' >> "$GITHUB_STEP_SUMMARY" && cat "$f" >> "$GITHUB_STEP_SUMMARY" && echo '```' >> "$GITHUB_STEP_SUMMARY"
           done
+          # The apply bundle's reviewable diff (bounded; full patch is in the
+          # compat-results artifact).
+          if [ -f compat-results/update-candidate.patch ]; then
+            echo "## compat-results/update-candidate.patch" >> "$GITHUB_STEP_SUMMARY"
+            echo '```diff' >> "$GITHUB_STEP_SUMMARY"
+            head -400 compat-results/update-candidate.patch >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       # Persist the dedup state for the next scheduled run — the artifact
       # upload below is evidence; this cache is the cross-run state store
