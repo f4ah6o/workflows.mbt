@@ -95,10 +95,29 @@ export function loadProjectConfig(configPath = "wrangler.jsonc", overrides = {})
 
   const localPath = join(root, "workflows.mbt.json");
   const local = existsSync(localPath) ? readJsonc(localPath) : {};
+  // Explicit overrides pick the backend: a storageUrl forces postgres, a
+  // storagePath forces sqlite; otherwise workflows.mbt.json decides.
+  const storageType = overrides.storageUrl != null
+    ? "postgres"
+    : overrides.storagePath != null
+      ? "sqlite"
+      : (local?.storage?.type ?? "sqlite");
+  if (storageType !== "sqlite" && storageType !== "postgres") {
+    throw new Error(
+      `workflows.mbt.json storage.type must be one of sqlite, postgres`,
+    );
+  }
   const configuredStorage = local?.storage?.path ?? ".workflows/workflows.db";
   const storagePath =
     overrides.storagePath ??
     (isAbsolute(configuredStorage) ? configuredStorage : join(root, configuredStorage));
+  const storageUrl = overrides.storageUrl ?? local?.storage?.url ?? null;
+  const storageSchema = local?.storage?.schema ?? null;
+  if (storageType === "postgres" && storageUrl == null) {
+    throw new Error(
+      'workflows.mbt.json storage.url is required when storage.type is "postgres"',
+    );
+  }
 
   const secretsDecl = envName == null ? wrangler?.secrets : overlay?.secrets;
   const requiredSecrets = Array.isArray(secretsDecl?.required)
@@ -147,6 +166,9 @@ export function loadProjectConfig(configPath = "wrangler.jsonc", overrides = {})
       streamBytes: local?.limits?.streamBytes ?? 256 * 1024 * 1024,
     },
     executorLeaseMs: local?.executor?.leaseMs ?? 30_000,
+    storageType,
+    storageUrl,
+    storageSchema,
     storagePath: resolve(storagePath),
     buildDir: resolve(overrides.buildDir ?? join(root, ".workflows/bundles")),
     ignoredWranglerFields: Object.keys(wrangler).filter(

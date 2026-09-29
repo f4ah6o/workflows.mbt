@@ -1,6 +1,6 @@
 # Post-compatibility hardening after broad Cloudflare Workflows parity
 
-Status: open  
+Status: closed  
 Created: 2026-09-26  
 Target: after broad-compatibility milestone
 
@@ -137,10 +137,27 @@ Do not describe SQLite as multi-process executor-safe before this exists.
 
 ## P2 — storage abstraction hardening / PostgreSQL proof
 
-Status: partial (2026-09-28) — `host/storage/storage.mjs` now enumerates the
-full workflow-semantic contract (registration, instance lifecycle, leases,
-steps/attempts, atomic boundaries, timers, events, rollback, streams).
-PostgreSQL adapter remains open.
+Status: done (2026-09-29) — `host/storage/postgres.mjs` implements the full
+`host/storage/storage.mjs` contract over `pg` (optional dependency; a
+worker-thread bridge keeps the synchronous contract unchanged), with the
+same atomic boundaries as SQLite: step completion, retry scheduling, event
+consume + wait completion, restart-from-step invalidation, rollback
+registration/execution, concurrent branch completion, scheduled firing
+claims (`INSERT ... ON CONFLICT` + loser rollback), subscription event
+append, and leases (`SELECT ... FOR UPDATE` fencing in `assertLease`,
+conditional `UPDATE` claim/renew/release). Backend selection:
+`workflows.mbt.json` `storage.type`/`url`/`schema`, or `--storage
+postgres://...` on the CLI; documented in README + runbook.
+`tests/storage.test.mjs` runs the shared contract + runtime suite against
+Postgres when `WORKFLOWS_POSTGRES_URL` is set (clean skip otherwise, CI
+runs it against a postgres service container); a two-connection race test
+covers cross-connection claim atomicity.
+
+The `pg` client lives in `postgres-worker.mjs`: the Storage contract is
+synchronous (matching better-sqlite3), so each call is a request/response
+exchange — postMessage, `Atomics.wait` on a SharedArrayBuffer flag,
+`receiveMessageOnPort` for the reply — giving BEGIN..COMMIT the same
+single-writer atomicity SQLite gets from `db.transaction()`.
 
 Keep storage methods workflow-semantic rather than SQL-shaped.
 
@@ -280,7 +297,9 @@ Partially advanced by the dependency-insurance implementation (see
 - **Fallback drill** — `compat/run-drill.mjs` exercises durable step +
   suspension + SIGKILL restart from persisted state.
 
-Not advanced: persisted ReadableStream output, RpcSerializable universe,
-timeout durability audit, multi-process executor lease, PostgreSQL storage
-proof, REST optional transports, Wrangler env overlays, service-binding
-adapters, account-plan retention adapter.
+Nothing remains open. Persisted ReadableStream output, RpcSerializable
+universe, timeout durability audit, multi-process executor lease, PostgreSQL
+storage proof, REST optional transports, Wrangler env overlays,
+service-binding adapters, and the account-plan retention adapter all landed
+— the PostgreSQL proof completed on 2026-09-29 (see the section above);
+every other section closed on 2026-09-28. File moved to `issues/closed/`.

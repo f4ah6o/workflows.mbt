@@ -47,7 +47,11 @@ npm run build:core     # build the MoonBit durable kernel
 ```
 
 `--config` accepts the same `wrangler.jsonc` the application already uses —
-no source edit is required. Point `--storage` at a durable filesystem path.
+no source edit is required. Point `--storage` at a durable filesystem path
+(SQLite, the default) or a `postgres://`/`postgresql://` connection string
+(requires the optional `pg` package — `npm install pg`). Persistent selection
+lives in `workflows.mbt.json` (`storage.type`, `storage.path` / `storage.url`
+/ `storage.schema`); `--storage` wins over the file.
 
 **Preflight before routing any traffic** — config parse, required secrets,
 storage writability, prebuilt kernel, unmodified source bundling, Workflow
@@ -134,9 +138,9 @@ See `COMPATIBILITY.md` "Known differences" and `compat/capabilities.json`
   explicitly at the serialize boundary.
 - Account-plan default retention is opt-in via `workflows.mbt.json`
   `retention.plan`; without it, unspecified retention stays unlimited.
-- Multiple executor processes on one machine may share a storage file
-  (instances are claimed by lease with commit fencing), but the runtime is
-  single-machine: no cross-host shared storage or multi-region scheduling.
+- Multiple executor processes may share one storage backend (instances are
+  claimed by lease with commit fencing — cross-host via PostgreSQL), but the
+  scheduler is single-machine: no multi-region scheduling.
 - Workers AI and Durable Objects are not emulated; KV/D1/R2/Queue/Service
   bindings run through local adapters (`workflows.mbt.json` `adapters`).
 

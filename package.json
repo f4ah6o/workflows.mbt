@@ -40,8 +40,9 @@
     "build:core": "node scripts/build-core.mjs",
     "test:moon": "moon test --target js",
     "test:host": "node --test tests/host.test.mjs",
+    "test:storage": "node --test tests/storage.test.mjs",
     "test:e2e": "node --test tests/e2e.test.mjs",
-    "test": "npm run check:moon && npm run build:core && npm run test:moon && npm run test:host && npm run test:compat && npm run test:upstream-ops && npm run test:e2e",
+    "test": "npm run check:moon && npm run build:core && npm run test:moon && npm run test:host && npm run test:storage && npm run test:compat && npm run test:upstream-ops && npm run test:e2e",
     "test:consumer": "node scripts/consumer-smoke.mjs",
     "compat:typecheck": "tsc -p compat/typecheck/tsconfig.json",
     "compat:pinned": "npm run compat:typecheck && node compat/oracle/check.mjs --mode pinned && node compat/run-differential.mjs --oracle pinned && node compat/check-capabilities.mjs --require-pinned",
@@ -59,6 +60,9 @@
     "better-sqlite3": "^12.4.1",
     "esbuild": "^0.25.10",
     "jsonc-parser": "^3.3.1"
+  },
+  "optionalDependencies": {
+    "pg": "^8.23.0"
   },
   "engines": {
     "node": ">=22"
