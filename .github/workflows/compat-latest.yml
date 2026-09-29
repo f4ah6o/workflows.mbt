@@ -86,6 +86,13 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node compat/drift-record.mjs --publish
 
+      # Coverage derivation for the latest oracle cell — computed, never
+      # persisted into the committed baseline (§13: baseline updates are a
+      # reviewed-PR operation, never a scheduled-run one).
+      - name: Coverage calculation
+        if: always()
+        run: node compat/coverage.mjs
+
       - name: Generate compatibility report
         if: always()
         run: npm run compat:report

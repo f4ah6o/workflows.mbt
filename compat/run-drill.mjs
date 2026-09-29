@@ -20,6 +20,7 @@ import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { candidateUsable, loadCandidate, resultsDirFor } from "./candidate.mjs";
+import { buildResultFingerprint, computeRelevantInputs } from "./coverage-model.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const resultsDir = join(root, "compat-results");
@@ -226,6 +227,15 @@ try {
     outputsMatch: sameOutput,
     knownDifferences: [],
     pass: fallback.status === "complete" && sameOutput,
+    // Run-result fingerprint (issue §7) — relevant-input hashes + candidate
+    // identity so later readers can judge this drill evidence fresh or STALE.
+    fingerprint: buildResultFingerprint({
+      runId: process.env.WORKFLOWS_MBT_RUN_ID ?? "drill-" + oracle + "-" + Date.now(),
+      oracle,
+      candidate,
+      relevantInputs: computeRelevantInputs(root, candidate),
+      commit: record.commit,
+    }),
   };
   const name = "drill-" + record.checkedAt.replaceAll(":", "-").replace(/\..*/, "") + ".json";
   writeFileSync(join(resultsDir, name), JSON.stringify(record, null, 2) + "\n");

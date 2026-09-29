@@ -11,6 +11,11 @@
 //       committed baseline: upstream additions/removals/changes and baseline
 //       entries the current discovery roots can no longer produce are
 //       violations.
+//   node compat/check-inventory.mjs --report [--mode latest]
+//       re-extract the candidate inventory and write compat-results/
+//       inventory-<mode>.json (classified items) and inventory-diff-<mode>.json
+//       (baseline diff) WITHOUT failing on differences — the daily latest
+//       pipeline consumes these to build its investigation packet (§10).
 //
 // Writes compat-results/resolved-inventory.json and inventory-check.json.
 
@@ -32,6 +37,7 @@ const arg = (name) => {
   return i >= 0 ? process.argv[i + 1] : null;
 };
 const verify = process.argv.includes("--verify");
+const report = process.argv.includes("--report");
 
 function loadJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
@@ -106,61 +112,107 @@ const classificationCoverage = {
   classified: baselineItems.length - unclassified.length,
 };
 
-// ── --verify: re-extract and diff against the committed baseline ───────────
+// ── --verify / --report: re-extract the candidate inventory ────────────────
+
+const diffInventory = (committed, fresh, label) => {
+  const committedById = new Map(committed.map((item) => [item.id, item]));
+  const freshById = new Map(fresh.map((item) => [item.id, item]));
+  const added = [];
+  const changed = [];
+  const removed = [];
+  for (const [id, item] of freshById) {
+    const prior = committedById.get(id);
+    if (!prior) added.push(id);
+    else if (prior.contract?.fingerprint !== item.contract?.fingerprint
+      || prior.contract?.membersHash !== item.contract?.membersHash) {
+      changed.push(id);
+    }
+  }
+  for (const id of committedById.keys()) {
+    if (!freshById.has(id)) removed.push(id);
+  }
+  return { label, added: added.sort(), changed: changed.sort(), removed: removed.sort() };
+};
 
 let verification = null;
-if (verify) {
+let candidateInventory = null;
+let candidateStatus = null;
+if (verify || report) {
   const typesPath = arg("types");
   const schemaPath = arg("schema");
   let typesText, schemaText;
   if (typesPath && schemaPath) {
     typesText = readFileSync(resolve(typesPath), "utf8");
     schemaText = readFileSync(resolve(schemaPath), "utf8");
+    candidateStatus = { status: "ok", id: "override", versions: null };
   } else {
     const mode = arg("mode") ?? "pinned";
     const candidate = await loadCandidate(mode, { candidatePath: arg("candidate"), resultsDir });
+    candidateStatus = { status: candidate.status, id: candidate.id ?? null, versions: candidate.versions ?? null, error: candidate.error ?? null };
     if (candidate.status !== "ok") {
-      fail("candidate not usable for inventory verification: " + (candidate.error ?? candidate.status));
+      // In --verify mode this is fatal; in --report mode the extraction
+      // failure is recorded and the latest pipeline's verdict phase reports
+      // upstream-acquisition-failure.
+      if (verify) fail("candidate not usable for inventory verification: " + (candidate.error ?? candidate.status));
     } else {
       typesText = readFileSync(candidate.paths.typesPath, "utf8");
       schemaText = readFileSync(candidate.paths.schemaPath, "utf8");
     }
   }
   if (typesText && schemaText) {
-    const candidate = buildCandidateInventory({
+    candidateInventory = buildCandidateInventory({
       typesText,
       schema: JSON.parse(schemaText),
       spec,
       upstream: null,
     });
-    const diffInventory = (committed, fresh, label) => {
-      const committedById = new Map(committed.map((item) => [item.id, item]));
-      const freshById = new Map(fresh.map((item) => [item.id, item]));
-      const added = [];
-      const changed = [];
-      const removed = [];
-      for (const [id, item] of freshById) {
-        const prior = committedById.get(id);
-        if (!prior) added.push(id);
-        else if (prior.contract?.fingerprint !== item.contract?.fingerprint
-          || prior.contract?.membersHash !== item.contract?.membersHash) {
-          changed.push(id);
-        }
-      }
-      for (const id of committedById.keys()) {
-        if (!freshById.has(id)) removed.push(id);
-      }
-      return { label, added: added.sort(), changed: changed.sort(), removed: removed.sort() };
-    };
-    const apiDiff = diffInventory(baselines.api.items, candidate.api, "upstream-api");
-    const configDiff = diffInventory(baselines.config.items, candidate.config, "upstream-config");
-    verification = { api: apiDiff, config: configDiff };
-    for (const diff of [apiDiff, configDiff]) {
-      for (const id of diff.added) fail(diff.label + ": new upstream item not in baseline: " + id);
-      for (const id of diff.changed) fail(diff.label + ": fingerprint drift not promoted into baseline: " + id);
-      for (const id of diff.removed) fail(diff.label + ": baseline item no longer produced by discovery roots (removed upstream or undetectable): " + id);
-    }
   }
+}
+
+if (verify && candidateInventory) {
+  const apiDiff = diffInventory(baselines.api.items, candidateInventory.api, "upstream-api");
+  const configDiff = diffInventory(baselines.config.items, candidateInventory.config, "upstream-config");
+  verification = { api: apiDiff, config: configDiff };
+  for (const diff of [apiDiff, configDiff]) {
+    for (const id of diff.added) fail(diff.label + ": new upstream item not in baseline: " + id);
+    for (const id of diff.changed) fail(diff.label + ": fingerprint drift not promoted into baseline: " + id);
+    for (const id of diff.removed) fail(diff.label + ": baseline item no longer produced by discovery roots (removed upstream or undetectable): " + id);
+  }
+}
+
+if (report) {
+  mkdirSync(resultsDir, { recursive: true });
+  const mode = arg("mode") ?? "pinned";
+  const items = candidateInventory
+    ? [...candidateInventory.api.map((item) => ({ ...item, kind: "api" })),
+       ...candidateInventory.config.map((item) => ({ ...item, kind: "config" }))]
+    : [];
+  const classifiedItems = items.map((item) => ({
+    id: item.id,
+    kind: item.kind,
+    fingerprint: item.contract?.fingerprint ?? null,
+    profile: classRows[item.id]?.profile ?? null,
+    target: classRows[item.id]?.target ?? null,
+  }));
+  writeFileSync(join(resultsDir, "inventory-" + mode + ".json"), JSON.stringify({
+    formatVersion: 1,
+    mode,
+    checkedAt: new Date().toISOString(),
+    candidateId: candidateStatus?.id ?? null,
+    status: candidateInventory ? "ok" : "extraction-failed",
+    error: candidateStatus?.error ?? null,
+    items: classifiedItems,
+    unclassified: classifiedItems.filter((item) => item.profile == null).map((item) => item.id),
+  }, null, 2) + "\n");
+  writeFileSync(join(resultsDir, "inventory-diff-" + mode + ".json"), JSON.stringify({
+    formatVersion: 1,
+    mode,
+    checkedAt: new Date().toISOString(),
+    candidateId: candidateStatus?.id ?? null,
+    status: candidateInventory ? "ok" : "extraction-failed",
+    api: candidateInventory ? diffInventory(baselines.api.items, candidateInventory.api, "upstream-api") : null,
+    config: candidateInventory ? diffInventory(baselines.config.items, candidateInventory.config, "upstream-config") : null,
+  }, null, 2) + "\n");
 }
 
 // ── Output ─────────────────────────────────────────────────────────────────

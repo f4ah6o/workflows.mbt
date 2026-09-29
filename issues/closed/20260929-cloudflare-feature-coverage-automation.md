@@ -1,6 +1,6 @@
 # Cloudflare feature coverage automation — upstream 由来の分母と evidence freshness
 
-Status: open
+Status: done
 Created: 2026-09-29
 Revised: 2026-09-29 (PR #11 review B1–B12 反映)
 Baseline: main @ e8aa8fa85ffeb3f4b6d915d2343b454344f57a75
@@ -1081,12 +1081,97 @@ Phase 1–3 を実装した。Phase 4–7 は本 Issue を引き継ぐ後続 ses
 - CI wiring: `check:inventory` step を PR-level checks に追加
   (credential-free)、`test:inventory` を `npm test` chain に追加。
 
-**残件 (Phase 4–7)**
+### 2026-09-29 — Phase 4–7 実装完了 (Task C2)
 
-- Phase 4: run result fingerprint 記録 (run-differential / run-latest 拡張)、
-  stale detection、lastVerifiedEvidence / currentRunStatus 書き込み
-- Phase 5: `compat/coverage.mjs` → coverage.json、coverage-baseline.json、
-  report.mjs per-profile table、INVALID/non-zero 伝播
-- Phase 6: CI wiring (PR coverage gate、daily extract/compare、
-  hosted final report)
-- Phase 7: docs + maintenance 手順
+**Phase 4 — current-run evidence**
+
+- run-differential / run-typecheck / run-drill / canary が各 result file に
+  `fingerprint` (runId / oracle / commit provenance / candidate identity +
+  relevant-input hash bundle) を記録。drill は scenario 記録にも同様に。
+- `persistedCandidate` (network を触らない persisted candidate 読み) と
+  `currentFreshnessInputs` (hosted は repo-side hash のみ) を
+  coverage-model に追加。`computeRelevantInputs` は inventoryDir を
+  `resolve(rootDir, inventoryDir)` で解決 (absolute override 対応)。
+- check-capabilities が oracle ごとの freshness を判定し stale なら
+  probe verdict を STALE に downgrade (DIVERGENT / BLOCKED は保存、
+  UNTESTED はそのまま)。fingerprint 欠落は定義上 stale —
+  historical evidence への後付けはしない。
+
+**Phase 5 — coverage + report**
+
+- `compat/coverage.mjs` 新設: validator (check-capabilities) を先に走らせ、
+  失敗時は `coverage.json status:"invalid"` + exit 1。正常時は
+  classification / compatibility / functional / scenario coverage と
+  per-oracle detail (probeVerdicts / probeErrors / notRun / stale /
+  lastVerifiedEvidence / candidates) を `compat-results/coverage.json` に
+  出力。数える単位は requirement、分母は active profile の derived
+  in-scope requirement。
+- `compat/coverage-baseline.json` (committed) + `--update-baseline` と
+  `--gate --base <path>` (§13): numerator drop / denominator shrink /
+  upstream pin 変更を base-branch baseline と比較で検出。scoped waiver
+  (`denominator-shrink` | `metric-drop` | `upstream-pin-update`) との
+  照合は 1:1 exhaustive (未照合 regression / 未使用 waiver ともに fail)。
+  HEAD baseline は proposed baseline として matrix hash / profile /
+  oracle / candidate 整合を検証 — 自分の PR で baseline を編集して
+  regression を自己承認できない。base 側 baseline 不存在 = 初回導入で
+  pass。measured でない oracle cell は gate 対象外。
+- `compat/scenarios.json`: committed scenario registry
+  (consumer-external-side-effect、fingerprint 非保持の scenario は
+  result の pass/fail のみで判定)。
+- `compat/report.mjs`: coverage.mjs を validator として spawn
+  (失敗時 abort)、"## Coverage" section に classification / scenario
+  行 + per-oracle `| Profile | Verified | Divergent | Unsupported |
+  Untested | Blocked | Stale | Total | Coverage |` 表 + probeErrors /
+  not-run / divergent / blocked / stale の明示リスト。
+- 合わせて formatVersion 2 rename 由来の latent bug を修正
+  (matrix table が `row.evidence` を参照していた → `declaredSupport`)。
+
+**Phase 6 — CI wiring**
+
+- `.github/workflows/ci.yml`: pinned oracle 後に Coverage calculation、
+  pull_request では base branch の `compat/coverage-baseline.json` を
+  FETCH_HEAD から取り出して regression gate を実行。
+- `.github/workflows/compat-latest.yml`: drift-record 後 report 前に
+  Coverage calculation (`if: always()`)。
+- `compat/check-inventory.mjs --report [--mode <oracle>]`: candidate から
+  inventory を再抽出して `inventory-<mode>.json` (classification 付き
+  item + unclassified) と `inventory-diff-<mode>.json` (baseline との
+  added/changed/removed) を non-fatal で書く。`compat/run-latest.mjs` に
+  contract と differential の間の inventory phase として配線。
+- `compat/drift-record.mjs`: inventory-diff を集計して packet の
+  "Upstream inventory drift" section、problem identity、
+  fixCandidates (added→classify+promote、changed→re-review+regenerate、
+  removed→drop stale rows)、未実行時の unconfirmed 記録を追加。
+- `.github/workflows/compat-hosted.yml`: credential-gated coverage+report
+  step。hosted そのものは credentials が無いためこの環境では未実施
+  (wire のみ、検証不可能な点はそのまま記録)。
+
+**Phase 7 — docs**
+
+- `COMPATIBILITY.md`: coverage number の source は
+  `compat-results/coverage.json`、baseline refresh は reviewed PR のみ、
+  と明記。
+- `docs/upstream-tracking.md`: pipeline に inventory phase と coverage
+  step、freshness / gate / waiver の説明を追加。
+
+**検証**
+
+- `npm run test`: 全 pass (test:coverage を chain に追加)。
+- `npm run compat:pinned`: pass — fingerprint 付き pinned evidence で
+  coverage derivation を実確認 (workflows-core 24/26 VERIFIED、
+  1 UNSUPPORTED + 1 UNTESTED、workflow-host 8/12)。
+- `npm run compat:latest`: 全 9 phase exit 0、verdict compatible、
+  inventory phase が `inventory-latest.json` + `inventory-diff-latest.json`
+  を生成。latest oracle も fresh evidence として集計されることを確認。
+- `npm run compat:report`: per-oracle coverage 表 + 明示リストを確認。
+- hermetic tests `tests/coverage-pipeline.test.mjs` (17 cases):
+  state derivation (VERIFIED/STALE/BLOCKED/DIVERGENT/oracle-specific /
+  UNSUPPORTED denominator)、fingerprint freshness (missing→stale、
+  commit 差は非 stale、hash 差は stale)、validator failure → INVALID +
+  non-zero + report abort、gate (first-adoption / match / numerator drop /
+  denominator shrink / scoped waiver 1:1 / upstream-pin-update / proposed
+  baseline 自己承認 reject)、check-inventory --report、drift-record
+  inventory section、check-capabilities stale note。
+- hosted canary: credentials 非存在のため実走行未実施 — wire と
+  coverage step は揃っているが「動いた」とは主張しない
+  (credential-gated item は not-yet-exercised)。

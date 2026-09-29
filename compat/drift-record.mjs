@@ -79,6 +79,7 @@ const verdict = load(`verdict-${oracle}.json`);
 const drift = load(`drift-${oracle}.json`);
 const differential = load(`differential-${oracle}.json`);
 const typecheck = load(`typecheck-${oracle}.json`);
+const inventoryDiff = load(`inventory-diff-${oracle}.json`);
 const candidate = load(`candidate-${oracle}.json`);
 const manifest = JSON.parse(readFileSync(join(root, "compat/oracle/manifest.json"), "utf8"));
 const capabilities = load("capabilities.json") ?? JSON.parse(readFileSync(join(root, "compat/capabilities.json"), "utf8"));
@@ -112,7 +113,23 @@ const state = (() => {
 })();
 state.keys ??= {};
 
-const hasDrift = Boolean(contractDrift) || semanticFailures.length > 0;
+// Upstream inventory drift (§10): the daily latest pipeline re-extracts the
+// candidate's upstream surface and diffs it against the committed baseline.
+// New/changed/removed upstream items are drift like contract drift — they
+// feed the problem identity and the investigation packet.
+const inventoryChanged = (() => {
+  const out = { added: [], changed: [], removed: [] };
+  for (const diff of [inventoryDiff?.api, inventoryDiff?.config]) {
+    if (!diff) continue;
+    out.added.push(...(diff.added ?? []));
+    out.changed.push(...(diff.changed ?? []));
+    out.removed.push(...(diff.removed ?? []));
+  }
+  return out;
+})();
+const hasInventoryDrift = inventoryChanged.added.length + inventoryChanged.changed.length + inventoryChanged.removed.length > 0;
+
+const hasDrift = Boolean(contractDrift) || semanticFailures.length > 0 || hasInventoryDrift;
 
 function identityFor() {
   // Problem identity: oracle + what is wrong, never which version showed it.
@@ -123,6 +140,13 @@ function identityFor() {
           added: [...contractDrift.added].sort(),
           removed: [...contractDrift.removed].sort(),
           changed: [...contractDrift.changed].sort(),
+        }
+      : null,
+    inventory: hasInventoryDrift
+      ? {
+          added: [...inventoryChanged.added].sort(),
+          removed: [...inventoryChanged.removed].sort(),
+          changed: [...inventoryChanged.changed].sort(),
         }
       : null,
     semantic: semanticFailures.map((p) => p.replace(/ \(execution error\)$/, "")).sort(),
@@ -319,6 +343,18 @@ for (const p of semanticFailures) {
   fixCandidates.push("Probe " + p + " — expected/actual normalized traces are under `differences` in compat-results/differential-"
     + oracle + ".json; fix the runtime semantics or mark the probe intentionally unsupported in compat/probes/catalog.json.");
 }
+if (inventoryChanged.added.length) {
+  fixCandidates.push("New upstream items found by inventory re-extraction: " + inventoryChanged.added.join(", ")
+    + " — classify each in compat/inventory/classification.json (profile + target) and promote the baselines; coverage cannot claim an item classification.json has not classified.");
+}
+if (inventoryChanged.changed.length) {
+  fixCandidates.push("Upstream contract fingerprints changed: " + inventoryChanged.changed.join(", ")
+    + " — re-review their classification and regenerate compat/inventory/upstream-*.json from the candidate.");
+}
+if (inventoryChanged.removed.length) {
+  fixCandidates.push("Upstream items removed or no longer discoverable: " + inventoryChanged.removed.join(", ")
+    + " — their classification rows go stale; regenerate baselines and drop the stale rows.");
+}
 if (!fixCandidates.length && sideErrors.length) {
   fixCandidates.push("A side failed to run — fix the harness/runtime first; this is not evidence of drift.");
 }
@@ -326,6 +362,7 @@ if (!fixCandidates.length && sideErrors.length) {
 const unconfirmed = [];
 if (!typecheck) unconfirmed.push("typecheck phase did not run — contract typing evidence missing");
 if (!differential) unconfirmed.push("differential phase did not run — semantic evidence missing");
+if (oracle !== "hosted" && !inventoryDiff) unconfirmed.push("inventory phase did not run — upstream surface diff evidence missing");
 if (verdict?.docsWatch?.changed?.length) {
   unconfirmed.push("documentation watch changed: " + verdict.docsWatch.changed.join(", "));
 }
@@ -367,6 +404,16 @@ const lines = [
   "",
   ...(semanticFailures.length ? semanticFailures.map((p) => "- " + p) : ["- none"]),
   "",
+  "## Upstream inventory drift",
+  "",
+  ...(hasInventoryDrift
+    ? [
+        "- added: " + (inventoryChanged.added.join(", ") || "none"),
+        "- removed: " + (inventoryChanged.removed.join(", ") || "none"),
+        "- changed: " + (inventoryChanged.changed.join(", ") || "none"),
+      ]
+    : ["- none" + (inventoryDiff ? "" : " (inventory phase did not run)")]),
+  "",
   "## Affected capabilities",
   "",
   ...(affected.length
@@ -397,6 +444,8 @@ const lines = [
   "## Artifact refs",
   "",
   "- compat-results/drift-" + oracle + ".json (contract phase)",
+  "- compat-results/inventory-diff-" + oracle + ".json (upstream inventory phase)",
+  "- compat-results/inventory-" + oracle + ".json (classified candidate inventory)",
   "- compat-results/differential-" + oracle + ".json (semantic phase)",
   "- compat-results/verdict-" + oracle + ".json (verdict)",
   "- compat-results/candidate-" + oracle + ".json (exact upstream candidate incl. real runtime graph)",

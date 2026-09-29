@@ -95,6 +95,12 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node compat/drift-record.mjs --oracle hosted --publish
 
+      # Final coverage report over the hosted oracle cell — gated exactly
+      # like the canary; PR CI never requires hosted credentials (§12).
+      - name: Coverage + report
+        if: always() && env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
+        run: node compat/report.mjs
+
       - name: Ensure state file exists
         if: always() && env.CF_API_TOKEN != '' && env.CF_ACCOUNT_ID != ''
         run: mkdir -p compat-results && [ -f compat-results/drift-state.json ] || echo '{"keys":{}}' > compat-results/drift-state.json

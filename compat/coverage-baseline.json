@@ -1,0 +1,166 @@
+{
+  "formatVersion": 1,
+  "generatedAt": "2026-09-29T20:32:14.818Z",
+  "matrixHash": "sha256:9259c47c5ce07808cccd259ed0940ceaebd31c13764840b9b3f59ddcb506cdc1",
+  "inventoryHash": "sha256:eedfcd8f1b077728be329975f657a8e9ee80573010b4b52b2469b96f0c9400c6",
+  "candidates": {
+    "pinned": "pinned-c236de904715f15e",
+    "latest": null,
+    "hosted": null
+  },
+  "profiles": {
+    "workflows-core": {
+      "lifecycle": "active",
+      "denominator": 26,
+      "requirements": [
+        "req.workflows-core.durability.replay-restart",
+        "req.workflows-core.promise.all",
+        "req.workflows-core.promise.allsettled",
+        "req.workflows-core.promise.any",
+        "req.workflows-core.promise.concurrent-retry",
+        "req.workflows-core.promise.mixed-durable-event",
+        "req.workflows-core.promise.race",
+        "req.workflows-core.promise.wrapped-race",
+        "req.workflows-core.rollback.auto",
+        "req.workflows-core.serialization.binary",
+        "req.workflows-core.serialization.collections",
+        "req.workflows-core.serialization.durable-values",
+        "req.workflows-core.serialization.error",
+        "req.workflows-core.serialization.structured",
+        "req.workflows-core.serialization.unsupported",
+        "req.workflows-core.step.context",
+        "req.workflows-core.step.do",
+        "req.workflows-core.step.dynamic-delay",
+        "req.workflows-core.step.identity",
+        "req.workflows-core.step.non-retryable-error",
+        "req.workflows-core.step.retry",
+        "req.workflows-core.step.sleep",
+        "req.workflows-core.step.sleep-until",
+        "req.workflows-core.step.wait-for-event",
+        "req.workflows-core.step.wait-timeout",
+        "req.workflows-core.subscribe.sensitive-redaction"
+      ],
+      "oracles": {
+        "pinned": {
+          "numerator": 24,
+          "denominator": 26,
+          "states": {
+            "VERIFIED": 24,
+            "DIVERGENT": 0,
+            "UNSUPPORTED": 1,
+            "UNTESTED": 1,
+            "BLOCKED": 0,
+            "STALE": 0
+          },
+          "verifiedRequirements": [
+            "req.workflows-core.promise.all",
+            "req.workflows-core.promise.allsettled",
+            "req.workflows-core.promise.any",
+            "req.workflows-core.promise.concurrent-retry",
+            "req.workflows-core.promise.mixed-durable-event",
+            "req.workflows-core.promise.race",
+            "req.workflows-core.promise.wrapped-race",
+            "req.workflows-core.rollback.auto",
+            "req.workflows-core.serialization.binary",
+            "req.workflows-core.serialization.collections",
+            "req.workflows-core.serialization.error",
+            "req.workflows-core.serialization.structured",
+            "req.workflows-core.serialization.unsupported",
+            "req.workflows-core.step.context",
+            "req.workflows-core.step.do",
+            "req.workflows-core.step.dynamic-delay",
+            "req.workflows-core.step.identity",
+            "req.workflows-core.step.non-retryable-error",
+            "req.workflows-core.step.retry",
+            "req.workflows-core.step.sleep",
+            "req.workflows-core.step.sleep-until",
+            "req.workflows-core.step.wait-for-event",
+            "req.workflows-core.step.wait-timeout",
+            "req.workflows-core.subscribe.sensitive-redaction"
+          ],
+          "functionalCoverage": {
+            "executed": 24,
+            "passed": 24
+          }
+        }
+      }
+    },
+    "workflow-host": {
+      "lifecycle": "active",
+      "denominator": 12,
+      "requirements": [
+        "req.workflow-host.binding.crud",
+        "req.workflow-host.binding.retention",
+        "req.workflow-host.lifecycle.delete",
+        "req.workflow-host.lifecycle.pause-resume",
+        "req.workflow-host.lifecycle.restart-from",
+        "req.workflow-host.lifecycle.terminate-rollback",
+        "req.workflow-host.rest.core",
+        "req.workflow-host.schedule.cron",
+        "req.workflow-host.subscribe.filter-cursor",
+        "req.workflow-host.worker.entrypoint-ctx",
+        "req.workflow-host.worker.http",
+        "req.workflow-host.worker.wait-until"
+      ],
+      "oracles": {
+        "pinned": {
+          "numerator": 8,
+          "denominator": 12,
+          "states": {
+            "VERIFIED": 8,
+            "DIVERGENT": 0,
+            "UNSUPPORTED": 0,
+            "UNTESTED": 4,
+            "BLOCKED": 0,
+            "STALE": 0
+          },
+          "verifiedRequirements": [
+            "req.workflow-host.binding.crud",
+            "req.workflow-host.lifecycle.delete",
+            "req.workflow-host.lifecycle.pause-resume",
+            "req.workflow-host.lifecycle.restart-from",
+            "req.workflow-host.lifecycle.terminate-rollback",
+            "req.workflow-host.subscribe.filter-cursor",
+            "req.workflow-host.worker.entrypoint-ctx",
+            "req.workflow-host.worker.http"
+          ],
+          "functionalCoverage": {
+            "executed": 8,
+            "passed": 8
+          }
+        }
+      }
+    },
+    "binding-adapters": {
+      "lifecycle": "active",
+      "denominator": 0,
+      "requirements": [],
+      "oracles": {
+        "pinned": {
+          "numerator": 0,
+          "denominator": 0,
+          "states": {
+            "VERIFIED": 0,
+            "DIVERGENT": 0,
+            "UNSUPPORTED": 0,
+            "UNTESTED": 0,
+            "BLOCKED": 0,
+            "STALE": 0
+          },
+          "verifiedRequirements": [],
+          "functionalCoverage": {
+            "executed": 0,
+            "passed": 0
+          }
+        }
+      }
+    },
+    "workers-platform": {
+      "lifecycle": "deferred",
+      "denominator": null,
+      "requirements": [],
+      "oracles": {}
+    }
+  },
+  "waivers": []
+}

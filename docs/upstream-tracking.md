@@ -24,19 +24,29 @@ single `WORKFLOWS_MBT_RUN_ID`:
    tsconfig `paths` redirect.
 3. **contract** (`compat/oracle/check.mjs`) — API-surface drift
    (`added`/`removed`/`changed`) against the candidate's unpacked packages.
-4. **differential** (`compat/run-differential.mjs`) — the probe catalog under
+4. **inventory** (`compat/check-inventory.mjs --report --mode latest`) —
+   re-extracts the upstream API/config inventory from the candidate's types
+   and wrangler schema, diffs it against the committed baselines under
+   `compat/inventory/`, and writes `inventory-latest.json` +
+   `inventory-diff-latest.json`. A drift here is an investigation input,
+   never a failure.
+5. **differential** (`compat/run-differential.mjs`) — the probe catalog under
    the candidate's wrangler binary vs workflows.mbt.
-5. **docs-watch** (`compat/docs-watch.mjs`) — hashes the official doc pages
+6. **docs-watch** (`compat/docs-watch.mjs`) — hashes the official doc pages
    cited by `compat/cloudflare/VERSION.md` against
    `compat/docs-watch.baseline.json`. A changed page is an investigation
    trigger, never a compatibility failure. Baseline refresh is manual:
    `node compat/docs-watch.mjs --update-baseline`.
-6. **verdict** (`compat/verdict.mjs`) — the machine-readable classification
+7. **verdict** (`compat/verdict.mjs`) — the machine-readable classification
    (below). This is the run's exit status.
-7. **response** (`compat/drift-record.mjs`) — deduplicated drift packet +
-   `drift-state.json` tracking.
-8. **update-candidate** (`compat/update-candidate.mjs`) — a verified pin
-   proposal, or an explicit blocked/no-update record.
+8. **response** (`compat/drift-record.mjs`) — deduplicated drift packet +
+   `drift-state.json` tracking. Inventory drift lands in the packet's
+   "Upstream inventory drift" section and feeds the problem identity.
+9. **coverage** (CI: `node compat/coverage.mjs`) — derives
+   `compat-results/coverage.json` from the run's fingerprinted evidence
+   (see "Coverage" below).
+10. **update-candidate** (`compat/update-candidate.mjs`) — a verified pin
+    proposal, or an explicit blocked/no-update record.
 
 Every phase writes its own result file even on failure, so a later reader can
 never mistake a stale success for current evidence.
@@ -59,6 +69,36 @@ never mistake a stale success for current evidence.
 Nothing else counts as success: a missing file, a malformed record, a stale
 run, a phase that verified a different upstream tuple, or an upstream that
 never started all classify as failure states.
+
+## Coverage
+
+`node compat/coverage.mjs` (`npm run compat:coverage`) derives
+`compat-results/coverage.json` from the run's evidence. Every result file
+carries a `fingerprint` of the relevant-input hash bundle (implementation,
+probe catalog, capability matrix, inventory, config, upstream candidate) —
+the git commit SHA is provenance only. Evidence whose fingerprint is missing
+or no longer matches current inputs is STALE and never counts as VERIFIED;
+pre-fingerprint results are stale by definition.
+
+Per profile × oracle the file reports numerator/denominator state counts:
+VERIFIED, DIVERGENT, UNSUPPORTED (declared, stays in the denominator),
+UNTESTED (no probe evidence), BLOCKED (upstream-side limitation),
+STALE — alongside classification coverage (inventory items classified),
+functional coverage, and the committed scenario registry
+(`compat/scenarios.json`). A `compat/check-capabilities.mjs` validation
+failure means coverage is INVALID: `coverage.json` records `status:"invalid"`
+and the process exits non-zero — `compat/report.mjs` never emits a normal
+report after it.
+
+**The regression gate**: PR CI runs `node compat/coverage.mjs --gate --base
+<base>/coverage-baseline.json` against the base branch's committed
+`compat/coverage-baseline.json`. A VERIFIED-numerator drop or a denominator
+shrink fails the job unless a scoped waiver in the baseline covers it
+1:1 (`{kind, oracle, profile, metric, scope, before, after, reason, issue}`;
+kind ∈ `denominator-shrink` | `metric-drop` | `upstream-pin-update`).
+Refreshing the baseline is a reviewed, deliberate step —
+`node compat/coverage.mjs --update-baseline` inside a PR — never something
+a scheduled run does.
 
 ## The response path
 

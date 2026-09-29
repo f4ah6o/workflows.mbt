@@ -1,0 +1,11 @@
+{
+  "scenarios": [
+    {
+      "id": "consumer-external-side-effect",
+      "result": "scenario-consumer.json",
+      "passField": "finalStatus",
+      "passEquals": "complete",
+      "description": "npm-packed consumer journey: external side effect, retry, waitForEvent, two SIGKILLs, at-least-once with business-key dedup (scripts/consumer-scenario.mjs)"
+    }
+  ]
+}
