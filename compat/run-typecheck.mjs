@@ -14,6 +14,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { candidateUsable, loadCandidate, resultsDirFor } from "./candidate.mjs";
+import { buildResultFingerprint, computeRelevantInputs } from "./coverage-model.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const resultsDir = resultsDirFor(root);
@@ -37,6 +38,16 @@ function gitCommit() {
 const candidate = await loadCandidate(oracle, { candidatePath: candidateArg, resultsDir });
 const outPath = join(resultsDir, "typecheck-" + oracle + ".json");
 
+// Run-result fingerprint (issue §7) — relevant-input hashes + candidate
+// identity so later readers can judge this evidence fresh or STALE.
+const fingerprint = () => buildResultFingerprint({
+  runId,
+  oracle,
+  candidate,
+  relevantInputs: computeRelevantInputs(root, candidate),
+  commit: gitCommit(),
+});
+
 if (!candidateUsable(candidate)) {
   const result = {
     oracle,
@@ -47,6 +58,7 @@ if (!candidateUsable(candidate)) {
     phaseStatus: "upstream-acquisition-failure",
     error: candidate.error ?? "candidate not usable",
     pass: false,
+    fingerprint: fingerprint(),
   };
   writeFileSync(outPath, JSON.stringify(result, null, 2) + "\n");
   console.log(JSON.stringify(result, null, 2));
@@ -102,6 +114,7 @@ const result = {
   error: proc.error ? String(proc.error?.message ?? proc.error) : null,
   diagnostics,
   pass: proc.error == null && proc.status === 0,
+  fingerprint: fingerprint(),
 };
 if (result.phaseStatus == null) delete result.phaseStatus;
 if (result.error == null) delete result.error;

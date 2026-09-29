@@ -103,6 +103,26 @@ jobs:
       - name: Pinned Cloudflare compatibility oracle
         run: npm run compat:pinned
 
+      # Coverage derivation on the pinned oracle (issue §5/§9/§11): validator
+      # failure inside coverage.mjs means coverage INVALID + non-zero exit —
+      # no normal report is produced on unvalidated data.
+      - name: Coverage calculation
+        run: node compat/coverage.mjs
+
+      # Regression gate (issue §13): compares current coverage against the
+      # BASE branch's committed compat/coverage-baseline.json — never HEAD's
+      # own baseline (a PR may not approve its own regression by editing its
+      # baseline; HEAD's baseline is instead checked as the proposed
+      # baseline). No baseline on the base branch → first adoption, pass.
+      - name: Coverage regression gate
+        if: github.event_name == 'pull_request'
+        run: |
+          mkdir -p compat-results
+          git fetch --depth=1 origin "${{ github.base_ref }}" || true
+          git show FETCH_HEAD:compat/coverage-baseline.json > compat-results/base-baseline.json 2>/dev/null \
+            || rm -f compat-results/base-baseline.json
+          node compat/coverage.mjs --gate --base compat-results/base-baseline.json
+
       - name: Generate compatibility report
         if: always()
         run: npm run compat:report

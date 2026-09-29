@@ -6,13 +6,14 @@
 //   1. compat/candidate.mjs --mode latest --refresh   (resolve @latest ONCE)
 //   2. compat/run-typecheck.mjs --oracle latest       (candidate-scoped tsc)
 //   3. compat/oracle/check.mjs --mode latest          (contract surface)
-//   4. compat/run-differential.mjs --oracle latest    (semantic probes)
-//   5. compat/docs-watch.mjs                          (official-doc change watch)
-//   6. compat/verdict.mjs --oracle latest             (machine-readable verdict)
-//   7. compat/drift-record.mjs --oracle latest        (response packet / state)
-//   8. compat/update-candidate.mjs --oracle latest    (verified update candidate)
+//   4. compat/check-inventory.mjs --report --mode latest (upstream inventory diff)
+//   5. compat/run-differential.mjs --oracle latest    (semantic probes)
+//   6. compat/docs-watch.mjs                          (official-doc change watch)
+//   7. compat/verdict.mjs --oracle latest             (machine-readable verdict)
+//   8. compat/drift-record.mjs --oracle latest        (response packet / state)
+//   9. compat/update-candidate.mjs --oracle latest    (verified update candidate)
 //
-// Phases 2-5 always run — even when an earlier phase failed — so every run
+// Phases 2-6 always run — even when an earlier phase failed — so every run
 // produces a complete evidence trail instead of silently reusing stale files.
 // The verdict classifies compatible / contract-drift / semantic-drift /
 // acquisition-failure / toolchain-failure / incomplete-evidence; this script
@@ -43,6 +44,7 @@ const phases = [];
 phases.push({ name: "candidate", ...run("compat/candidate.mjs", ["--mode", "latest", "--refresh"]) });
 phases.push({ name: "typecheck", ...run("compat/run-typecheck.mjs", ["--oracle", "latest"]) });
 phases.push({ name: "contract", ...run("compat/oracle/check.mjs", ["--mode", "latest"]) });
+phases.push({ name: "inventory", ...run("compat/check-inventory.mjs", ["--report", "--mode", "latest"]) });
 phases.push({ name: "differential", ...run("compat/run-differential.mjs", ["--oracle", "latest"]) });
 phases.push({ name: "docs-watch", ...run("compat/docs-watch.mjs", []) });
 phases.push({ name: "verdict", ...run("compat/verdict.mjs", ["--oracle", "latest"]) });

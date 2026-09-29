@@ -25,7 +25,16 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resultsDirFor } from "./candidate.mjs";
-import { activeProfiles, loadDiscoverySpec, reduceProbeVerdicts } from "./coverage-model.mjs";
+import {
+  ORACLES,
+  activeProfiles,
+  currentFreshnessInputs,
+  deriveRequirementTarget,
+  fingerprintIsStale,
+  loadDiscoverySpec,
+  probeVerdictFor,
+  reduceProbeVerdicts,
+} from "./coverage-model.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const resultsDir = resultsDirFor(root);
@@ -97,12 +106,11 @@ for (const req of matrix.requirements ?? []) {
   }
   // Scope derivation: a requirement over upstream refs is in-scope iff any
   // referenced item is in-scope; a declared target may not contradict that.
-  const refTargets = refs.map((ref) => classification.items[ref]?.target ?? null);
   for (const ref of refs) {
     if (!classification.items[ref]) fail(req.id + ": upstreamRef not in inventory classification: " + ref);
   }
   if (refs.length > 0 && refs.every((ref) => classification.items[ref])) {
-    const derived = refTargets.includes("in-scope") ? "in-scope" : "excluded";
+    const derived = deriveRequirementTarget(req, classification.items);
     if (req.target && req.target !== derived) {
       fail(req.id + ": declared target " + req.target + " contradicts derived scope " + derived);
     }
@@ -266,21 +274,32 @@ for (const row of matrix.capabilities ?? []) {
 // verdicts in that oracle's result file. UNSUPPORTED is declared intent
 // (requirement.unsupported) and stays in the denominator.
 
-const probeVerdict = (result, probeId) => {
-  if (!result) return "UNTESTED";
-  if (!result.probes?.includes(probeId)) return "UNTESTED";
-  if (result.probeErrors?.[probeId]) return "BLOCKED";
-  if (result.differences?.[probeId]) return "DIVERGENT";
-  return "VERIFIED";
-};
+// Freshness of each oracle's result file (issue §7): the run fingerprint's
+// relevant-input hashes + candidate identity must match current inputs.
+// A missing fingerprint is legacy-unverified; a mismatch is STALE — in both
+// cases VERIFIED evidence from that run is downgraded (never counted).
+const oracleFreshness = {};
+for (const oracle of ORACLES) {
+  const result = differential[oracle];
+  if (!result) continue;
+  const inputs = currentFreshnessInputs(root, resultsDir, oracle, { inventoryDir });
+  const stale = fingerprintIsStale(result.fingerprint, inputs);
+  oracleFreshness[oracle] = stale ? "stale" : "fresh";
+  if (stale) {
+    notes.push("differential-" + oracle + ".json "
+      + (result.fingerprint ? "fingerprint does not match current inputs" : "has no run fingerprint")
+      + " — verified evidence treated as STALE");
+  }
+}
 
 const requirementStates = {};
 for (const [reqId, req] of requirementById) {
   const perOracle = {};
-  for (const oracle of ["pinned", "latest", "hosted"]) {
+  for (const oracle of ORACLES) {
     const result = differential[oracle];
     if (!result) { perOracle[oracle] = { state: "UNTESTED" }; continue; }
-    const verdicts = (req.requiredProbes ?? []).map((probeId) => probeVerdict(result, probeId));
+    const stale = oracleFreshness[oracle] === "stale";
+    const verdicts = (req.requiredProbes ?? []).map((probeId) => probeVerdictFor(result, probeId, { stale }));
     perOracle[oracle] = {
       state: reduceProbeVerdicts(verdicts, { declaredUnsupported: !!req.unsupported }),
       verdicts: Object.fromEntries((req.requiredProbes ?? []).map((probeId, i) => [probeId, verdicts[i]])),

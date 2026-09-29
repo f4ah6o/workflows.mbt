@@ -11,7 +11,7 @@
 // Without both credentials it exits 0 after printing the deferral notice —
 // see docs/hosted-canary.md. The canary never runs in normal PR CI.
 
-import { spawn, execFile } from "node:child_process";
+import { spawn, execFile, execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -20,6 +20,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { collectTraces, diffRun } from "./probe-client.mjs";
+import { buildResultFingerprint, computeRelevantInputs } from "./coverage-model.mjs";
 
 const execFileP = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -156,11 +157,31 @@ try {
   try {
     wranglerVersion = (await execFileP(wrangler, ["--version"], { cwd: root })).stdout.trim().replace(/^.*\s/, "");
   } catch {}
+  const runId = process.env.WORKFLOWS_MBT_RUN_ID ?? "hosted-" + Date.now();
+  // Hosted evidence is an observation against Cloudflare production (issue
+  // §7): there is no binary candidate, so the fingerprint records the repo
+  // side's relevant inputs plus the canary's deployed compatibility_date.
+  const fingerprint = buildResultFingerprint({
+    runId,
+    oracle: "hosted",
+    candidate: null,
+    relevantInputs: computeRelevantInputs(root, {
+      conditions: { probesCompatibilityDate: "2026-09-26", compatibilityFlags: [] },
+    }),
+    commit: (() => {
+      try {
+        return execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+      } catch {
+        return null;
+      }
+    })(),
+  });
   const result = {
     oracle: "hosted",
-    runId: process.env.WORKFLOWS_MBT_RUN_ID ?? "hosted-" + Date.now(),
+    runId,
     checkedAt: new Date().toISOString(),
     versions: { wrangler: wranglerVersion },
+    fingerprint,
     probes,
     hosted: hostedSide.traces,
     workflowsMbt: local.traces,

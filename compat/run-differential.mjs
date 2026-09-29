@@ -7,6 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { candidateUsable, loadCandidate, resultsDirFor } from "./candidate.mjs";
+import { buildResultFingerprint, computeRelevantInputs } from "./coverage-model.mjs";
 import { collectTraces, diffRun } from "./probe-client.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -52,6 +53,18 @@ const temp = mkdtempSync(join(tmpdir(), "workflows-mbt-diff-"));
 // isolated install resolved once at run entry, never a fresh `npx wrangler@latest`.
 const candidate = await loadCandidate(oracle, { candidatePath: candidateArg, resultsDir });
 
+// The run-result fingerprint (issue §7): relevant-input hashes + upstream
+// candidate identity, so a later reader can decide whether this evidence is
+// still fresh (STALE) instead of treating it as current. The git commit is
+// provenance only — never a freshness key.
+const fingerprint = () => buildResultFingerprint({
+  runId,
+  oracle,
+  candidate,
+  relevantInputs: computeRelevantInputs(root, candidate),
+  commit: gitCommit(),
+});
+
 function wranglerCommand() {
   const bin = process.platform === "win32" && candidate.paths.wranglerBin.endsWith("/wrangler")
     ? candidate.paths.wranglerBin + ".cmd"
@@ -75,6 +88,7 @@ if (!candidateUsable(candidate)) {
     probeErrors: {},
     sideErrors: { cloudflare: "acquisition-failure", workflowsMbt: null },
     pass: false,
+    fingerprint: fingerprint(),
   };
   writeFileSync(join(resultsDir, "differential-" + oracle + ".json"), JSON.stringify(result, null, 2) + "\n");
   console.log(JSON.stringify(result, null, 2));
@@ -219,6 +233,7 @@ try {
       workflowsMbt: workflowsMbt.error ?? null,
     },
     pass,
+    fingerprint: fingerprint(),
   };
   writeFileSync(join(resultsDir, "differential-" + oracle + ".json"), JSON.stringify(result, null, 2) + "\n");
   console.log(JSON.stringify({
