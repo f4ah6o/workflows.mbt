@@ -1,0 +1,127 @@
+{
+  "formatVersion": 1,
+  "notes": "Discovery boundary spec (issue 20260929-cloudflare-feature-coverage-automation §1-2): per-profile roots into the resolved upstream candidate — @cloudflare/workers-types index.d.ts declarations and the wrangler config-schema.json subtree. compat/inventory/extract.mjs turns this into the candidate inventory; compat/check-inventory.mjs verifies it. 'container' values: 'global' for top-level ambient declarations, a quoted module name for declare module blocks (members resolved through export = namespaces), 'namespace:<name>' for ambient namespace members. 'names' are case-sensitive globs where '*' matches any suffix/prefix; bare '*' matches every exported member.",
+  "profiles": {
+    "workflows-core": {
+      "lifecycle": "active",
+      "description": "Workflow execution semantics: WorkflowStep/WorkflowEntrypoint surface, retry, timeout, sleep/sleepUntil, waitForEvent, lifecycle states, replay, rollback, subscription event stream, serialization, durable execution semantics."
+    },
+    "workflow-host": {
+      "lifecycle": "active",
+      "description": "Hosting surface for running workflows: Worker entry surface (ExportedHandler/WorkerEntrypoint/ExecutionContext), source module loading, compatibility_date/flags, wrangler Workflows configuration, vars/secrets, scheduling, Workflow binding and WorkflowInstance handles."
+    },
+    "binding-adapters": {
+      "lifecycle": "active",
+      "description": "Binding families workflows.mbt.json adapters target: KV, D1, R2, Queues, Services — wrangler binding config plus the workers-types binding interfaces."
+    },
+    "workers-platform": {
+      "lifecycle": "deferred",
+      "description": "The rest of the Workers platform (AI, Durable Objects, other runtime APIs/bindings/deploy management). Deferred: discovered items are recorded but never enter an active denominator."
+    }
+  },
+  "profileOrder": ["workflows-core", "workflow-host", "binding-adapters", "workers-platform"],
+  "roots": {
+    "workflows-core": {
+      "workersTypes": [
+        { "container": "cloudflare:workers", "names": ["Workflow*"] },
+        { "container": "cloudflare:workflows", "names": ["*"] },
+        {
+          "container": "global",
+          "names": [
+            "InstanceStatus",
+            "WorkflowError",
+            "WorkflowInstanceEvent",
+            "WorkflowInstanceEventType",
+            "WorkflowDurationLabel",
+            "WorkflowDelayDuration",
+            "WorkflowSleepDuration",
+            "WorkflowTimeoutDuration",
+            "WorkflowRetentionDuration"
+          ]
+        }
+      ],
+      "wranglerSchema": []
+    },
+    "workflow-host": {
+      "workersTypes": [
+        {
+          "container": "global",
+          "names": [
+            "Workflow",
+            "WorkflowInstance",
+            "WorkflowInstanceCreateOptions",
+            "WorkflowInstanceLocationHint",
+            "WorkflowInstanceRestartOptions",
+            "WorkflowInstanceSubscribeOptions",
+            "WorkflowInstanceSubscription",
+            "WorkflowInstanceTerminateOptions",
+            "WorkflowBatchDeleteResult",
+            "ExecutionContext",
+            "ExportedHandler",
+            "ExportedHandlerFetchHandler",
+            "ExportedHandlerConnectHandler",
+            "ExportedHandlerScheduledHandler",
+            "ExportedHandlerQueueHandler",
+            "ExportedHandlerTailHandler",
+            "ExportedHandlerTailStreamHandler",
+            "ExportedHandlerTestHandler"
+          ]
+        },
+        {
+          "container": "cloudflare:workers",
+          "names": [
+            "WorkerEntrypoint",
+            "waitUntil",
+            "withEnv",
+            "withExports",
+            "withEnvAndExports",
+            "env",
+            "exports",
+            "cache",
+            "tracing"
+          ]
+        }
+      ],
+      "wranglerSchema": [
+        "name",
+        "main",
+        "compatibility_date",
+        "compatibility_flags",
+        "vars",
+        "secrets",
+        "workflows",
+        "triggers",
+        "env"
+      ]
+    },
+    "binding-adapters": {
+      "workersTypes": [
+        {
+          "container": "global",
+          "names": [
+            "KVNamespace",
+            "D1Database",
+            "D1PreparedStatement",
+            "R2Bucket",
+            "R2Object",
+            "R2ObjectBody",
+            "Queue",
+            "Fetcher",
+            "Service"
+          ]
+        }
+      ],
+      "wranglerSchema": [
+        "kv_namespaces",
+        "d1_databases",
+        "r2_buckets",
+        "queues",
+        "services"
+      ]
+    },
+    "workers-platform": {
+      "workersTypes": [],
+      "wranglerSchema": []
+    }
+  }
+}
