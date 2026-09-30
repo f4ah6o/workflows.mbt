@@ -1,9 +1,6 @@
 ///|
 test "step identity includes type name and 1-origin count" {
-  inspect(
-    step_key("abc", "do", "process", 2),
-    content="abc/do/process/2",
-  )
+  inspect(step_key("abc", "do", "process", 2), content="abc/do/process/2")
 }
 
 ///|
@@ -20,6 +17,27 @@ test "compatibility defaults are fixed in the MoonBit kernel" {
   inspect(default_step_timeout(), content="10 minutes")
   inspect(default_wait_timeout_ms(), content="86400000")
   inspect(default_backoff(), content="exponential")
+}
+
+///|
+test "retry delay clamps negative bases and unknown backoffs stay constant" {
+  inspect(retry_delay_ms(-5, 3, "linear"), content="0")
+  inspect(retry_delay_ms(-5, 3, "exponential"), content="0")
+  inspect(retry_delay_ms(10000, 3, "constant"), content="10000")
+  inspect(retry_delay_ms(10000, 3, "bogus"), content="10000")
+}
+
+///|
+test "only in-flight instance statuses may execute" {
+  inspect(can_execute_instance("queued"), content="true")
+  inspect(can_execute_instance("running"), content="true")
+  inspect(can_execute_instance("waiting"), content="true")
+  inspect(can_execute_instance("waitingForPause"), content="true")
+  inspect(can_execute_instance("paused"), content="false")
+  inspect(can_execute_instance("complete"), content="false")
+  inspect(can_execute_instance("errored"), content="false")
+  inspect(can_execute_instance("terminated"), content="false")
+  inspect(can_execute_instance("rollingBack"), content="false")
 }
 
 ///|

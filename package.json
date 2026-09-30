@@ -39,6 +39,7 @@
     "check:moon": "moon check --target js",
     "build:core": "node scripts/build-core.mjs",
     "test:moon": "moon test --target js",
+    "test:mutants": "turtles --dir . --target js",
     "test:host": "node --test tests/host.test.mjs",
     "test:storage": "node --test tests/storage.test.mjs",
     "test:e2e": "node --test tests/e2e.test.mjs",
