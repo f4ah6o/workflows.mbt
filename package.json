@@ -2,7 +2,7 @@
   "name": "@f4ah6o/workflows-mbt",
   "version": "0.1.0",
   "private": true,
-  "description": "Local durable-execution runtime compatible with Cloudflare Workflows \u2014 dependency insurance and fallback execution for existing workflow source.",
+  "description": "Local durable-execution runtime compatible with Cloudflare Workflows — dependency insurance and fallback execution for existing workflow source.",
   "type": "module",
   "bin": {
     "workflows": "./host/cli.mjs"
@@ -40,7 +40,7 @@
     "build:core": "node scripts/build-core.mjs",
     "test:moon": "moon test --target js",
     "test:mutants": "turtles --dir . --target js",
-    "test:host": "node --test tests/host.test.mjs",
+    "test:host": "node --test tests/host.test.mjs tests/wrangler-local.test.mjs",
     "test:storage": "node --test tests/storage.test.mjs",
     "test:e2e": "node --test tests/e2e.test.mjs",
     "test": "npm run check:moon && npm run build:core && npm run test:moon && npm run test:host && npm run test:storage && npm run test:compat && npm run test:upstream-ops && npm run test:inventory && npm run test:coverage && npm run test:upstream-coverage && npm run test:e2e",
