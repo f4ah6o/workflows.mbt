@@ -416,6 +416,11 @@ where Cloudflare's are undocumented.
 - [x] resume
 - [x] restart
 - [x] terminate
+- [x] official Wrangler `workflows ... --local` client interoperability
+- [x] Wrangler local workflow list / describe / delete
+- [x] Wrangler local instance list / trigger / describe / delete / batch delete
+- [x] Wrangler local instance pause / resume / restart / terminate / send-event
+- [x] real pinned Wrangler CLI smoke against the workflows.mbt HTTP server
 
 ## Automated verification oracle
 
