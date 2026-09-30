@@ -219,6 +219,38 @@ test("--json-only writes only the JSON report", () => {
   assert.ok(!existsSync(join(dirPath, "results", "upstream-coverage.md")));
 });
 
+test("a reused results dir never keeps a stale Markdown report", () => {
+  const dirPath = dir();
+  const env = envFor(dirPath);
+  const resultsDir = join(dirPath, "results");
+  mkdirSync(resultsDir, { recursive: true });
+  const mdPath = join(resultsDir, "upstream-coverage.md");
+
+  const first = run([], env);
+  assert.equal(first.status, 0, first.stderr + first.stdout);
+  assert.ok(existsSync(mdPath));
+
+  // A --json-only rerun removes the Markdown the first run wrote.
+  const jsonOnly = run(["--json-only"], env);
+  assert.equal(jsonOnly.status, 0, jsonOnly.stderr + jsonOnly.stdout);
+  assert.ok(existsSync(join(resultsDir, "upstream-coverage.json")));
+  assert.ok(!existsSync(mdPath));
+
+  // A validator failure on the same dir removes it too.
+  const second = run([], env);
+  assert.equal(second.status, 0, second.stderr + second.stdout);
+  assert.ok(existsSync(mdPath));
+  const badMatrix = join(dirPath, "bad-capabilities.json");
+  const bad = structuredClone(matrix);
+  bad.capabilities[0].requirements = ["req.workflows-core.nonexistent.requirement"];
+  writeFileSync(badMatrix, JSON.stringify(bad));
+  const invalid = run([], { ...env, WORKFLOWS_MBT_CAPABILITIES: badMatrix });
+  assert.notEqual(invalid.status, 0);
+  const report = JSON.parse(readFileSync(join(resultsDir, "upstream-coverage.json"), "utf8"));
+  assert.equal(report.status, "INVALID");
+  assert.ok(!existsSync(mdPath));
+});
+
 test("--min-mapped and --min-verified gate the exit code", () => {
   const dirPath = dir();
   const env = envFor(dirPath);
@@ -232,10 +264,17 @@ test("--min-mapped and --min-verified gate the exit code", () => {
   const pass = run(["--min-mapped", "5"], env);
   assert.equal(pass.status, 0, pass.stderr + pass.stdout);
 
-  // min-verified with no measured oracle fails explicitly.
+  // min-verified with no measured oracle fails explicitly — but an
+  // unmeasured oracle counts as 0%, so a zero floor passes.
   const unmeasured = run(["--min-verified", "1"], env);
   assert.equal(unmeasured.status, 1);
   assert.match(unmeasured.stderr, /no measured run/);
+  const zeroFloor = run(["--min-verified", "0"], env);
+  assert.equal(zeroFloor.status, 0, zeroFloor.stderr + zeroFloor.stdout);
+  assert.equal(
+    JSON.parse(readFileSync(join(resultsDir, "upstream-coverage.json"), "utf8")).status,
+    "ok",
+  );
 
   // With a fresh pinned run, verified% is real and thresholdable.
   writeResult(resultsDir, "differential-pinned.json", differentialResult("pinned"));

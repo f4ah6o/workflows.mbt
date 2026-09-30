@@ -21,8 +21,9 @@ wrangler-schema / semantic inventory items any requirement covers —
 `compat-results/upstream-coverage.{json,md}`: per item, the referencing
 requirements/capabilities and the per-oracle state (`UNMAPPED` when nothing
 references it), plus mapped/verified aggregates overall and per profile,
-source, kind, and container. See `docs/upstream-tracking.md` for flags and
-planned CI wiring.
+source, kind, and container. CI runs it after `compat:pinned` and uploads
+the report with the compatibility artifacts. See
+`docs/upstream-tracking.md` for flags.
 
 ## Compatibility target
 

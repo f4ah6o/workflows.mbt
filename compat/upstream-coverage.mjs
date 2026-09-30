@@ -27,7 +27,7 @@
 // on unvalidated data is never emitted.
 
 import { spawnSync, execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resultsDirFor } from "./candidate.mjs";
@@ -98,6 +98,9 @@ const validator = spawnSync(process.execPath, [join(root, "compat/check-capabili
 });
 
 mkdirSync(resultsDir, { recursive: true });
+// Every run either writes a fresh Markdown report or none at all — drop any
+// stale one left by a previous run in a reused results directory.
+rmSync(join(resultsDir, "upstream-coverage.md"), { force: true });
 if (validator.status !== 0) {
   const invalid = {
     formatVersion: 1,
@@ -282,11 +285,11 @@ if (minMapped !== null && (overall.mappedPct ?? 0) < minMapped) {
 if (minVerified !== null) {
   for (const oracle of reportedOracles) {
     const cell = overall.oracles[oracle];
-    const value = cell.verifiedPct ?? 0;
-    if (!cell.measured) {
-      problems.push(oracle + ": no measured run — verified 0% < --min-verified " + minVerified + "%");
-    } else if (value < minVerified) {
-      problems.push(oracle + ": verified " + value + "% < --min-verified " + minVerified + "%");
+    // An unmeasured oracle counts as 0% — so a zero floor still passes it.
+    const value = cell.measured ? (cell.verifiedPct ?? 0) : 0;
+    if (value < minVerified) {
+      problems.push(oracle + ": verified " + value + "% < --min-verified " + minVerified + "%"
+        + (cell.measured ? "" : " (no measured run, counted as 0%)"));
     }
   }
 }

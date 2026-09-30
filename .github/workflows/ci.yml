@@ -78,6 +78,11 @@ jobs:
       - name: Upstream-ops fault-injection tests
         run: npm run test:upstream-ops
 
+      # Hermetic suite for the upstream-item coverage report (same pattern
+      # as upstream-ops): throwaway results dirs, no oracle runs needed.
+      - name: Upstream-coverage tests
+        run: npm run test:upstream-coverage
+
       - name: Durable process E2E
         run: npm run test:e2e
 
@@ -108,6 +113,14 @@ jobs:
       # no normal report is produced on unvalidated data.
       - name: Coverage calculation
         run: node compat/coverage.mjs
+
+      # Upstream-item coverage (issue 20260929): same validator gate as
+      # coverage.mjs — INVALID + non-zero exit on unvalidated data. Emits
+      # compat-results/upstream-coverage.{json,md} into the uploaded
+      # artifacts below. Credential-free; add --min-mapped/--min-verified
+      # to make it a hard gate.
+      - name: Upstream-item coverage report
+        run: node compat/upstream-coverage.mjs
 
       # Regression gate (issue §13): compares current coverage against the
       # BASE branch's committed compat/coverage-baseline.json — never HEAD's

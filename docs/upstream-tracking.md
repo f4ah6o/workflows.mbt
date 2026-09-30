@@ -117,9 +117,13 @@ Flags: `--oracle <pinned|latest|hosted>` restricts the report;
 <pct>` exit non-zero below the threshold. It runs with no compat results
 (everything UNTESTED) and after a compat run (real verified numbers); a
 validator failure yields `status:"INVALID"` and a non-zero exit, never a
-report on unvalidated data. To wire into CI later, run it after
-`compat:pinned` (e.g. `--oracle pinned --min-mapped <pct>`) — it needs no
-credentials and no network.
+report on unvalidated data — and never a stale `upstream-coverage.md`
+left over from an earlier run in the same results directory. In CI it
+runs as the "Upstream-item coverage report" step after `compat:pinned`
+(artifacts land in `compat-results/`), exercised by the hermetic
+`npm run test:upstream-coverage` suite. Adding `--min-mapped <pct>` /
+`--min-verified <pct>` to that step turns it into a hard gate — it needs
+no credentials and no network.
 
 ## The response path
 
