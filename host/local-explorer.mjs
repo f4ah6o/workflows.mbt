@@ -204,7 +204,7 @@ function instanceDetails(runtime, workflowName, publicId) {
   };
 }
 
-async function readJson(request, fallback = {}) {
+async function readJson(request, fallback) {
   const text = await request.text();
   if (!text) return fallback;
   return JSON.parse(text);
@@ -353,7 +353,7 @@ export async function handleWranglerLocalExplorer(runtime, request) {
       }
 
       if (request.method === "POST") {
-        const body = await readJson(request);
+        const body = await readJson(request, {});
         const instance = await runtime.createInstance(workflowName, {
           id: body.id,
           params: body.params,
@@ -370,7 +370,7 @@ export async function handleWranglerLocalExplorer(runtime, request) {
       parts[4] === "delete" &&
       request.method === "POST"
     ) {
-      const body = await readJson(request);
+      const body = await readJson(request, {});
       if (!Array.isArray(body.instances)) {
         return fail(400, INTERNAL_ERROR, "instances must be an array");
       }
@@ -393,7 +393,7 @@ export async function handleWranglerLocalExplorer(runtime, request) {
     }
 
     if (parts.length === 5 && parts[4] === "status" && request.method === "PATCH") {
-      const body = await readJson(request);
+      const body = await readJson(request, {});
       return wrap(await lifecycle(runtime, workflow, instanceId, body));
     }
 
@@ -416,8 +416,9 @@ export async function handleWranglerLocalExplorer(runtime, request) {
       /not found/i.test(message) ||
       /Unknown workflow instance/i.test(message);
     const conflict = /cannot restart/i.test(message);
+    const badRequest = error instanceof TypeError || error instanceof SyntaxError;
     return fail(
-      notFound ? 404 : conflict ? 409 : 500,
+      notFound ? 404 : conflict ? 409 : badRequest ? 400 : 500,
       notFound ? NOT_FOUND : INTERNAL_ERROR,
       message,
     );
