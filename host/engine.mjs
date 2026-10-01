@@ -88,12 +88,13 @@ async function withTimeout(valuePromise, timeoutMs) {
 
 export class WorkflowRuntime {
   static async open({
-    configPath = "wrangler.jsonc",
+    configPath = null,
     storagePath,
     storageUrl,
     buildDir,
     env = {},
     envName = null,
+    modeName = null,
     kernelPath = resolve(packageRoot, "dist/workflows_core.mjs"),
     storage: storageOverride = null,
   } = {}) {
@@ -102,6 +103,7 @@ export class WorkflowRuntime {
       storageUrl,
       buildDir,
       envName,
+      modeName,
     });
     const kernel = await loadKernel(kernelPath);
     const storage = storageOverride ?? openStorage(config);
