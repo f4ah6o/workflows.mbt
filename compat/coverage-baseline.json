@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "generatedAt": "2026-09-29T20:32:14.818Z",
+  "generatedAt": "2026-10-02T00:00:00.000Z",
   "matrixHash": "sha256:9259c47c5ce07808cccd259ed0940ceaebd31c13764840b9b3f59ddcb506cdc1",
   "inventoryHash": "sha256:eedfcd8f1b077728be329975f657a8e9ee80573010b4b52b2469b96f0c9400c6",
   "candidates": {
-    "pinned": "pinned-c236de904715f15e",
+    "pinned": "pinned-68f8547cd414f5a7",
     "latest": null,
     "hosted": null
   },
@@ -162,5 +162,19 @@
       "oracles": {}
     }
   },
-  "waivers": []
+  "waivers": [
+    {
+      "kind": "upstream-pin-update",
+      "oracle": "pinned",
+      "profile": "*",
+      "metric": "candidate",
+      "scope": [
+        "*"
+      ],
+      "before": "pinned-c236de904715f15e",
+      "after": "pinned-68f8547cd414f5a7",
+      "reason": "Intentional migration of the compatibility oracle from Wrangler dev to Cloudflare cf dev + Vite; the pinned contract and all differential probes pass.",
+      "issue": "PR #19"
+    }
+  ]
 }
