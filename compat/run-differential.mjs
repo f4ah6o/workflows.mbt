@@ -95,12 +95,12 @@ if (!candidateUsable(candidate)) {
   process.exit(1);
 }
 
-function start(command, args, label, cwd = root) {
+function start(command, args, label, cwd = root, extraEnv = {}) {
   const detached = process.platform !== "win32";
   const child = spawn(command, args, {
     cwd,
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, CI: "true" },
+    env: { ...process.env, CI: "true", ...extraEnv },
     detached,
   });
   child.oracleDetached = detached;
@@ -202,12 +202,16 @@ async function collectCloudflare() {
     join(oracleDir, "node_modules"),
     process.platform === "win32" ? "junction" : "dir",
   );
-  const child = start(cf.command, [
-    ...cf.args,
-    "dev",
-    "--port", String(port),
-    "--host", "127.0.0.1",
-  ], "cloudflare/" + oracle, oracleDir);
+  const child = start(
+    cf.command,
+    [...cf.args, "dev"],
+    "cloudflare/" + oracle,
+    oracleDir,
+    {
+      WORKFLOWS_MBT_ORACLE_HOST: "127.0.0.1",
+      WORKFLOWS_MBT_ORACLE_PORT: String(port),
+    },
+  );
   try {
     await waitReady(port, child, "cloudflare/" + oracle);
     return await collectTraces(`http://127.0.0.1:${port}`, "cloudflare", probes, { log: (m) => console.error(m) });
