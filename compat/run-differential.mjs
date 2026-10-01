@@ -1,6 +1,6 @@
 import { spawn, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -46,11 +46,11 @@ const probes = onlyProbe
 if (onlyProbe && !catalog.probes.some((entry) => entry.id === onlyProbe)) {
   throw new Error("unknown probe: " + onlyProbe);
 }
-const fixture = join(root, "compat/probes/wrangler.jsonc");
+const fixture = join(root, "compat/probes/cloudflare.config.ts");
 const temp = mkdtempSync(join(tmpdir(), "workflows-mbt-diff-"));
 
 // The upstream side runs the shared run candidate — for `latest` that is the
-// isolated install resolved once at run entry, never a fresh `npx wrangler@latest`.
+// isolated install resolved once at run entry, never a fresh `npx cf@latest`.
 const candidate = await loadCandidate(oracle, { candidatePath: candidateArg, resultsDir });
 
 // The run-result fingerprint (issue §7): relevant-input hashes + upstream
@@ -65,10 +65,10 @@ const fingerprint = () => buildResultFingerprint({
   commit: gitCommit(),
 });
 
-function wranglerCommand() {
-  const bin = process.platform === "win32" && candidate.paths.wranglerBin.endsWith("/wrangler")
-    ? candidate.paths.wranglerBin + ".cmd"
-    : candidate.paths.wranglerBin;
+function cfCommand() {
+  const bin = process.platform === "win32" && candidate.paths.cfBin.endsWith("/cf")
+    ? candidate.paths.cfBin + ".cmd"
+    : candidate.paths.cfBin;
   return { command: bin, args: [] };
 }
 
@@ -95,10 +95,10 @@ if (!candidateUsable(candidate)) {
   process.exit(1);
 }
 
-function start(command, args, label) {
+function start(command, args, label, cwd = root) {
   const detached = process.platform !== "win32";
   const child = spawn(command, args, {
-    cwd: root,
+    cwd,
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, CI: "true" },
     detached,
@@ -191,15 +191,21 @@ async function collectWorkflowsMbt() {
 
 async function collectCloudflare() {
   const port = await freePort();
-  const wrangler = wranglerCommand();
-  const child = start(wrangler.command, [
-    ...wrangler.args,
+  const cf = cfCommand();
+  const oracleDir = join(temp, "cf-oracle");
+  cpSync(join(root, "compat/probes"), oracleDir, { recursive: true });
+  const packageRoot = candidate.installDir ?? root;
+  symlinkSync(
+    join(packageRoot, "node_modules"),
+    join(oracleDir, "node_modules"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  const child = start(cf.command, [
+    ...cf.args,
     "dev",
-    "--config", fixture,
     "--port", String(port),
-    "--ip", "127.0.0.1",
-    "--persist-to", join(temp, "wrangler"),
-  ], "cloudflare/" + oracle);
+    "--host", "127.0.0.1",
+  ], "cloudflare/" + oracle, oracleDir);
   try {
     await waitReady(port, child, "cloudflare/" + oracle);
     return await collectTraces(`http://127.0.0.1:${port}`, "cloudflare", probes, { log: (m) => console.error(m) });
