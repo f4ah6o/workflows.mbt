@@ -28,9 +28,11 @@ the report with the compatibility artifacts. See
 ## Compatibility target
 
 `workflows.mbt` targets existing Cloudflare Workflows TypeScript/JavaScript
-source and Wrangler workflow configuration. Workflow source continues importing
-`cloudflare:workers` and `cloudflare:workflows`; the local host redirects those
-module specifiers without rewriting application source.
+source and Cloudflare's `cloudflare.config.ts` project configuration. Workflow
+source continues importing `cloudflare:workers` and `cloudflare:workflows`;
+the local host redirects those module specifiers without rewriting application
+source. Legacy Wrangler JSON/JSONC config remains a migration compatibility
+surface, not the primary contract.
 
 The durable execution kernel remains MoonBit-first. JavaScript owns module
 loading, Web APIs, callback invocation, and narrow host bridges.
@@ -174,7 +176,7 @@ external side effects are not claimed.
 - [x] idempotent batch create behavior for existing IDs
 - [x] repeated batch-delete IDs repeat their result
 - [x] per-instance success/error retention options
-- [x] Wrangler `default_retention` (including scheduled instances)
+- [x] Cloudflare Workflow `defaultRetention` (plus legacy Wrangler `default_retention`)
 - [x] explicit account-plan retention adapter: `workflows.mbt.json`
   `retention.plan` = `"free"` (3d/3d) or `"paid"` (7d/7d) supplies the
   Cloudflare plan defaults when neither per-instance retention nor
@@ -247,21 +249,22 @@ completion.
 - [x] source keeps `cloudflare:workers` unchanged
 - [x] `cloudflare:workflows` resolver for `NonRetryableError`
 - [x] TypeScript transpilation via esbuild
-- [x] `wrangler.jsonc` `main`
-- [x] `workflows[].name`
-- [x] `workflows[].binding`
-- [x] `workflows[].class_name`
-- [x] `workflows[].schedules`
-- [x] numeric and named UTC cron fields including `MON-FRI`
-- [x] Cloudflare numeric weekday numbering (`1=SUN` .. `7=SAT`)
-- [x] `workflows[].default_retention`
-- [x] top-level `vars`
-- [x] local `.dev.vars` / `.env` (mutually exclusive per Wrangler: an
-  applicable `.dev.vars` file excludes `.env` files entirely)
-- [x] `secrets.required` local filtering / process-env fallback
-- [x] compatibility flags are parsed and preserved for adapters
-- [x] unknown Wrangler fields are ignored without source/config rewriting
-- [x] separate `workflows.mbt.json` SQLite path override
+- [x] `cloudflare.config.ts` loaded and validated through Cloudflare's
+  `@cloudflare/config` loader
+- [x] context-aware `defineConfig(ctx => ...)` resolution with `--mode`
+- [x] `worker.name`
+- [x] `worker.entrypoint`
+- [x] `worker.compatibilityDate` / `worker.compatibilityFlags`
+- [x] `worker.exports.* = exports.workflow(...)`
+- [x] matching `worker.env.* = bindings.workflow(...)`
+- [x] Workflow schedules and default retention
+- [x] text / JSON bindings mapped to local values
+- [x] secret bindings mapped to required local secret names
+- [x] KV / D1 / R2 / queue / worker bindings mapped to supported local adapters
+- [x] separate `workflows.mbt.json` for local-only storage/adapters/limits
+- [x] legacy `wrangler.jsonc` / `wrangler.json` input
+- [x] legacy Wrangler named environments via `--env <name>`
+- [x] Cloudflare config selected ahead of Wrangler config during discovery
 - [x] native Node Web APIs including `fetch`, `Request`, `Response`, URL
 - [x] default Worker `fetch(request, env, ctx)` host
 - [x] `ctx.waitUntil()` returns the HTTP response without awaiting background work
@@ -269,27 +272,12 @@ completion.
 - [x] streamed Worker `Response.body` is forwarded incrementally with backpressure
 - [x] inbound `Request.body` is a `ReadableStream` (not pre-buffered) for non-GET/HEAD requests
 - [x] multiple `Set-Cookie` response headers are preserved as separate header values
-- [x] Wrangler named environments: `--env <name>` selects `env.<name>` in
-  `wrangler.jsonc` with Wrangler's inheritance semantics — inheritable keys
-  (`main`, `name`, `compatibility_date`/`flags`) fall back to top level,
-  non-inheritable keys (`vars`, `secrets`, and every binding family:
-  `workflows`, `kv_namespaces`, `d1_databases`, `r2_buckets`, `queues`,
-  `services`) must be declared per environment and are never merged from
-  the top level; unknown env names fail. Secret files follow Wrangler too:
-  `.dev.vars.<env>` replaces `.dev.vars` entirely when present, an
-  applicable `.dev.vars` excludes all `.env` files, and otherwise the `.env`
-  family merges with precedence `.env.<env>.local` > `.env.local` >
-  `.env.<env>` > `.env`
-- [ ] full Wrangler clone
 
-Cloudflare Workers AI and Durable Objects are not emulated by the core
-runtime. Optional local adapters (configured under `adapters` in
-`workflows.mbt.json`) cover the binding shapes real Workflow projects use:
-KV namespaces, D1 databases, and R2 buckets persist under the local adapters
-directory; queue producers support `loopback` (delivered to the same module's
-`queue` handler) and `spool` (durable on-disk); service bindings forward
-`fetch` to a configured URL. Custom values/adapters may also be injected into
-`this.env`.
+Cloudflare Workers AI and Durable Objects are not emulated by the core runtime.
+Optional local adapters (configured under `adapters` in
+`workflows.mbt.json`) cover the binding shapes real Workflow projects use.
+Unknown Cloudflare binding types are reported by `doctor` instead of being
+silently promoted into supported behavior.
 
 ## Persistence
 
@@ -406,7 +394,10 @@ where Cloudflare's are undocumented.
 
 ## CLI
 
-- [x] `workflows dev --config wrangler.jsonc`
+- [x] `workflows dev --config cloudflare.config.ts`
+- [x] automatic `cloudflare.config.ts` discovery
+- [x] `--mode <name>` for context-aware Cloudflare config
+- [x] legacy `--config wrangler.jsonc --env <name>`
 - [x] `workflows dev` serves default Worker + REST routes
 - [x] `--no-http` scheduler-only mode
 - [x] `workflows trigger <workflow> --params ...`
@@ -416,76 +407,41 @@ where Cloudflare's are undocumented.
 - [x] resume
 - [x] restart
 - [x] terminate
-- [x] official Wrangler `workflows ... --local` client interoperability
-- [x] Wrangler local workflow list / describe / delete
-- [x] Wrangler local instance list / trigger / describe / delete / batch delete
-- [x] Wrangler local instance pause / resume / restart / terminate / send-event
-- [x] real pinned Wrangler CLI smoke against the workflows.mbt HTTP server
 
 ## Automated verification oracle
 
-The compatibility date above is backed by `compat/oracle/manifest.json`, which
-currently pins Wrangler **4.141.0**, `@cloudflare/workers-types`
-**5.20260925.2**, and workerd **1.20260925.2**.
+The compatibility date above is backed by `compat/oracle/manifest.json`. The
+pinned local Cloudflare oracle uses `cf`, `@cloudflare/vite-plugin`, Vite,
+`@cloudflare/workers-types`, and workerd. Wrangler remains pinned during the
+migration window only for the legacy Wrangler config/schema contract.
 
 Normal PR/push CI runs `npm run compat:pinned`. It checks the pinned public
 API/config contract and then executes unchanged TypeScript probe source under
-both Cloudflare `wrangler dev` and `workflows.mbt`. The comparator uses only
-observable behavior: terminal status/output/error, stable lifecycle events,
-step/attempt behavior, sleep/wait behavior, and rollback order/outcome. Transient
-`workflow_running` / `workflow_waiting` transitions are excluded from exact
-sequence comparison because local Wrangler may coalesce them for short waits;
-Runtime-specific instance IDs, event IDs, timestamps, temporary paths, and
-wall-clock timing are excluded.
+both Cloudflare `cf dev` (through the Vite plugin) and `workflows.mbt`. The
+comparator uses only observable behavior: terminal status/output/error, stable
+lifecycle events, step/attempt behavior, sleep/wait behavior, and rollback
+order/outcome. Runtime-specific instance IDs, event IDs, timestamps, temporary
+paths, and wall-clock timing are excluded.
 
-The initial differential probes are:
+The differential probes include basic step execution, retry, sleep,
+wait-for-event, rollback, serialization, concurrency, lifecycle behavior, and
+`WorkflowEntrypoint` execution context behavior.
 
-- `basic` — `step.do` result and lifecycle
-- `retry` — retry/attempt behavior
-- `sleep` — durable sleep behavior
-- `wait-for-event` — event delivery through `waitForEvent`
-- `rollback` — rollback ordering and terminal error behavior
-- `entrypoint-ctx` — `this.ctx` presence, method surface, `ctx.exports`
-  loopback behavior, and span async-context/end semantics during `run()`
+The pinned check also verifies that the local host/shim still implements every
+tracked member from the upstream Workers types. `compat:pinned` additionally
+runs the compile-time fixture under `compat/typecheck/`.
 
-The pinned check also verifies the local host/shim classes still implement
-every member the upstream types track (`localSurface` in the drift report), so
-a tracked member cannot silently lose its local implementation. The tracked
-surfaces are `Workflow`, `WorkflowInstance`, `WorkflowInstanceCreateOptions`,
-`WorkflowInstanceSubscribeOptions`, `WorkflowStep`, `WorkflowEntrypoint`, and
-`ExecutionContext`.
-
-`compat:pinned` also runs `npm run compat:typecheck` (tsc over
-`compat/typecheck/`): a compile-time fixture that consumes the shim
-`cloudflare:workers` declarations the way source-compatible Worker code does
-— `this.ctx.exports.default.fetch(...)` and typed WorkflowEntrypoint loopback
-exports — without casts, via `Cloudflare.GlobalProps.mainModule`
-augmentation (the wrangler-generated pattern).
-
-`npm run compat:latest` is intentionally outside required PR CI. The scheduled
-`compatibility-latest` workflow resolves the current upstream tuple **once**
-into a shared candidate (exact versions, registry integrity, and the real
-transitive miniflare/workerd the run executed), then typechecks the contract
-fixture against the candidate's `@cloudflare/workers-types`, classifies
-meaningful surface drift as `added`, `removed`, or `changed`, and runs the same
-differential probes against the candidate's wrangler binary. The run ends in a
-machine-readable verdict (`compatible`, `contract-drift`, `semantic-drift`,
-`upstream-acquisition-failure`, `upstream-execution-failure`,
-`local-runtime-failure`, `incomplete-evidence`, or `hosted-not-performed`) —
-an upstream outage, a missing/malformed/stale result file, or a partial probe
-run is never reported as compatibility. Reports, phase results, the verdict,
-and deduplicated drift response packets are retained as Actions artifacts even
-when a check fails. See `docs/upstream-tracking.md` for the operating
-procedure (verdict taxonomy, response packets, verified update candidates).
+`npm run compat:latest` is intentionally outside required PR CI. The
+scheduled/manual run resolves one isolated candidate containing current `cf`,
+Vite plugin/Vite, Wrangler (legacy schema only), Workers types, and workerd
+versions. All phases consume that same candidate and produce a machine-readable
+verdict rather than treating acquisition/execution failures as compatibility.
 
 `npm run compat:report` renders the current verification summary into
-`compat-results/report.md` without replacing the human-maintained compatibility
-explanation in this file.
-
-Production Cloudflare is reserved as an optional, credential-gated oracle. The
-credential-free local oracle does not claim that local Wrangler/workerd and the
-hosted Cloudflare service are identical in every account- or plan-dependent
-behavior.
+`compat-results/report.md`. Production Cloudflare remains an optional,
+credential-gated oracle; the credential-free local oracle does not claim that
+local `cf dev`/workerd and hosted Cloudflare are identical in account- or
+plan-dependent behavior.
 
 ## Known differences
 
@@ -498,8 +454,8 @@ These are intentionally not hidden behind compatibility claims:
 2. **Account-plan retention defaults** — a local runtime has no Cloudflare
    account plan, so plan defaults are opt-in via
    `workflows.mbt.json` `retention.plan` (`"free"` / `"paid"`). Without it,
-   unspecified retention remains unlimited. Explicit instance and Wrangler
-   retention are supported.
+   unspecified retention remains unlimited. Explicit instance and Cloudflare
+   Workflow retention are supported.
 3. **Bare Promise.race / Promise.any replay winner** — Cloudflare itself warns
    that the observed winner can differ from the cached replay winner. The same
    stronger guarantee is not claimed here; use an outer `step.do` when the
@@ -512,10 +468,9 @@ These are intentionally not hidden behind compatibility claims:
    `concurrency`. The local single-machine runtime does not emulate
    Cloudflare geographic placement or account-level concurrency/limit
    enforcement.
-6. **Cross-script Workflow bindings** — Wrangler
-   `workflows[].script_name` can reference a Workflow defined by another
-   Worker. The local host currently resolves Workflow classes from the
-   configured local module only.
+6. **Cross-worker Workflow bindings** — Cloudflare config can bind a Workflow
+   exported by another Worker definition. The local host currently resolves
+   Workflow classes from the configured local module only.
 7. **Cloudflare Workers AI / Durable Objects** — not emulated; the local
    binding adapters cover KV, D1, R2, Queues, and Service Bindings.
 
