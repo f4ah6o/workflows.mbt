@@ -125,7 +125,7 @@ function listFilesRecursive(dir) {
 }
 
 // Canonical hash of the resolved upstream dependency graph — the runtime
-// wrangler actually starts (miniflare/workerd/esbuild/unenv...). candidate.id
+// Cloudflare local toolchain actually starts (cf/Vite/miniflare/workerd/esbuild/unenv...). candidate.id
 // intentionally excludes this, so coverage candidate identity is computed
 // here (issue §7): a transitive-graph change invalidates old evidence even
 // when the top-level pin tuple is unchanged.
@@ -154,7 +154,11 @@ export function computeRelevantInputs(rootDir, candidate, { inventoryDir = "comp
   const probeSourcePaths = listFilesRecursive(join(rootDir, "compat/probes/src"));
   const comparisonPaths = ["compat/normalize.mjs", "compat/probe-client.mjs"].map((p) => join(rootDir, p));
   const inventoryPaths = listFilesRecursive(resolve(rootDir, inventoryDir)).filter((path) => path.endsWith(".json"));
-  const configPaths = ["compat/probes/wrangler.jsonc", "fixtures/e2e/workflows.mbt.json"]
+  const configPaths = [
+    "compat/probes/cloudflare.config.ts",
+    "compat/probes/vite.config.ts",
+    "fixtures/e2e/workflows.mbt.json",
+  ]
     .map((p) => join(rootDir, p))
     .filter((path) => existsSync(path));
   const conditions = candidate?.conditions ?? {};
