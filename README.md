@@ -19,11 +19,14 @@ disaster-recovery model.
 The migration target is intentionally small:
 
 ```text
-Before: npx wrangler dev
-After:  workflows dev --config wrangler.jsonc
+Runtime before: npx wrangler dev
+Runtime after:  workflows dev --config wrangler.jsonc
 ```
 
-The workflow source itself should not need a migration rewrite.
+The workflow source itself should not need a migration rewrite. The official
+Wrangler CLI can still be used as the local Workflows management client:
+`wrangler workflows ... --local` talks to the compatibility endpoint exposed
+by `workflows dev` on the same default port (8787).
 
 ## Install
 
@@ -238,9 +241,28 @@ node host/cli.mjs event my-workflow <instance-id> approved \
 the package version.
 
 By default `workflows dev` also listens on `127.0.0.1:8787`. It dispatches
-ordinary requests to an unchanged default Worker `fetch` export and exposes the
-local Workflows REST compatibility facade. Use `--no-http` for scheduler-only
-operation.
+ordinary requests to an unchanged default Worker `fetch` export and exposes
+both the Cloudflare Workflows REST compatibility facade and Wrangler's local
+explorer Workflows API.
+
+That means the existing Wrangler Workflows commands can manage the fallback
+runtime without a wrapper or fork:
+
+```bash
+workflows dev --config wrangler.jsonc
+
+# In another terminal, use the real Wrangler CLI against workflows.mbt.
+npx wrangler workflows list --local
+npx wrangler workflows describe my-workflow --local
+npx wrangler workflows trigger my-workflow --local --params '{"name":"Alice"}'
+npx wrangler workflows instances list my-workflow --local
+npx wrangler workflows instances describe my-workflow latest --local
+```
+
+Lifecycle, event, delete, and batch-delete commands use the same local API.
+Pass `--port <port>` to Wrangler when `workflows dev` uses a non-default
+port. Use `--no-http` only for scheduler-only operation; Wrangler local
+commands require the HTTP server.
 
 ## Source compatibility fixture
 

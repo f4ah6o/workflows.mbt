@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { handleWranglerLocalExplorer } from "./local-explorer.mjs";
 import { handleWorkflowRest } from "./rest.mjs";
 
 async function nodeRequest(req, host, port) {
@@ -45,6 +46,7 @@ export async function startWorkflowHttpServer(
     try {
       const request = await nodeRequest(req, host, port);
       const response =
+        await handleWranglerLocalExplorer(runtime, request) ??
         await handleWorkflowRest(runtime, request) ??
         await runtime.fetch(request);
       await writeResponse(res, response);
