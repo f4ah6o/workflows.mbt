@@ -10,12 +10,12 @@ verified update candidate, and only move the verified baseline by hand.
 single `WORKFLOWS_MBT_RUN_ID`:
 
 1. **candidate** (`compat/candidate.mjs --mode latest --refresh`) — resolves
-   `@latest` for wrangler / `@cloudflare/workers-types` / workerd **once** at
+   `@latest` for `cf` / `@cloudflare/vite-plugin` / Vite / Wrangler (legacy schema) / `@cloudflare/workers-types` / workerd **once** at
    run entry into an isolated install under `compat-results/candidate-latest/`
    (never the repo's `node_modules` or lockfile). The record carries exact
    versions, `dist.integrity`/`resolved` tarball hashes, and the **real
    transitive runtime graph** (`npm ls` over the isolated install): the
-   miniflare/workerd that `wrangler dev` actually ran — not a separately
+   Vite/miniflare/workerd graph that `cf dev` actually ran — not a separately
    fetched workerd. The same step with `--mode pinned` resolves the repo's
    lockfile tuple instead, and both modes record `compatibility_date` /
    `compatibility_flags` as verification conditions.
@@ -25,13 +25,12 @@ single `WORKFLOWS_MBT_RUN_ID`:
 3. **contract** (`compat/oracle/check.mjs`) — API-surface drift
    (`added`/`removed`/`changed`) against the candidate's unpacked packages.
 4. **inventory** (`compat/check-inventory.mjs --report --mode latest`) —
-   re-extracts the upstream API/config inventory from the candidate's types
-   and wrangler schema, diffs it against the committed baselines under
+   re-extracts the upstream API/config inventory from the candidate's types and legacy Wrangler schema, diffs it against the committed baselines under
    `compat/inventory/`, and writes `inventory-latest.json` +
    `inventory-diff-latest.json`. A drift here is an investigation input,
    never a failure.
 5. **differential** (`compat/run-differential.mjs`) — the probe catalog under
-   the candidate's wrangler binary vs workflows.mbt.
+   the candidate's `cf` binary + Vite plugin vs workflows.mbt.
 6. **docs-watch** (`compat/docs-watch.mjs`) — hashes the official doc pages
    cited by `compat/cloudflare/VERSION.md` against
    `compat/docs-watch.baseline.json`. A changed page is an investigation
@@ -188,7 +187,7 @@ hold the proposal. Applying it is manual and reviewable:
 
 ```bash
 # review compat-results/proposed-manifest.json
-# 1. bump the pinned devDependencies in package.json to the candidate tuple
+# 1. bump the pinned cf/Vite + legacy-schema/type/runtime dependencies in package.json to the candidate tuple
 # 2. npm install            (regenerate package-lock.json)
 # 3. copy the proposal over compat/oracle/manifest.json
 # 4. npm run compat:pinned && npm test   # re-verify under the new pin
