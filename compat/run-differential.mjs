@@ -195,6 +195,8 @@ async function collectCloudflare() {
   const oracleDir = join(temp, "cf-oracle");
   cpSync(join(root, "compat/probes"), oracleDir, { recursive: true });
   const packageRoot = candidate.installDir ?? root;
+  cpSync(join(packageRoot, "package.json"), join(oracleDir, "package.json"));
+  cpSync(join(packageRoot, "package-lock.json"), join(oracleDir, "package-lock.json"));
   symlinkSync(
     join(packageRoot, "node_modules"),
     join(oracleDir, "node_modules"),
