@@ -47,6 +47,9 @@ export function resultsDirFor(rootDir = root, env = process.env) {
 }
 
 const TRACKED_PACKAGES = {
+  cf: "cf",
+  vitePlugin: "@cloudflare/vite-plugin",
+  vite: "vite",
   wrangler: "wrangler",
   workersTypes: "@cloudflare/workers-types",
   workerd: "workerd",
@@ -76,15 +79,17 @@ export function verificationConditions(rootDir = root) {
   const conditions = {
     compatibilityDate: manifest.compatibilityDate,
     compatibilityFlags: [],
+    config: "compat/probes/cloudflare.config.ts",
   };
-  const probeConfig = join(rootDir, "compat/probes/wrangler.jsonc");
+  const probeConfig = join(rootDir, conditions.config);
   if (existsSync(probeConfig)) {
-    const parsed = parseJsonc(readFileSync(probeConfig, "utf8"));
-    if (typeof parsed?.compatibility_date === "string") {
-      conditions.probesCompatibilityDate = parsed.compatibility_date;
-    }
-    if (Array.isArray(parsed?.compatibility_flags)) {
-      conditions.compatibilityFlags = parsed.compatibility_flags;
+    const source = readFileSync(probeConfig, "utf8");
+    const date = source.match(/compatibilityDate\s*:\s*["']([^"']+)["']/);
+    if (date) conditions.probesCompatibilityDate = date[1];
+    const flags = source.match(/compatibilityFlags\s*:\s*\[([^\]]*)\]/s);
+    if (flags) {
+      conditions.compatibilityFlags = [...flags[1].matchAll(/["']([^"']+)["']/g)]
+        .map((match) => match[1]);
     }
   }
   return conditions;
@@ -119,7 +124,7 @@ async function npmLsGraph(dir) {
   const flat = flattenLs(parsed);
   const count = Object.keys(flat).length;
   const interesting = {};
-  for (const name of ["wrangler", "miniflare", "workerd", "@cloudflare/workers-types", "esbuild", "@cloudflare/unenv-preset", "unenv"]) {
+  for (const name of ["cf", "@cloudflare/vite-plugin", "vite", "@cloudflare/config", "wrangler", "miniflare", "workerd", "@cloudflare/workers-types", "esbuild", "@cloudflare/unenv-preset", "unenv"]) {
     if (flat[name]) interesting[name] = flat[name];
   }
   return { count, runtime: interesting, graph: flat };
@@ -147,12 +152,22 @@ function nodeModulesVersion(rootDir, pkg) {
 
 export async function resolvePinned(rootDir = root, resultsDir = resultsDirFor(rootDir)) {
   const versions = {
+    cf: nodeModulesVersion(rootDir, "cf"),
+    vitePlugin: nodeModulesVersion(rootDir, "@cloudflare/vite-plugin"),
+    vite: nodeModulesVersion(rootDir, "vite"),
     wrangler: nodeModulesVersion(rootDir, "wrangler"),
     workersTypes: nodeModulesVersion(rootDir, "@cloudflare/workers-types"),
     workerd: nodeModulesVersion(rootDir, "workerd"),
   };
   const manifest = readJson(join(rootDir, "compat/oracle/manifest.json"));
-  for (const [key, expected] of Object.entries({ wrangler: manifest.wrangler, workersTypes: manifest.workersTypes, workerd: manifest.workerd })) {
+  for (const [key, expected] of Object.entries({
+    cf: manifest.cf,
+    vitePlugin: manifest.vitePlugin,
+    vite: manifest.vite,
+    wrangler: manifest.wrangler,
+    workersTypes: manifest.workersTypes,
+    workerd: manifest.workerd,
+  })) {
     if (versions[key] !== expected) {
       throw new Error("Pinned " + key + " version mismatch: manifest says " + expected + ", node_modules has " + versions[key]);
     }
@@ -164,13 +179,24 @@ export async function resolvePinned(rootDir = root, resultsDir = resultsDirFor(r
     status: "ok",
     resolvedAt: new Date().toISOString(),
     source: { type: "package-lock", lockfile: "package-lock.json" },
-    requested: { wrangler: manifest.wrangler, workersTypes: manifest.workersTypes, workerd: manifest.workerd },
+    requested: {
+      cf: manifest.cf,
+      vitePlugin: manifest.vitePlugin,
+      vite: manifest.vite,
+      wrangler: manifest.wrangler,
+      workersTypes: manifest.workersTypes,
+      workerd: manifest.workerd,
+    },
     versions,
     integrity: lockfileIntegrity(rootDir),
     dependencyGraph: dependency.graph,
     runtime: dependency.runtime,
     dependencyCount: dependency.count,
     paths: {
+      cfBin: join(rootDir, "node_modules/.bin/cf"),
+      cfPkg: join(rootDir, "node_modules/cf"),
+      vitePluginPkg: join(rootDir, "node_modules/@cloudflare/vite-plugin"),
+      vitePkg: join(rootDir, "node_modules/vite"),
       wranglerBin: join(rootDir, "node_modules/.bin/wrangler"),
       wranglerPkg: join(rootDir, "node_modules/wrangler"),
       workersTypesPkg: join(rootDir, "node_modules/@cloudflare/workers-types"),
@@ -215,7 +241,14 @@ export async function resolveLatest(rootDir = root, resultsDir = resultsDirFor(r
   }
 
   mkdirSync(resultsDir, { recursive: true });
-  const requested = { wrangler: "latest", workersTypes: "latest", workerd: "latest" };
+  const requested = {
+    cf: "latest",
+    vitePlugin: "latest",
+    vite: "latest",
+    wrangler: "latest",
+    workersTypes: "latest",
+    workerd: "latest",
+  };
   const fail = (phase, error) => {
     const candidate = {
       formatVersion: 1,
@@ -237,12 +270,15 @@ export async function resolveLatest(rootDir = root, resultsDir = resultsDirFor(r
   //    integrity, tarball URL — the acquisition evidence).
   let resolved;
   try {
-    const [wrangler, workersTypes, workerd] = await Promise.all([
+    const [cf, vitePlugin, vite, wrangler, workersTypes, workerd] = await Promise.all([
+      npmView("cf", "latest", env),
+      npmView("@cloudflare/vite-plugin", "latest", env),
+      npmView("vite", "latest", env),
       npmView("wrangler", "latest", env),
       npmView("@cloudflare/workers-types", "latest", env),
       npmView("workerd", "latest", env),
     ]);
-    resolved = { wrangler, workersTypes, workerd };
+    resolved = { cf, vitePlugin, vite, wrangler, workersTypes, workerd };
   } catch (error) {
     return fail("resolve", error);
   }
@@ -257,6 +293,9 @@ export async function resolveLatest(rootDir = root, resultsDir = resultsDirFor(r
       name: "workflows-mbt-upstream-candidate",
       private: true,
       dependencies: {
+        cf: resolved.cf.version,
+        "@cloudflare/vite-plugin": resolved.vitePlugin.version,
+        vite: resolved.vite.version,
         wrangler: resolved.wrangler.version,
         "@cloudflare/workers-types": resolved.workersTypes.version,
         workerd: resolved.workerd.version,
@@ -282,6 +321,9 @@ export async function resolveLatest(rootDir = root, resultsDir = resultsDirFor(r
   }
 
   const versions = {
+    cf: resolved.cf.version,
+    vitePlugin: resolved.vitePlugin.version,
+    vite: resolved.vite.version,
     wrangler: resolved.wrangler.version,
     workersTypes: resolved.workersTypes.version,
     workerd: resolved.workerd.version,
@@ -298,6 +340,9 @@ export async function resolveLatest(rootDir = root, resultsDir = resultsDirFor(r
     requested,
     versions,
     integrity: {
+      cf: { integrity: resolved.cf.integrity, tarball: resolved.cf.tarball },
+      vitePlugin: { integrity: resolved.vitePlugin.integrity, tarball: resolved.vitePlugin.tarball },
+      vite: { integrity: resolved.vite.integrity, tarball: resolved.vite.tarball },
       wrangler: { integrity: resolved.wrangler.integrity, tarball: resolved.wrangler.tarball },
       workersTypes: { integrity: resolved.workersTypes.integrity, tarball: resolved.workersTypes.tarball },
       workerd: { integrity: resolved.workerd.integrity, tarball: resolved.workerd.tarball },
@@ -306,6 +351,10 @@ export async function resolveLatest(rootDir = root, resultsDir = resultsDirFor(r
     runtime: dependency.runtime,
     dependencyCount: dependency.count,
     paths: {
+      cfBin: join(installDir, "node_modules/.bin/cf"),
+      cfPkg: join(installDir, "node_modules/cf"),
+      vitePluginPkg: join(installDir, "node_modules/@cloudflare/vite-plugin"),
+      vitePkg: join(installDir, "node_modules/vite"),
       wranglerBin: join(installDir, "node_modules/.bin/wrangler"),
       wranglerPkg: join(installDir, "node_modules/wrangler"),
       workersTypesPkg: join(installDir, "node_modules/@cloudflare/workers-types"),
@@ -356,7 +405,7 @@ export function validateCandidate(candidate, origin = "candidate.json") {
     for (const key of ["versions", "paths", "resolvedAt"]) {
       if (candidate[key] == null) throw new Error(origin + ": missing " + key);
     }
-    for (const key of ["wranglerBin", "typesPath", "schemaPath"]) {
+    for (const key of ["cfBin", "wranglerBin", "typesPath", "schemaPath"]) {
       if (!existsSync(candidate.paths[key])) {
         throw new Error(origin + ": candidate path missing on disk: " + candidate.paths[key]);
       }
