@@ -16,22 +16,29 @@ Durable Objects emulators into core, or claiming transparent migration of
 in-flight Cloudflare state. See `docs/fallback-runbook.md` for the supported
 disaster-recovery model.
 
-The migration target is intentionally small:
+Cloudflare's current project contract is `cf` + `cloudflare.config.ts`.
+For a Wrangler project, run `cf migrate --bundler vite`, then complete the
+Workflow-specific follow-up that `cf migrate` reports: declare each Workflow
+with `exports.workflow()` and bind it with `bindings.workflow()`.
+
+The source migration target stays intentionally small:
 
 ```text
-Runtime before: npx wrangler dev
-Runtime after:  workflows dev --config wrangler.jsonc
+Cloudflare before:  npx wrangler dev
+Cloudflare after:   npx cf dev
+Fallback runtime:   workflows dev --config cloudflare.config.ts
 ```
 
-The workflow source itself should not need a migration rewrite. The official
-Wrangler CLI can still be used as the local Workflows management client:
-`wrangler workflows ... --local` talks to the compatibility endpoint exposed
-by `workflows dev` on the same default port (8787).
+Workflow implementation source keeps importing `cloudflare:workers` /
+`cloudflare:workflows`; the runtime config moves to Cloudflare's typed
+`cloudflare.config.ts`. Legacy `wrangler.jsonc` remains readable during the
+migration window, but it is no longer the primary configuration contract. See
+[docs/cf-migration.md](./docs/cf-migration.md).
 
 ## Install
 
 The runtime ships as an npm-package tarball with a **prebuilt kernel** — a
-consumer machine needs only Node.js >= 22; no MoonBit toolchain and no
+consumer machine needs Node.js >= 22.18; no MoonBit toolchain and no
 repository checkout are required.
 
 From a release artifact (`v*` GitHub Releases publish
@@ -41,8 +48,8 @@ From a release artifact (`v*` GitHub Releases publish
 tar -xzf f4ah6o-workflows-mbt-<version>.tgz
 cd package
 npm ci --omit=dev        # deterministic — resolved from the packaged npm-shrinkwrap.json
-node host/cli.mjs doctor --config /path/to/project/wrangler.jsonc
-node host/cli.mjs dev    --config /path/to/project/wrangler.jsonc
+node host/cli.mjs doctor --config /path/to/project/cloudflare.config.ts
+node host/cli.mjs dev    --config /path/to/project/cloudflare.config.ts
 ```
 
 Or install the tarball into an existing project, which also puts the
@@ -50,8 +57,8 @@ Or install the tarball into an existing project, which also puts the
 
 ```bash
 npm install ./f4ah6o-workflows-mbt-<version>.tgz   # or a release download URL
-npx workflows doctor --config wrangler.jsonc
-npx workflows dev --config wrangler.jsonc
+npx workflows doctor --config cloudflare.config.ts
+npx workflows dev --config cloudflare.config.ts
 ```
 
 The same tarball is produced locally with `npm pack` (runs `build:core` if
@@ -139,29 +146,53 @@ effects to be idempotent or use application-level idempotency keys.
 
 ## Configuration
 
-Existing `wrangler.jsonc` remains the primary project config:
+`cloudflare.config.ts` is the primary project config. A Workflow project uses
+the same typed definitions as `cf`:
 
-```jsonc
-{
-  "name": "example",
-  "main": "src/index.ts",
-  "compatibility_date": "2026-09-26",
-  "workflows": [
-    {
-      "name": "my-workflow",
-      "binding": "MY_WORKFLOW",
-      "class_name": "MyWorkflow"
-    }
-  ]
-}
+```ts
+import { bindings, defineConfig, exports } from "cf/config";
+
+const workerName = "example";
+
+export default defineConfig({
+  worker: {
+    name: workerName,
+    entrypoint: "src/index.ts",
+    compatibilityDate: "2026-09-26",
+    env: {
+      MY_WORKFLOW: bindings.workflow({
+        name: "my-workflow",
+        worker: workerName,
+        exportName: "MyWorkflow",
+      }),
+    },
+    exports: {
+      MyWorkflow: exports.workflow({ name: "my-workflow" }),
+    },
+  },
+});
 ```
 
-The local host consumes the workflow `name`, `binding`, `class_name`,
-`schedules`, and `default_retention`, plus top-level `vars`,
-`compatibility_flags`, and local `.dev.vars` / `.env` values. Unknown
-Wrangler fields remain ignored unless an adapter supports them.
+The local host loads and validates this file with Cloudflare's
+`@cloudflare/config` loader, including context-aware `defineConfig(ctx => …)`
+definitions and `--mode <name>`. It maps Workflow exports/bindings,
+compatibility date/flags, text/JSON vars, secrets, and supported binding
+families into the existing runtime model.
 
-Optional local-only settings belong in `workflows.mbt.json`:
+For an existing Wrangler project:
+
+```bash
+npx cf migrate --bundler vite
+# Complete the Workflow follow-up in cloudflare.config.ts:
+#   exports.workflow(...) + bindings.workflow(...)
+npx cf dev
+```
+
+`wrangler.jsonc` / `wrangler.json` are still accepted as explicit legacy
+inputs (and as a fallback when no `cloudflare.config.ts` exists). Wrangler
+named environments continue to use `--env`; Cloudflare config uses `--mode`.
+
+Optional local-only settings remain in `workflows.mbt.json`:
 
 ```json
 {
@@ -179,10 +210,8 @@ Two storage backends implement the same workflow-semantic contract:
 - **`postgres`** — `storage.url` is a `postgres://`/`postgresql://` connection
   string, `storage.schema` optionally isolates the runtime's tables. The same
   lease, fencing, and atomic-step semantics hold across connections and
-  machines. Requires the optional `pg` dependency (`npm install pg`; it is
-  declared under `optionalDependencies`, so the default install does not need
-  it or a running server). The CLI `--storage` flag accepts a `postgres://`
-  URL directly instead of a file path:
+  machines. Requires the optional `pg` dependency. The CLI `--storage` flag
+  accepts a PostgreSQL URL directly instead of a file path.
 
 ```json
 {
@@ -205,16 +234,16 @@ npm run build:core
 Run a project:
 
 ```bash
-node host/cli.mjs dev --config fixtures/cloudflare-basic/wrangler.jsonc
+node host/cli.mjs dev --config fixtures/cloudflare-basic/cloudflare.config.ts
 ```
 
-(installed consumers use `workflows dev --config wrangler.jsonc` — the `bin`
-entry points at `host/cli.mjs`)
+(installed consumers use `workflows dev --config cloudflare.config.ts`; when
+the project root contains that file, `--config` may be omitted)
 
 Preflight a project before routing traffic to it:
 
 ```bash
-node host/cli.mjs doctor --config wrangler.jsonc
+node host/cli.mjs doctor --config cloudflare.config.ts
 ```
 
 `doctor` checks that the config parses, required secrets resolve, storage
@@ -226,13 +255,13 @@ Trigger and inspect instances:
 
 ```bash
 node host/cli.mjs trigger my-workflow \
-  --config fixtures/cloudflare-basic/wrangler.jsonc \
+  --config fixtures/cloudflare-basic/cloudflare.config.ts \
   --params '{"name":"Alice","url":"https://example.com/data"}'
 
-node host/cli.mjs status my-workflow <instance-id> --config wrangler.jsonc
+node host/cli.mjs status my-workflow <instance-id> --config cloudflare.config.ts
 
 node host/cli.mjs event my-workflow <instance-id> approved \
-  --config wrangler.jsonc \
+  --config cloudflare.config.ts \
   --payload '{"approved":true}'
 ```
 
@@ -240,29 +269,13 @@ node host/cli.mjs event my-workflow <instance-id> approved \
 `workflows --help` prints the full surface and `workflows --version` prints
 the package version.
 
-By default `workflows dev` also listens on `127.0.0.1:8787`. It dispatches
+By default `workflows dev` listens on `127.0.0.1:8787`. It dispatches
 ordinary requests to an unchanged default Worker `fetch` export and exposes
-both the Cloudflare Workflows REST compatibility facade and Wrangler's local
-explorer Workflows API.
+the runtime's Workflows REST compatibility facade. Use `--no-http` for
+scheduler-only operation.
 
-That means the existing Wrangler Workflows commands can manage the fallback
-runtime without a wrapper or fork:
-
-```bash
-workflows dev --config wrangler.jsonc
-
-# In another terminal, use the real Wrangler CLI against workflows.mbt.
-npx wrangler workflows list --local
-npx wrangler workflows describe my-workflow --local
-npx wrangler workflows trigger my-workflow --local --params '{"name":"Alice"}'
-npx wrangler workflows instances list my-workflow --local
-npx wrangler workflows instances describe my-workflow latest --local
-```
-
-Lifecycle, event, delete, and batch-delete commands use the same local API.
-Pass `--port <port>` to Wrangler when `workflows dev` uses a non-default
-port. Use `--no-http` only for scheduler-only operation; Wrangler local
-commands require the HTTP server.
+Cloudflare-side development uses `cf dev`; workflows.mbt is the independent
+fallback runtime, not a replacement command frontend for `cf`.
 
 ## Source compatibility fixture
 
@@ -323,8 +336,9 @@ npm run compat:report
 ```
 
 `compat:pinned` is credential-free and runs in normal PR/push CI. It validates
-the pinned Wrangler / Workers types / workerd contract, then executes the same
-TypeScript probe source under both Cloudflare `wrangler dev` and `workflows.mbt`.
+the pinned `cf` / Vite plugin / Workers types / workerd contract, then executes
+the same TypeScript probe source under both Cloudflare `cf dev` and
+`workflows.mbt`. Wrangler remains pinned only for legacy config/schema checks.
 The resulting observable traces are normalized before comparison.
 
 `compat:latest` is intentionally separated into the scheduled/manual
