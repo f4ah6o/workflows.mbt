@@ -53,7 +53,7 @@
     "compat:upstream-coverage": "node compat/upstream-coverage.mjs",
     "compat:drill": "node compat/run-drill.mjs",
     "check:toolchain": "node scripts/check-toolchain.mjs",
-    "test:compat": "node --test tests/compat-probe-client.test.mjs tests/release-pin.test.mjs",
+    "test:compat": "node --test tests/compat-probe-client.test.mjs tests/release-pin.test.mjs tests/oracle-config.test.mjs",
     "prepack": "node scripts/prepare-pack.mjs",
     "postpack": "node scripts/prepare-pack.mjs --cleanup",
     "test:scenario": "node scripts/consumer-scenario.mjs",
