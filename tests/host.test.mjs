@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { loadProjectConfig } from "../host/config.mjs";
+import { WorkflowRuntime } from "../host/engine.mjs";
 import { runDoctor } from "../host/doctor.mjs";
 import { loadLocalDevEnv } from "../host/env.mjs";
 import { connectSocket } from "../host/socket.mjs";
@@ -214,6 +215,62 @@ test("cloudflare.config.ts is the primary config and resolves Workflow exports/b
     schedules: [],
     defaultRetention: null,
   }]);
+});
+
+test("cloudflare.config.ts preserves multiple aliases for one Workflow identity", () => {
+  const root = mkdtempSync(join(repoRoot, ".cf-alias-test-"));
+  try {
+    mkdirSync(join(root, "src"));
+    writeFileSync(join(root, "src/index.ts"), "export class WF {}\n");
+    writeFileSync(
+      join(root, "cloudflare.config.ts"),
+      `import { bindings, defineConfig, exports } from "cf/config";
+const workerName = "review";
+export default defineConfig({
+  worker: {
+    name: workerName,
+    entrypoint: "src/index.ts",
+    compatibilityDate: "2026-09-26",
+    env: {
+      FIRST: bindings.workflow({
+        name: "review-wf",
+        worker: workerName,
+        exportName: "WF",
+      }),
+      SECOND: bindings.workflow({
+        name: "review-wf",
+        worker: workerName,
+        exportName: "WF",
+      }),
+    },
+    exports: {
+      WF: exports.workflow({ name: "review-wf" }),
+    },
+  },
+});
+`,
+    );
+
+    const config = loadProjectConfig(join(root, "cloudflare.config.ts"));
+    assert.equal(config.workflows.length, 1);
+    assert.equal(config.workflows[0].name, "review-wf");
+    assert.equal(config.workflows[0].className, "WF");
+    assert.deepEqual(config.workflows[0].bindings, ["FIRST", "SECOND"]);
+
+    const runtime = new WorkflowRuntime({
+      config,
+      kernel: {},
+      storage: {},
+      env: {},
+    });
+    runtime.adapters = {};
+    const env = runtime.env();
+    assert.equal(env.FIRST.workflow, config.workflows[0]);
+    assert.equal(env.SECOND.workflow, config.workflows[0]);
+    assert.equal(env.FIRST.workflow.name, env.SECOND.workflow.name);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("cloudflare.config.ts resolves --mode through the official config loader", () => {
