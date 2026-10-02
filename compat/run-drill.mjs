@@ -2,7 +2,7 @@
 //
 //   node compat/run-drill.mjs [--oracle pinned|latest] [--skip-cloudflare]
 //
-// Runs fixtures/drill unmodified under the Cloudflare oracle (wrangler dev)
+// Runs fixtures/drill unmodified under the Cloudflare oracle (cf dev)
 // and under the workflows.mbt dev server, SIGKILLs the local runtime while
 // the workflow is suspended in step.sleep, restarts it from persisted state,
 // and requires both sides to produce identical terminal output.
@@ -13,7 +13,7 @@
 
 import { spawn, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -38,7 +38,7 @@ if (!candidateUsable(candidate) && !skipCloudflare) {
   throw new Error("upstream candidate unusable: " + (candidate.error ?? "unknown") + " — not a drill result");
 }
 
-const fixture = join(root, "fixtures/drill/wrangler.jsonc");
+const fixture = join(root, "fixtures/drill/cloudflare.config.ts");
 const sourceDigest = createHash("sha256")
   .update(readFileSync(join(root, "fixtures/drill/src/index.ts")))
   .digest("hex");
@@ -57,12 +57,12 @@ function freePort() {
   });
 }
 
-function start(command, args, label) {
+function start(command, args, label, cwd = root, extraEnv = {}) {
   const detached = process.platform !== "win32";
   const child = spawn(command, args, {
-    cwd: root,
+    cwd,
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, CI: "true" },
+    env: { ...process.env, CI: "true", ...extraEnv },
     detached,
   });
   let output = "";
@@ -134,10 +134,10 @@ async function waitStatus(port, id, wanted, timeoutMs = 30000) {
   throw new Error("instance " + id + " did not reach " + JSON.stringify(wanted) + " (last " + JSON.stringify(last) + ")");
 }
 
-function wranglerCommand() {
-  const bin = process.platform === "win32" && candidate.paths.wranglerBin.endsWith("/wrangler")
-    ? candidate.paths.wranglerBin + ".cmd"
-    : candidate.paths.wranglerBin;
+function cfCommand() {
+  const bin = process.platform === "win32" && candidate.paths.cfBin.endsWith("/cf")
+    ? candidate.paths.cfBin + ".cmd"
+    : candidate.paths.cfBin;
   return { command: bin, args: [] };
 }
 
@@ -146,15 +146,27 @@ const storage = join(temp, "drill.sqlite");
 
 async function runCloudflare() {
   const port = await freePort();
-  const wrangler = wranglerCommand();
-  const child = start(wrangler.command, [
-    ...wrangler.args,
-    "dev",
-    "--config", fixture,
-    "--port", String(port),
-    "--ip", "127.0.0.1",
-    "--persist-to", join(temp, "wrangler-drill"),
-  ], "cloudflare/" + oracle);
+  const cf = cfCommand();
+  const oracleDir = join(temp, "cf-drill");
+  cpSync(join(root, "fixtures/drill"), oracleDir, { recursive: true });
+  const packageRoot = candidate.installDir ?? root;
+  cpSync(join(packageRoot, "package.json"), join(oracleDir, "package.json"));
+  cpSync(join(packageRoot, "package-lock.json"), join(oracleDir, "package-lock.json"));
+  symlinkSync(
+    join(packageRoot, "node_modules"),
+    join(oracleDir, "node_modules"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  const child = start(
+    cf.command,
+    [...cf.args, "dev"],
+    "cloudflare/" + oracle,
+    oracleDir,
+    {
+      WORKFLOWS_MBT_ORACLE_HOST: "127.0.0.1",
+      WORKFLOWS_MBT_ORACLE_PORT: String(port),
+    },
+  );
   try {
     await waitReady(port, child, "cloudflare/" + oracle);
     await createInstance(port, drillId);
@@ -214,7 +226,9 @@ try {
     oracle: {
       mode: oracle,
       candidateId: candidate.id,
-      wrangler: candidate.versions?.wrangler ?? null,
+      cf: candidate.versions?.cf ?? null,
+      vitePlugin: candidate.versions?.vitePlugin ?? null,
+      wranglerLegacySchema: candidate.versions?.wrangler ?? null,
       workersTypes: candidate.versions?.workersTypes ?? null,
       workerd: candidate.versions?.workerd ?? null,
       runtime: candidate.runtime ?? null,

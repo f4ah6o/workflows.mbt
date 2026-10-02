@@ -88,12 +88,13 @@ async function withTimeout(valuePromise, timeoutMs) {
 
 export class WorkflowRuntime {
   static async open({
-    configPath = "wrangler.jsonc",
+    configPath = null,
     storagePath,
     storageUrl,
     buildDir,
     env = {},
     envName = null,
+    modeName = null,
     kernelPath = resolve(packageRoot, "dist/workflows_core.mjs"),
     storage: storageOverride = null,
   } = {}) {
@@ -102,6 +103,7 @@ export class WorkflowRuntime {
       storageUrl,
       buildDir,
       envName,
+      modeName,
     });
     const kernel = await loadKernel(kernelPath);
     const storage = storageOverride ?? openStorage(config);
@@ -127,8 +129,15 @@ export class WorkflowRuntime {
 
   async prepare() {
     for (const workflow of this.config.workflows) {
-      if (!workflow.name || !workflow.binding || !workflow.className) {
-        throw new Error("Each workflows[] entry requires name, binding, and class_name");
+      const bindings = workflow.bindings ?? [workflow.binding];
+      if (
+        !workflow.name ||
+        !workflow.className ||
+        !Array.isArray(bindings) ||
+        bindings.length === 0 ||
+        bindings.some((binding) => typeof binding !== "string" || binding.length === 0)
+      ) {
+        throw new Error("Each Workflow entry requires name, class_name, and at least one binding");
       }
       this.storage.registerWorkflow({ ...workflow, main: this.config.main });
     }
@@ -164,7 +173,9 @@ export class WorkflowRuntime {
       ...this.userEnv,
     };
     for (const workflow of this.config.workflows) {
-      env[workflow.binding] = new WorkflowBinding(this, workflow);
+      for (const binding of workflow.bindings ?? [workflow.binding]) {
+        env[binding] = new WorkflowBinding(this, workflow);
+      }
     }
     // Declared binding families (KV, D1, R2, queue producers, service
     // bindings) resolve to their local adapters; userEnv values are dev

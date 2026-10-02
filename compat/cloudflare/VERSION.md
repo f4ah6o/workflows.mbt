@@ -21,7 +21,9 @@ not a claim that every Cloudflare Workers feature is emulated.
   https://developers.cloudflare.com/workflows/build/trigger-workflows/
 - Subscribe to instance events:
   https://developers.cloudflare.com/workflows/build/subscribe-to-instance-events/
-- Wrangler configuration:
+- Cloudflare `cf` CLI and `cloudflare.config.ts`:
+  https://developers.cloudflare.com/cf/
+- Wrangler configuration (legacy migration/schema reference):
   https://developers.cloudflare.com/workers/wrangler/configuration/
 - Workflows limits:
   https://developers.cloudflare.com/workflows/reference/limits/
@@ -76,7 +78,7 @@ documented durable pattern is to wrap the combinator in an outer `step.do`;
 
 ### Schedules
 
-- `workflows[].schedules` accepts UTC cron expressions
+- Workflow export schedules in `cloudflare.config.ts` accept UTC cron expressions (legacy `workflows[].schedules` remains tracked)
 - named weekdays/months are accepted, including patterns such as `MON-FRI`
 - scheduled event metadata is `event.schedule = { cron, scheduledTime }`
 - each firing creates a distinct Workflow instance
@@ -88,7 +90,7 @@ documented durable pattern is to wrap the combinator in an outer `step.do`;
 - if a Workflow deletes its own instance, execution stops during
   `await instance.delete()` and code after that call does not continue
 - `createBatch` is idempotent for already-existing IDs
-- per-instance retention overrides Workflow `default_retention`
+- per-instance retention overrides Workflow `defaultRetention` (legacy `default_retention` is also accepted)
 - success retention applies to successful and terminated instances
 - error retention applies to errored instances
 - `resume()` on an instance that is not paused has no effect

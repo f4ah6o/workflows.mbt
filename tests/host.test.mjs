@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createTcpServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { loadProjectConfig } from "../host/config.mjs";
+import { WorkflowRuntime } from "../host/engine.mjs";
 import { runDoctor } from "../host/doctor.mjs";
 import { loadLocalDevEnv } from "../host/env.mjs";
 import { connectSocket } from "../host/socket.mjs";
@@ -196,6 +197,174 @@ test("wrangler jsonc is consumed without rewriting unknown Cloudflare fields", (
   assert.deepEqual(config.r2Buckets, [{ binding: "R2", bucket_name: "assets" }]);
   assert.deepEqual(config.ignoredWranglerFields, ["placement"]);
   assert.equal(config.storagePath, join(root, ".workflows/workflows.db"));
+});
+
+
+test("cloudflare.config.ts is the primary config and resolves Workflow exports/bindings", () => {
+  const config = loadProjectConfig(
+    join(repoRoot, "fixtures/cloudflare-basic/cloudflare.config.ts"),
+  );
+  assert.equal(config.configFormat, "cloudflare");
+  assert.equal(config.name, "cloudflare-basic");
+  assert.equal(config.main, join(repoRoot, "fixtures/cloudflare-basic/src/index.ts"));
+  assert.equal(config.compatibilityDate, "2026-09-26");
+  assert.deepEqual(config.workflows, [{
+    name: "my-workflow",
+    binding: "MY_WORKFLOW",
+    bindings: ["MY_WORKFLOW"],
+    className: "MyWorkflow",
+    schedules: [],
+    defaultRetention: null,
+  }]);
+});
+
+test("cloudflare config logs do not corrupt config loading or doctor JSON", () => {
+  const root = mkdtempSync(join(tmpdir(), "cf-logged-config-"));
+  try {
+    writeFileSync(join(root, "logging.mjs"), `console.log("import log");
+process.stdout.write("raw stdout log\\n");
+console.error("import stderr");
+`);
+    writeFileSync(join(root, "index.ts"), "export class WF {}\n");
+    const configPath = join(root, "cloudflare.config.ts");
+    writeFileSync(configPath, `import "./logging.mjs";
+import { bindings, defineConfig, exports } from "cf/config";
+export default defineConfig((ctx) => {
+  console.log("factory mode", ctx.mode);
+  return { worker: {
+    name: "logged-worker", entrypoint: "index.ts", compatibilityDate: "2026-09-26",
+    env: { WF: bindings.workflow({ name: "logged-workflow", worker: "logged-worker", exportName: "WF" }) },
+    exports: { WF: exports.workflow({ name: "logged-workflow" }) },
+  } };
+});
+`);
+    const config = loadProjectConfig(configPath, { modeName: "staging" });
+    assert.equal(config.name, "logged-worker");
+    assert.equal(config.workflows[0].name, "logged-workflow");
+    const doctor = spawnSync(process.execPath, [
+      join(repoRoot, "host/cli.mjs"), "doctor", "--config", configPath,
+      "--mode", "staging", "--json",
+    ], { encoding: "utf8" });
+    assert.ifError(doctor.error);
+    const report = JSON.parse(doctor.stdout);
+    assert.ok(report.checks.some((check) => check.name === "config" && check.ok), doctor.stdout);
+    assert.match(doctor.stderr, /import log/);
+    assert.match(doctor.stderr, /raw stdout log/);
+    assert.match(doctor.stderr, /factory mode staging/);
+    assert.match(doctor.stderr, /import stderr/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("cloudflare.config.ts preserves multiple aliases for one Workflow identity", () => {
+  const root = mkdtempSync(join(repoRoot, ".cf-alias-test-"));
+  try {
+    mkdirSync(join(root, "src"));
+    writeFileSync(join(root, "src/index.ts"), "export class WF {}\n");
+    writeFileSync(
+      join(root, "cloudflare.config.ts"),
+      `import { bindings, defineConfig, exports } from "cf/config";
+const workerName = "review";
+export default defineConfig({
+  worker: {
+    name: workerName,
+    entrypoint: "src/index.ts",
+    compatibilityDate: "2026-09-26",
+    env: {
+      FIRST: bindings.workflow({
+        name: "review-wf",
+        worker: workerName,
+        exportName: "WF",
+      }),
+      SECOND: bindings.workflow({
+        name: "review-wf",
+        worker: workerName,
+        exportName: "WF",
+      }),
+    },
+    exports: {
+      WF: exports.workflow({ name: "review-wf" }),
+    },
+  },
+});
+`,
+    );
+
+    const config = loadProjectConfig(join(root, "cloudflare.config.ts"));
+    assert.equal(config.workflows.length, 1);
+    assert.equal(config.workflows[0].name, "review-wf");
+    assert.equal(config.workflows[0].className, "WF");
+    assert.deepEqual(config.workflows[0].bindings, ["FIRST", "SECOND"]);
+
+    const runtime = new WorkflowRuntime({
+      config,
+      kernel: {},
+      storage: {},
+      env: {},
+    });
+    runtime.adapters = {};
+    const env = runtime.env();
+    assert.equal(env.FIRST.workflow, config.workflows[0]);
+    assert.equal(env.SECOND.workflow, config.workflows[0]);
+    assert.equal(env.FIRST.workflow.name, env.SECOND.workflow.name);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("cloudflare.config.ts resolves --mode through the official config loader", () => {
+  const root = mkdtempSync(join(repoRoot, ".cf-config-test-"));
+  try {
+    mkdirSync(join(root, "src"));
+    writeFileSync(join(root, "src/index.ts"), "export class ModeWorkflow {}\n");
+    writeFileSync(
+      join(root, "cloudflare.config.ts"),
+      `import { bindings, defineConfig, exports } from "cf/config";
+const workflowName = "mode-workflow";
+export default defineConfig((ctx) => {
+  const workerName = ctx.mode === "staging" ? "mode-staging" : "mode-default";
+  return {
+    worker: {
+      name: workerName,
+      entrypoint: "src/index.ts",
+      compatibilityDate: "2026-09-26",
+      env: {
+        MODE: bindings.text(ctx.mode ?? "default"),
+        WF: bindings.workflow({
+          name: workflowName,
+          worker: workerName,
+          exportName: "ModeWorkflow",
+        }),
+      },
+      exports: {
+        ModeWorkflow: exports.workflow({
+          name: workflowName,
+          defaultRetention: {
+            successRetention: "3 days",
+            errorRetention: "7 days",
+          },
+        }),
+      },
+    },
+  };
+});
+`,
+    );
+    const config = loadProjectConfig(join(root, "cloudflare.config.ts"), {
+      modeName: "staging",
+    });
+    assert.equal(config.modeName, "staging");
+    assert.equal(config.name, "mode-staging");
+    assert.deepEqual(config.vars, { MODE: "staging" });
+    assert.equal(config.workflows[0].binding, "WF");
+    assert.deepEqual(config.workflows[0].defaultRetention, {
+      success_retention: "3 days",
+      error_retention: "7 days",
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 

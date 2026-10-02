@@ -6,13 +6,13 @@
 // Without --tarball it runs `npm pack` first. The journey under test:
 //   1. extract the artifact into a clean temp dir
 //   2. npm ci --omit=dev                    (production deps only)
-//   3. workflows doctor                     (preflight the consumer project)
+//   3. workflows doctor on cloudflare.config.ts (outside the installed package)
 //   4. workflows dev + /create -> suspended -> SIGKILL -> restart -> complete
 //   5. npm install <tgz> into a second dir -> `workflows --version` via bin
 //
 // Steps 2+ run with a PATH that has no MoonBit toolchain, npm globals, or
-// wrangler — only the Node toolchain — so passing proves the artifact is
-// self-contained on the prebuilt kernel.
+// cf/wrangler — only the Node toolchain — so passing proves the artifact is
+// self-contained on the prebuilt kernel and production config dependencies.
 
 import { execFileSync, spawn } from "node:child_process";
 import {
@@ -200,7 +200,7 @@ try {
   //    the artifact's examples/, not the repository's test fixtures.
   const appDir = join(temp, "consumer-app");
   cpSync(join(pkgDir, "examples/basic"), appDir, { recursive: true });
-  const consumerConfig = join(appDir, "wrangler.jsonc");
+  const consumerConfig = join(appDir, "cloudflare.config.ts");
   const consumerStorage = join(temp, "consumer.sqlite");
 
   const doctor = run(
@@ -209,7 +209,7 @@ try {
      "--storage", consumerStorage],
   );
   assert(/doctor: all checks passed/.test(doctor), `doctor failed:\n${doctor}`);
-  console.log("[consumer] workflows doctor: all checks passed");
+  console.log("[consumer] workflows doctor: cloudflare.config.ts passed outside installed package");
 
   // 4. dev -> create -> suspend -> SIGKILL -> restart -> complete.
   const cliArgs = (port) => [

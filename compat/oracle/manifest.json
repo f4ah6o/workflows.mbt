@@ -1,12 +1,16 @@
 {
-  "verifiedAt": "2026-09-26",
+  "verifiedAt": "2026-10-02",
   "compatibilityDate": "2026-09-26",
   "wrangler": "4.141.0",
   "workersTypes": "5.20260925.2",
   "workerd": "1.20260925.2",
-  "oracle": "cloudflare-local-wrangler",
+  "oracle": "cloudflare-local-cf-vite",
   "notes": [
-    "Pinned differential probes run credential-free against wrangler dev and workflows.mbt.",
+    "Pinned differential probes run credential-free against cf dev with the Cloudflare Vite plugin and workflows.mbt.",
+    "Wrangler remains pinned only for legacy wrangler.jsonc/schema compatibility during the migration window.",
     "Latest drift checks are isolated from required PR CI."
-  ]
+  ],
+  "cf": "1.0.0-beta.10",
+  "vitePlugin": "1.62.0",
+  "vite": "7.3.6"
 }

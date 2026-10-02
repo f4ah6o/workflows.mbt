@@ -1,7 +1,7 @@
 // Preflight for a fallback cutover: verify this project actually runs on
 // workflows.mbt before traffic is routed to it.
 //
-//   workflows doctor --config wrangler.jsonc [--env <name>] [--storage <path>] [--json]
+//   workflows doctor [--config cloudflare.config.ts] [--mode <name>] [--storage <path>] [--json]
 //
 // Every check reuses the exact code path `workflows dev` hits, so a green
 // doctor means the config parses, secrets resolve, storage opens, the kernel
@@ -31,11 +31,12 @@ const STAGES = [
 ];
 
 export async function runDoctor({
-  configPath = "wrangler.jsonc",
+  configPath = null,
   storagePath,
   storageUrl,
   buildDir,
   envName = null,
+  modeName = null,
   kernelPath = resolve(packageRoot, "dist/workflows_core.mjs"),
 } = {}) {
   const checks = [];
@@ -63,8 +64,8 @@ export async function runDoctor({
 
   let config = null;
   if (!(await run("config", async () => {
-    config = loadProjectConfig(configPath, { storagePath, storageUrl, buildDir, envName });
-    return `${config.workflows.length} workflow(s); env ${config.envName ?? "top-level"}; config ${config.configPath}`;
+    config = loadProjectConfig(configPath, { storagePath, storageUrl, buildDir, envName, modeName });
+    return `${config.workflows.length} workflow(s); ${config.configFormat === "cloudflare" ? `mode ${config.modeName ?? "default"}` : `env ${config.envName ?? "top-level"}`}; config ${config.configPath}`;
   }))) {
     skipRest("workflow bindings", "config failed");
     return { ok: false, checks, warnings };
@@ -144,7 +145,12 @@ export async function runDoctor({
 
   if (config.ignoredWranglerFields?.length) {
     warnings.push(
-      `wrangler fields ignored by this runtime: ${config.ignoredWranglerFields.join(", ")}`,
+      `legacy Wrangler fields ignored by this runtime: ${config.ignoredWranglerFields.join(", ")}`,
+    );
+  }
+  if (config.ignoredCloudflareBindings?.length) {
+    warnings.push(
+      `cloudflare.config.ts bindings ignored by this runtime: ${config.ignoredCloudflareBindings.join(", ")}`,
     );
   }
 
