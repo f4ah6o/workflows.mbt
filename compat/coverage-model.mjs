@@ -156,7 +156,7 @@ export function computeRelevantInputs(rootDir, candidate, { inventoryDir = "comp
   const inventoryPaths = listFilesRecursive(resolve(rootDir, inventoryDir)).filter((path) => path.endsWith(".json"));
   const configPaths = [
     "compat/probes/cloudflare.config.ts",
-    "compat/probes/vite.config.ts",
+    "compat/probes/vite.config.mts",
     "fixtures/e2e/workflows.mbt.json",
   ]
     .map((p) => join(rootDir, p))
