@@ -218,6 +218,45 @@ test("cloudflare.config.ts is the primary config and resolves Workflow exports/b
   }]);
 });
 
+test("cloudflare config logs do not corrupt config loading or doctor JSON", () => {
+  const root = mkdtempSync(join(tmpdir(), "cf-logged-config-"));
+  try {
+    writeFileSync(join(root, "logging.mjs"), `console.log("import log");
+process.stdout.write("raw stdout log\\n");
+console.error("import stderr");
+`);
+    writeFileSync(join(root, "index.ts"), "export class WF {}\n");
+    const configPath = join(root, "cloudflare.config.ts");
+    writeFileSync(configPath, `import "./logging.mjs";
+import { bindings, defineConfig, exports } from "cf/config";
+export default defineConfig((ctx) => {
+  console.log("factory mode", ctx.mode);
+  return { worker: {
+    name: "logged-worker", entrypoint: "index.ts", compatibilityDate: "2026-09-26",
+    env: { WF: bindings.workflow({ name: "logged-workflow", worker: "logged-worker", exportName: "WF" }) },
+    exports: { WF: exports.workflow({ name: "logged-workflow" }) },
+  } };
+});
+`);
+    const config = loadProjectConfig(configPath, { modeName: "staging" });
+    assert.equal(config.name, "logged-worker");
+    assert.equal(config.workflows[0].name, "logged-workflow");
+    const doctor = spawnSync(process.execPath, [
+      join(repoRoot, "host/cli.mjs"), "doctor", "--config", configPath,
+      "--mode", "staging", "--json",
+    ], { encoding: "utf8" });
+    assert.ifError(doctor.error);
+    const report = JSON.parse(doctor.stdout);
+    assert.ok(report.checks.some((check) => check.name === "config" && check.ok), doctor.stdout);
+    assert.match(doctor.stderr, /import log/);
+    assert.match(doctor.stderr, /raw stdout log/);
+    assert.match(doctor.stderr, /factory mode staging/);
+    assert.match(doctor.stderr, /import stderr/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("cloudflare.config.ts preserves multiple aliases for one Workflow identity", () => {
   const root = mkdtempSync(join(repoRoot, ".cf-alias-test-"));
   try {

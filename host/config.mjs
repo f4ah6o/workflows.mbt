@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,17 +44,26 @@ function isCloudflareConfig(path) {
 
 function readCloudflareConfig(path, modeName) {
   try {
-    const output = execFileSync(
+    const child = spawnSync(
       process.execPath,
       [cloudflareConfigReader, path, modeName ?? ""],
       {
         cwd: dirname(path),
         encoding: "utf8",
         env: process.env,
+        // Config code owns stdout/stderr; fd 3 carries only the parsed config.
+        stdio: ["ignore", "pipe", "pipe", "pipe"],
         maxBuffer: 16 * 1024 * 1024,
       },
     );
-    return JSON.parse(output);
+    // Keep config diagnostics visible without contaminating `doctor --json`.
+    if (child.stdout) process.stderr.write(child.stdout);
+    if (child.error || child.status !== 0) {
+      throw new Error(child.stderr?.trim() || child.error?.message ||
+        `Cloudflare config reader failed (status ${child.status}, signal ${child.signal})`);
+    }
+    if (child.stderr) process.stderr.write(child.stderr);
+    return JSON.parse(child.output[3]);
   } catch (error) {
     const stderr = error?.stderr?.toString?.().trim();
     throw new Error(

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { writeFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 import { resolve } from "node:path";
 import { loadAndParseConfig } from "@cloudflare/config";
@@ -42,7 +43,8 @@ try {
     throw new Error(`Invalid cloudflare.config.ts:\n${issues}`);
   }
 
-  process.stdout.write(JSON.stringify(result.data));
+  // A dedicated pipe keeps config/import console logs out of the JSON payload.
+  writeFileSync(3, JSON.stringify(result.data));
 } finally {
   cfConfigHook.deregister();
 }
