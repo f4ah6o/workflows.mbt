@@ -1,4 +1,4 @@
-# Restore the latest cf oracle and investigate Workflow contract drift
+# Latest cf oracle: createBatch contract and ctx.tracing drift
 
 Status: open
 Priority: P2
@@ -123,3 +123,79 @@ upstream contract/docs changes. It does not reopen resolved PR #19 findings,
 enable GitHub Issues, provision hosted Cloudflare credentials, change the
 durable persistence model, or claim full latest/hosted compatibility without
 evidence. The existing parent packet tracks the separate operational gaps.
+
+## 6. Oracle repair and reproduced remaining drift (2026-10-02)
+
+The startup repair uses explicit `vite.config.mts` files for both
+`compat/probes` and `fixtures/drill`. Vite discovers these as ESM even when
+an isolated candidate manifest omits `type: module`. The relevant-input
+fingerprint now hashes the renamed probe config. Regression tests load the
+real Cloudflare plugin with Vite in a temporary CommonJS package context.
+Both pinned Vite 7.3.6 and the originally failing Vite 8.3.2 pass these tests.
+No pin, contract baseline, or capability claim was changed.
+
+The drill also exposed a pre-existing result-writing bug: its record
+initializer accessed `record.commit` before initialization. Build the
+fingerprint after constructing the record so completed crash/restart
+verification can be saved.
+
+The exact original package tuple was installed in an isolated reproduction
+directory and run through `cf dev`: both sides completed all 32 differential
+probes, with no startup or probe errors. The semantic result is FAIL for
+`entrypoint-ctx`; the other 31 probes match. A fresh `npm run compat:latest`
+run (`latest-2026-10-02T11-34-36-727914`) independently reproduces that result.
+Its top-level Wrangler is 4.147.0; the cf runtime graph uses Wrangler 4.146.0.
+Its verdict is `contract-drift`, with the semantic mismatch also present in
+the phase evidence. Candidate promotion remains blocked.
+
+### Remaining contract work
+
+Workers types 5.20261002.1 add this `Workflow.createBatch` overload:
+
+```ts
+createBatch(options: WorkflowBatchCreateOptions<PARAMS>): Promise<WorkflowBatchCreateResult>;
+```
+
+`WorkflowBatchCreateOptions` is either `{ count, params?, retention?,
+locationHint? }` or `{ instances: WorkflowInstanceCreateOptions[] }`.
+The result is `{ created: WorkflowInstance[], errors: { index, id?, code,
+message }[] }`. The existing array overload remains but is deprecated.
+This is a genuine supported binding-surface addition, not a comment-only
+hash change or an extractor defect. `host/binding.mjs` currently accepts
+only arrays, so the object forms need implementation and candidate-bound
+behavioral tests covering generated IDs, duplicate IDs, indexed partial
+errors, validation, retention, and hints. Track the new options/result
+shapes in the contract extractor and upstream inventory before reviewing
+promotion. Do not merely refresh the Workflow hash.
+
+### Remaining semantic work
+
+Inside `WorkflowEntrypoint.run`, latest Cloudflare reports
+`ctx.tracing.activeSpan` absent outside tracing callbacks. After both
+`enterSpan` and `startActiveSpan` callbacks settle, the active span is again
+absent. The local runtime reports an active span in all three positions.
+The same probe passes against the pinned oracle, so this is a versioned
+runtime behavior change. Add targeted tests and a deliberate compatibility
+policy for both supported oracle versions; do not normalize these fields
+away to obtain a pass. See `host/execution-context.mjs` and the
+`entrypoint-ctx` probe in `compat/probes/src/index.ts`.
+
+Docs-watch still reports three changed sources; their semantic
+classification and baseline review remain open. Latest compatibility and
+latest coverage are not claimed by this repair.
+
+### Validation of the repair
+
+- PASS: `npm run build:core`
+- PASS: `npm run test:host`, `npm run test:upstream-ops`, `npm run test:compat`
+- PASS: `npm run compat:typecheck`, `npm run compat:pinned`
+- PASS: `npm run compat:drill` (pinned), and the exact original candidate
+  drill: upstream output matches fallback after process kill/restart; the
+  record and fingerprint are saved.
+- PASS: `npm run test:coverage`, `npm run test:upstream-coverage`.
+- PASS: real plugin config loading against both pinned and exact-original
+  candidate dependencies (`tests/oracle-config.test.mjs`).
+- FAIL (genuine remaining drift): `npm run compat:latest` and the exact
+  original candidate differential run, as described above.
+
+This packet stays open for the contract, tracing, and docs follow-up.
