@@ -132,7 +132,10 @@ an isolated candidate manifest omits `type: module`. The relevant-input
 fingerprint now hashes the renamed probe config. Regression tests load the
 real Cloudflare plugin with Vite in a temporary CommonJS package context.
 Both pinned Vite 7.3.6 and the originally failing Vite 8.3.2 pass these tests.
-No pin, contract baseline, or capability claim was changed.
+No dependency pin, contract snapshot, capability claim, or coverage target
+was changed. The consumed PR #19 pin-migration waiver is removed: against
+the post-merge base it matches no regression and rejects every subsequent
+PR. The gate still rejects unused waivers and unwaived regressions.
 
 The drill also exposed a pre-existing result-writing bug: its record
 initializer accessed `record.commit` before initialization. Build the
