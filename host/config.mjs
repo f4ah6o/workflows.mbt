@@ -154,6 +154,7 @@ function normalizeWranglerWorkflows(entries) {
   return entries.map((workflow) => ({
     name: workflow.name,
     binding: workflow.binding,
+    bindings: [workflow.binding],
     className: workflow.class_name,
     schedules: Array.isArray(workflow.schedules) ? workflow.schedules : [],
     defaultRetention: workflow.default_retention ?? null,
@@ -257,12 +258,12 @@ function normalizeCloudflareWorkflows(worker) {
       binding.exportName === className &&
       (binding.worker === worker.name || binding.worker == null)
     );
-    if (matches.length !== 1) {
+    if (matches.length === 0) {
       throw new Error(
-        `cloudflare.config.ts workflow export "${className}" must have exactly one matching worker.env bindings.workflow() entry for "${workflowExport.name}"`,
+        `cloudflare.config.ts workflow export "${className}" must have at least one matching worker.env bindings.workflow() entry for "${workflowExport.name}"`,
       );
     }
-    const [binding] = matches[0];
+    const bindings = matches.map(([binding]) => binding);
     const schedules = workflowExport.schedules == null
       ? []
       : Array.isArray(workflowExport.schedules)
@@ -270,7 +271,8 @@ function normalizeCloudflareWorkflows(worker) {
         : [workflowExport.schedules];
     workflows.push({
       name: workflowExport.name,
-      binding,
+      binding: bindings[0],
+      bindings,
       className,
       schedules,
       defaultRetention: normalizeCloudflareRetention(workflowExport.defaultRetention),
