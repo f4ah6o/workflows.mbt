@@ -211,6 +211,7 @@ test("cloudflare.config.ts is the primary config and resolves Workflow exports/b
   assert.deepEqual(config.workflows, [{
     name: "my-workflow",
     binding: "MY_WORKFLOW",
+    bindings: ["MY_WORKFLOW"],
     className: "MyWorkflow",
     schedules: [],
     defaultRetention: null,
