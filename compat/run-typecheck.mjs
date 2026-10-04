@@ -1,3 +1,4 @@
+import { probeApplies } from "./candidate-policy.mjs";
 // Candidate-scoped typecheck — compiles the typecheck fixture against the
 // shared run candidate's @cloudflare/workers-types instead of the repository's
 // pinned node_modules.
@@ -74,13 +75,20 @@ const generated = {
   ...baseConfig,
   compilerOptions: {
     ...baseConfig.compilerOptions,
+    // TypeScript types entries do not use paths mappings. Resolve the global
+    // ambient declaration explicitly so latest never falls back to pinned.
+    types: [join(typesRoot, "experimental")],
     paths: {
       ...(baseConfig.compilerOptions?.paths ?? {}),
+      "cloudflare:workers": [join(root, "compat/cloudflare-workers/types.d.ts")],
       "@cloudflare/workers-types": [join(typesRoot, "index.d.ts")],
       "@cloudflare/workers-types/*": [join(typesRoot, "*")],
     },
   },
 };
+if (probeApplies({ minimumWorkersTypes: "5.20261002.1" }, candidate)) {
+  generated.files = [...generated.files, "batch-create-upstream.ts"];
+}
 const configPath = join(resultsDir, `tsconfig-${oracle}.json`);
 writeFileSync(configPath, JSON.stringify({
   ...generated,

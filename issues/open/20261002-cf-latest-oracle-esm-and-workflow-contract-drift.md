@@ -174,9 +174,11 @@ promotion. Do not merely refresh the Workflow hash.
 ### Remaining semantic work
 
 Inside `WorkflowEntrypoint.run`, latest Cloudflare reports
-`ctx.tracing.activeSpan` absent outside tracing callbacks. After both
-`enterSpan` and `startActiveSpan` callbacks settle, the active span is again
-absent. The local runtime reports an active span in all three positions.
+`ctx.tracing.getActiveSpan()` present outside tracing callbacks. After both
+`enterSpan` and `startActiveSpan` callbacks settle, that invocation span is
+restored. The pinned/local default has no active span in those positions.
+The original packet had these facts reversed: its probe booleans test
+`getActiveSpan() === undefined`, so `true` means **absent**, not present.
 The same probe passes against the pinned oracle, so this is a versioned
 runtime behavior change. Add targeted tests and a deliberate compatibility
 policy for both supported oracle versions; do not normalize these fields
@@ -202,6 +204,88 @@ latest coverage are not claimed by this repair.
   original candidate differential run, as described above.
 
 This packet stays open for the contract, tracing, and docs follow-up.
+
+## 2026-10-04 follow-up: explicit supported behavior
+
+The local host adds both object forms of `createBatch` while preserving the
+legacy array result. Candidate-bound tests cover generated IDs, duplicate
+position errors, pre-creation validation, retention and location hints.
+The new union/result declarations are extracted in full, including both union
+arms. The pinned API snapshot, dependency pins and capability coverage claims
+are unchanged. A separate exact-version contract profile records the reviewed
+5.20261004.1 extension; an unknown future signature remains drift.
+
+Tracing now has explicit local policy: `compatibility.tracingScope` in
+`workflows.mbt.json` or `--tracing-scope`, with `callback` as the pinned default
+and `invocation` for the observed October oracle. Differential evidence records
+the selected policy and includes its selector in freshness hashing. Raw span
+presence/restoration fields remain unnormalized. This is context propagation,
+not trace recording/export; local spans remain `isTraced: false`.
+
+The new batch probe only runs when the resolved workers-types candidate supports
+the overload. It does not increase pinned capability/coverage claims. Real
+hosted deployment behavior has not been tested. The latest cf dev loopback
+`ctx.exports` object-overload wrapper can throw `results.map is not a function`
+after creating instances; the batch contract probe targets the normal workflow
+environment binding. The local implementation does not reproduce that upstream
+loopback bug.
+
+### Docs-watch review
+
+All five changed Workflows sections and the Wrangler sample configuration are
+date-only churn: replacing the example date with 2026-09-29 reproduces their
+baseline hashes. The `createBatch`, context/tracing and Wrangler workflows
+sections have unchanged hashes. Other changed/added Wrangler sections concern
+platform/deployment configuration (workers.dev/preview defaults, Durable Object
+exports/migrations, Analytics SQL, telemetry and Containers), outside this
+runtime fix. The new cf source is watch coverage from the earlier cf migration.
+Those entries remain advisory and are not silently rebaselined; historical
+prose is unavailable for exact textual comparison because the baseline stores
+hashes. No dependency promotion or hosted equivalence is claimed.
+
+The dedicated real-`cf dev` tracing regression passes for pinned Vite plugin
+1.62.0 (`callback`), original 1.62.4 (`invocation`), and current 1.62.5
+(`invocation`), all with compatibility date 2026-09-26. The exact same scope
+observation runs upstream and locally, comparing raw ambient-span presence,
+identity/restoration, nested callbacks, awaits, concurrent branches, synchronous
+throws, asynchronous rejections and detached spans. The original reproduction
+uses cf 1.0.0-beta.11, Vite 8.3.2, workers-types 5.20261002.1 and workerd
+1.20261002.1 with a fresh isolated transitive lock; the historical run's lockfile
+was not recovered. This establishes tracing scope for that installed graph,
+not equivalence to every dependency of the historical run.
+
+
+### Payload edge found during final review
+
+The October oracle accepts BigInt, cyclic and function-containing batch payloads
+at creation, while Symbol payloads fail RPC cloning before any instance exists.
+The host's existing workflow-params persistence remains JSON-only. Object batches
+now preflight and snapshot all locally serializable params before any storage
+write, preventing partial creation when a later payload is unsupported. This is
+a safe failure policy, not a claim of upstream non-JSON payload compatibility;
+that pre-existing serialization gap remains outside this JSON binding fix.
+
+### Validation of the follow-up
+
+- Pinned differential: PASS, 32/32 probes, unchanged dependency pins.
+- Latest differential: PASS, 33/33 probes, candidate `latest-8ba0fe15d5c0e4ba`
+  (cf beta.12 / Vite plugin 1.62.5 / Vite 8.3.2 / Wrangler 4.147.0 /
+  workers-types and top-level workerd 20261004.1), with explicit invocation
+  tracing policy. Full latest orchestration also passed all nine phases.
+- Final host suite: 41 PASS, including nine batch and eight tracing regressions.
+- `npm test`: PASS (MoonBit 6, E2E 52, SQLite 17; PostgreSQL skipped locally
+  because no service URL was configured). CI provides the PostgreSQL service.
+- Candidate typecheck regression: 4 PASS, including deliberate global-declaration
+  and new-batch-signature corruption. Fixed candidate typechecking to select its
+  ambient declarations explicitly; TypeScript `types` does not honor `paths`.
+- Consumer smoke, practical crash/retry scenario, pinned/latest crash-restart
+  drills: PASS. The latest drill was retried after a concurrent candidate refresh
+  briefly removed runtime assets; the final run passed.
+- Pinned-only coverage regression gate: PASS, as in PR CI. Combined latest
+  coverage promotion is intentionally not performed: its proposed baseline has
+  no accepted latest candidate yet. Capability denominators/claims and strict
+  waiver matching are unchanged.
+- Hosted Cloudflare verification: not run; no deployment or merge performed.
 
 Re-checked against main @ `664dc3e` (2026-10-09): still open — the ESM oracle
 startup and contract-drift fixes are in flight on PR #20 and not yet on main;

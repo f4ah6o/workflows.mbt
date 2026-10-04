@@ -1,3 +1,4 @@
+import { differentialProbes, tracingScopeFor } from "./candidate-policy.mjs";
 import { spawn, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -40,9 +41,7 @@ const onlyProbe = probeIndex >= 0 ? process.argv[probeIndex + 1] : null;
 // Probes with `differential: false` document behavior that cannot be diffed —
 // e.g. upstream aborts the isolate on BigInt step output — so they are kept in
 // the catalog (and capability matrix) but skipped by the differential runner.
-const probes = onlyProbe
-  ? [onlyProbe]
-  : catalog.probes.filter((entry) => entry.differential !== false).map((entry) => entry.id);
+let probes;
 if (onlyProbe && !catalog.probes.some((entry) => entry.id === onlyProbe)) {
   throw new Error("unknown probe: " + onlyProbe);
 }
@@ -52,6 +51,10 @@ const temp = mkdtempSync(join(tmpdir(), "workflows-mbt-diff-"));
 // The upstream side runs the shared run candidate — for `latest` that is the
 // isolated install resolved once at run entry, never a fresh `npx cf@latest`.
 const candidate = await loadCandidate(oracle, { candidatePath: candidateArg, resultsDir });
+const eligible = differentialProbes(catalog, candidate);
+if (onlyProbe && !eligible.includes(onlyProbe)) throw new Error("probe is not supported by the resolved candidate: " + onlyProbe);
+probes = onlyProbe ? [onlyProbe] : eligible;
+const tracingScope = tracingScopeFor(candidate);
 
 // The run-result fingerprint (issue §7): relevant-input hashes + upstream
 // candidate identity, so a later reader can decide whether this evidence is
@@ -176,6 +179,7 @@ async function collectWorkflowsMbt() {
     "--port", String(port),
     "--storage", join(temp, "workflows-mbt.sqlite"),
     "--build-dir", join(temp, "bundles"),
+    "--tracing-scope", tracingScope,
   ], "workflows.mbt");
   try {
     await waitReady(port, child, "workflows.mbt");
@@ -233,6 +237,7 @@ try {
     candidateId: candidate.id,
     versions: candidate.versions,
     runtime: candidate.runtime ?? null,
+    localCompatibility: { tracingScope },
     probeSourceHash: "sha256:" + sha256File(join(root, "compat/probes/src/index.ts")),
     catalogHash: "sha256:" + sha256File(join(root, "compat/probes/catalog.json")),
     probes,

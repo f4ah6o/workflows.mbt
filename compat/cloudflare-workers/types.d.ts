@@ -301,10 +301,37 @@ export type WorkflowRetentionOptions = {
   errorRetention?: string | number;
 };
 
+export type WorkflowInstanceLocationHint =
+  | "wnam" | "enam" | "sam" | "weur" | "eeur" | "apac"
+  | "apac-ne" | "apac-se" | "oc" | "afr" | "me";
+
 export type WorkflowInstanceCreateOptions<Params = unknown> = {
   id?: string;
   params?: Params;
   retention?: WorkflowRetentionOptions;
+  /** Best-effort upstream placement preference; accepted without local routing. */
+  locationHint?: WorkflowInstanceLocationHint;
+};
+
+export type WorkflowBatchCreateOptions<Params = unknown> =
+  | {
+      count: number;
+      params?: Params;
+      retention?: WorkflowRetentionOptions;
+      locationHint?: WorkflowInstanceLocationHint;
+      instances?: never;
+    }
+  | {
+      instances: WorkflowInstanceCreateOptions<Params>[];
+      count?: never;
+      params?: never;
+      retention?: never;
+      locationHint?: never;
+    };
+
+export type WorkflowBatchCreateResult<Output = unknown> = {
+  created: WorkflowInstance<Output>[];
+  errors: Array<{ index: number; id?: string; code: number; message: string }>;
 };
 
 export type WorkflowInstanceStatus<Output = unknown> = {
@@ -340,7 +367,11 @@ export declare class Workflow<Params = unknown, Output = unknown> {
   create(options?: WorkflowInstanceCreateOptions<Params>): Promise<WorkflowInstance<Output>>;
   get(id: string): Promise<WorkflowInstance<Output>>;
   createBatch(
-    batch: Array<WorkflowInstanceCreateOptions<Params> & { id: string; params: Params }>,
+    options: WorkflowBatchCreateOptions<Params>,
+  ): Promise<WorkflowBatchCreateResult<Output>>;
+  /** @deprecated Use the object form to receive indexed per-instance errors. */
+  createBatch(
+    batch: Array<WorkflowInstanceCreateOptions<Params>>,
   ): Promise<Array<WorkflowInstance<Output>>>;
   deleteBatch(ids: string[]): Promise<{
     deleted: Array<{ id: string }>;

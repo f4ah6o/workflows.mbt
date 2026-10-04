@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "workersTypes": [
+    "5.20261004.1"
+  ],
+  "notes": "Reviewed object-overload extension; pinned baseline remains unchanged. Runtime support is checked separately by binding-create-batch.",
+  "hashes": {
+    "Workflow": "2a505161",
+    "WorkflowBatchCreateOptions": "75c57f63",
+    "WorkflowBatchCreateResult": "fd7fd0e2"
+  }
+}

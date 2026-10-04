@@ -11,5 +11,5 @@
       "cloudflare:workers": ["../cloudflare-workers/types.d.ts"]
     }
   },
-  "files": ["main.ts", "worker-configuration.d.ts"]
+  "files": ["main.ts", "worker-configuration.d.ts", "batch-create.ts"]
 }
