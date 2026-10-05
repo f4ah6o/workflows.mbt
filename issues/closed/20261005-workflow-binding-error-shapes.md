@@ -117,3 +117,4 @@ runner の詳細は [fast-check documentation](https://fast-check.dev/docs/core-
 
 - Cloudflare local とのエラー形式比較は pinned Wrangler 4.141.0 / workerd 1.20260925.2 に限定し、hosted Cloudflare 全バージョンの保証とはしない。
 - 2026-10-05: binding 境界で修正し、pinned Cloudflare local / host / storage / E2E 検証が完了したため。
+- 2026-10-05: PR #21 の CI coverage gate で、PR #19 の一回限りの upstream-pin-update waiver が unused と判定された。base / branch / CI artifact の pinned candidate はすべて `pinned-68f8547cd414f5a7` で一致していたため、stale waiver のみ削除。CI artifact と base snapshot を使った gate は regressions 0、waivers matched 0 で pass し、`npm run test:coverage` も17件すべて pass。

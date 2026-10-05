@@ -162,19 +162,5 @@
       "oracles": {}
     }
   },
-  "waivers": [
-    {
-      "kind": "upstream-pin-update",
-      "oracle": "pinned",
-      "profile": "*",
-      "metric": "candidate",
-      "scope": [
-        "*"
-      ],
-      "before": "pinned-c236de904715f15e",
-      "after": "pinned-68f8547cd414f5a7",
-      "reason": "Intentional migration of the compatibility oracle from Wrangler dev to Cloudflare cf dev + Vite; the pinned contract and all differential probes pass.",
-      "issue": "PR #19"
-    }
-  ]
+  "waivers": []
 }
