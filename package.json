@@ -61,7 +61,8 @@
     "test:inventory": "node --test tests/coverage-inventory.test.mjs",
     "test:coverage": "node --test tests/coverage-pipeline.test.mjs",
     "test:upstream-coverage": "node --test tests/upstream-coverage.test.mjs",
-    "check:inventory": "node compat/check-inventory.mjs"
+    "check:inventory": "node compat/check-inventory.mjs",
+    "test:binding-errors:pbt": "node --test tests/binding-errors.pbt.test.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.1",
@@ -82,6 +83,7 @@
     "wrangler": "4.141.0",
     "cf": "1.0.0-beta.10",
     "@cloudflare/vite-plugin": "1.62.0",
-    "vite": "7.3.6"
+    "vite": "7.3.6",
+    "fast-check": "4.10.2"
   }
 }
