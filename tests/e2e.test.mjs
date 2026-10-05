@@ -677,6 +677,16 @@ test("REST compatibility facade uses the same lifecycle and event runtime", asyn
   assert.equal(createBody.result.status, "queued");
   assert.equal(createBody.result.trigger_source, "api");
 
+  response = await request("/accounts/local/workflows/approval/instances", {
+    method: "POST",
+    body: JSON.stringify({ instance_id: "rest-1", params: JSON.stringify({}) }),
+  });
+  assert.equal(response.status, 400);
+  assert.equal(
+    (await response.json()).errors[0].message,
+    "Workflow instance already exists: rest-1",
+  );
+
   await runtime.runPending();
   response = await request("/accounts/local/workflows/approval/instances/rest-1");
   assert.equal((await response.json()).result.status, "waiting");
@@ -771,6 +781,69 @@ test("REST compatibility facade uses the same lifecycle and event runtime", asyn
   assert.equal(response.status, 204);
   response = await request("/accounts/local/workflows/approval/instances/rest-1");
   assert.equal(response.status, 404);
+  const missingRestBody = await response.json();
+  assert.equal(missingRestBody.errors[0].message, "Workflow instance not found: rest-1");
+
+  await runtime.createInstance("approval", { id: "rest-race", params: {} });
+  const originalRequireInstance = runtime.requireInstance;
+  let removedBetweenRestChecks = false;
+  runtime.requireInstance = function (id, name) {
+    const row = originalRequireInstance.call(this, id, name);
+    if (id === "rest-race" && !removedBetweenRestChecks) {
+      removedBetweenRestChecks = true;
+      this.storage.deleteInstance(row.id);
+    }
+    return row;
+  };
+  try {
+    response = await request("/accounts/local/workflows/approval/instances/rest-race");
+  } finally {
+    runtime.requireInstance = originalRequireInstance;
+  }
+  assert.equal(response.status, 404);
+  assert.equal(
+    (await response.json()).errors[0].message,
+    "Workflow instance not found: rest-race",
+  );
+});
+
+
+test("stale binding handles use the missing marker and pass other errors through", async (t) => {
+  const paths = tempRuntimePaths("workflows-mbt-stale-handle-");
+  const runtime = await openRuntime(e2eConfig, paths);
+  t.after(() => runtime.close());
+  const binding = runtime.env().DUPLICATE;
+  const id = "stale-handle";
+  const handle = await binding.create({ id, params: {} });
+  assert.deepEqual(await binding.deleteBatch([id]), {
+    deleted: [{ id }],
+    errors: [],
+  });
+
+  const isMissingMarker = (error) =>
+    error.name === "Error" &&
+    error.message === "instance.not_found" &&
+    error.code == null &&
+    error.alreadyExists == null;
+  const staleOperations = [
+    () => handle.status(),
+    () => handle.pause(),
+    () => handle.resume(),
+    () => handle.restart(),
+    () => handle.terminate(),
+    () => handle.delete(),
+    () => handle.sendEvent({ type: "approved", payload: null }),
+    () => handle.subscribe(),
+  ];
+  for (const operation of staleOperations) {
+    await assert.rejects(operation, isMissingMarker);
+  }
+
+  const live = await binding.create({ id: "non-missing-error", params: {} });
+  await assert.rejects(
+    () => live.sendEvent({ payload: null }),
+    (error) => error instanceof TypeError && error.message === "sendEvent requires { type, payload }",
+  );
 });
 
 

@@ -1,7 +1,7 @@
 # Workflow binding の missing / duplicate エラー形式を Cloudflare local に合わせる
 
-Status: open
-Model: unknown
+Status: closed
+Model: gpt-6-luna max
 Created: 2026-10-05
 Updated: 2026-10-05
 Branch: codex/20261005-workflow-binding-error-shapes
@@ -48,19 +48,22 @@ duplicate PBT は先に1件作成し、残りの create を並行実行して、
 
 ## 提案する方針
 
-binding から観測されるエラーを Cloudflare local に合わせる。
-内部エラーの変更か binding 境界での変換かは、REST API や storage 呼び出しへの影響を確認して決める。
-message に加え、name、code、alreadyExists の扱いを確認する。
-PBT の期待値を現行 runtime のエラーに合わせて緩めることはしない。
+binding 境界でのみ Cloudflare local のエラー形式へ変換する。
+
+- missing instance は `get()` と handle 操作で `Error("instance.not_found")` として観測され、`code` と `alreadyExists` は付かない。
+- duplicate `create()` は storage 内部の `alreadyExists` sentinel を検出し、`Error` message を `(instance.already_exists) Workflow instance with id "<id>" already exists` に変換する。binding caller には sentinel を公開しない。
+- missing / duplicate ともに `name` は `Error`、`code` と `alreadyExists` は未設定にする。
+- runtime / storage の内部エラーと REST の直接 create / missing response は維持する。REST が binding handle 経由で missing marker を受けた場合は既存の 404 message に戻す。
+- PBT は pinned Cloudflare local の predicate と Error shape を維持し、期待値を緩めない。
 
 ## 受け入れ条件
 
-- [ ] missing PBT が GREEN となり、message に `instance.not_found` を含む。
-- [ ] duplicate PBT が GREEN となり、message が `(instance.already_exists)` で始まる。
-- [ ] duplicate ケースで成功数1、失敗数 `create 回数 - 1`、成功 handle の ID が維持される。
-- [ ] Cloudflare local の対照実行が各100ケース GREEN のまま維持される。
-- [ ] 関連する host / storage テストが通り、REST API のエラーへの影響を確認する。
-- [ ] エラー形式変更の互換性と変更履歴を更新する。
+- [x] missing PBT が GREEN となり、message に `instance.not_found` を含む。
+- [x] duplicate PBT が GREEN となり、message が `(instance.already_exists)` で始まる。
+- [x] duplicate ケースで成功数1、失敗数 `create 回数 - 1`、成功 handle の ID が維持される。
+- [x] Cloudflare local の対照実行が各100ケース GREEN のまま維持される。
+- [x] 関連する host / storage テストが通り、REST API の既存エラー message と削除競合時の404を確認する。
+- [x] エラー形式変更の互換性と変更履歴を更新する。
 
 ## テスト計画
 
@@ -71,6 +74,7 @@ npm run test:binding-errors:pbt
 WORKFLOWS_BINDING_BACKEND=cloudflare npm run test:binding-errors:pbt
 npm run test:host
 npm run test:storage
+npm run test:e2e
 ```
 
 PBT は小文字英数字の1〜100文字の ID と、2〜8回の create を生成する。
@@ -90,6 +94,15 @@ generator や fast-check のバージョンを変えた場合は、実行時に�
 `FC_RUNS` でケース数を変更できる。
 runner の詳細は [fast-check documentation](https://fast-check.dev/docs/core-blocks/runners/) を参照する。
 
+2026-10-05 の実装検証:
+
+- `npm ci` と `npm run build:core` が成功。
+- `npm run test:binding-errors:pbt`: local backend の missing / duplicate 各100ケースが pass。
+- `WORKFLOWS_BINDING_BACKEND=cloudflare npm run test:binding-errors:pbt`: pinned Cloudflare local の missing / duplicate 各100ケースが pass。
+- `npm run test:host`: 24件 pass。
+- `npm run test:storage`: SQLite / runtime 17件 pass。`WORKFLOWS_POSTGRES_URL` が未設定のため PostgreSQL 1件は skip。
+- `npm run test:e2e`: 53件 pass。stale handle、非 missing TypeError、REST duplicate、REST 内部の削除競合を確認。
+
 ## リスク
 
 既存のローカル利用者が現行のエラーメッセージに依存している場合、文字列変更で分岐が変わる。
@@ -98,13 +111,9 @@ runner の詳細は [fast-check documentation](https://fast-check.dev/docs/core-
 
 ## 変更履歴
 
-`CHANGES.md` impact: yes
-
-項目案：
-
-- Workflow binding の missing / duplicate エラーメッセージを Cloudflare local と互換にし、エラーマーカーによる判定を可能にする。
+`CHANGES.md` impact: yes。`CHANGES.md` の Unreleased / Fixed に変更を記録した。
 
 ## 注記
 
-- 2026-10-05: 再現 PBT は実装済み。runtime の修正は未着手のため open とする。
-- Model は正確な実行モデル識別名を確認できないため unknown とする。
+- Cloudflare local とのエラー形式比較は pinned Wrangler 4.141.0 / workerd 1.20260925.2 に限定し、hosted Cloudflare 全バージョンの保証とはしない。
+- 2026-10-05: binding 境界で修正し、pinned Cloudflare local / host / storage / E2E 検証が完了したため。
