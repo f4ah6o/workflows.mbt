@@ -113,6 +113,14 @@ test("binding PBT: missing instance exposes the Cloudflare error marker", async 
     const observed = await api.missing(id);
     assert.equal(observed.rejected, true);
     assert.ok(observed.error.message.includes("instance.not_found"), JSON.stringify(observed));
+    assert.deepEqual(
+      {
+        name: observed.error.name,
+        code: observed.error.code,
+        alreadyExists: observed.error.alreadyExists,
+      },
+      { name: "Error", code: null, alreadyExists: null },
+    );
   }), parameters);
 });
 
@@ -126,6 +134,10 @@ test("binding PBT: duplicate creates expose the Cloudflare error prefix", async 
       assert.equal(observed.errors.length, contenders - 1);
       for (const error of observed.errors) {
         assert.ok(error.message.startsWith("(instance.already_exists)"), JSON.stringify(error));
+        assert.deepEqual(
+          { name: error.name, code: error.code, alreadyExists: error.alreadyExists },
+          { name: "Error", code: null, alreadyExists: null },
+        );
       }
     } finally {
       await api.cleanup(id);

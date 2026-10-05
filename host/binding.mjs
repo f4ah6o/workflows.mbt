@@ -3,6 +3,31 @@ import {
   workflowExecutionScope,
 } from "./execution-scope.mjs";
 import { WorkflowSubscription } from "./subscription.mjs";
+
+function bindingMissingInstanceError(error, id) {
+  // Storage/runtime errors retain their internal message for REST callers.
+  if (error?.message === `Workflow instance not found: ${id}`) {
+    return new Error("instance.not_found");
+  }
+  return error;
+}
+
+function callBindingOperation(id, operation) {
+  try {
+    return operation();
+  } catch (error) {
+    throw bindingMissingInstanceError(error, id);
+  }
+}
+
+async function callAsyncBindingOperation(id, operation) {
+  try {
+    return await operation();
+  } catch (error) {
+    throw bindingMissingInstanceError(error, id);
+  }
+}
+
 export class WorkflowBinding {
   constructor(runtime, workflow) {
     this.runtime = runtime;
@@ -10,11 +35,27 @@ export class WorkflowBinding {
   }
 
   async create(options = {}) {
-    return this.runtime.createInstance(this.workflow.name, options);
+    try {
+      return await this.runtime.createInstance(this.workflow.name, options);
+    } catch (error) {
+      if (error?.alreadyExists !== true) throw error;
+      // Keep the storage sentinel internal; Workflow binding callers receive
+      // Cloudflare's plain Error shape.
+      const internalPrefix = "Workflow instance already exists: ";
+      const internalId = error.message?.startsWith(internalPrefix)
+        ? error.message.slice(internalPrefix.length)
+        : undefined;
+      const id = options?.id ?? internalId;
+      throw new Error(
+        `(instance.already_exists) Workflow instance with id ${JSON.stringify(id)} already exists`,
+      );
+    }
   }
 
   async get(id) {
-    this.runtime.requireInstance(id, this.workflow.name);
+    callBindingOperation(id, () =>
+      this.runtime.requireInstance(id, this.workflow.name)
+    );
     return new WorkflowInstanceHandle(this.runtime, this.workflow.name, id);
   }
 
@@ -84,11 +125,15 @@ export class WorkflowInstanceHandle {
   }
 
   row() {
-    return this.runtime.requireInstance(this.id, this.workflowName);
+    return callBindingOperation(this.id, () =>
+      this.runtime.requireInstance(this.id, this.workflowName)
+    );
   }
 
   async status() {
-    return this.runtime.instanceStatus(this.id, this.workflowName);
+    return callAsyncBindingOperation(this.id, () =>
+      this.runtime.instanceStatus(this.id, this.workflowName)
+    );
   }
 
   async pause() {
@@ -135,7 +180,7 @@ export class WorkflowInstanceHandle {
   async delete() {
     const row = this.row();
     if (!this.runtime.storage.deleteInstance(row.id)) {
-      throw new Error(`Workflow instance not found: ${this.id}`);
+      throw new Error("instance.not_found");
     }
     if (workflowExecutionScope.getStore()?.instanceStorageId === row.id) {
       throw new WorkflowInstanceDeletedExecution(row.id);
@@ -143,7 +188,9 @@ export class WorkflowInstanceHandle {
   }
 
   async sendEvent(event) {
-    return this.runtime.sendEvent(this.id, event, this.workflowName);
+    return callAsyncBindingOperation(this.id, () =>
+      this.runtime.sendEvent(this.id, event, this.workflowName)
+    );
   }
 
   async subscribe(options = {}) {

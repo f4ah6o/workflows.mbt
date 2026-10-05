@@ -369,15 +369,16 @@ the Workers binding and CLI.
 
 ## Error surface
 
-Stable local error names. REST responses use the Cloudflare-style envelope
+Binding exceptions use the observed Cloudflare local error markers where
+verified. REST responses use the Cloudflare-style envelope
 `{success:false, errors:[{code,message}], messages:[], result:null}` where
 `code` equals the HTTP status; upstream-minted error codes are not invented
 where Cloudflare's are undocumented.
 
 | Behavior | Local error | REST |
 | --- | --- | --- |
-| duplicate instance ID | `WorkflowInstanceAlreadyExistsError`; `createBatch` is idempotent | 400 (batch create skips duplicates) |
-| unknown instance | `Workflow instance not found: <id>` | 404 |
+| duplicate instance ID | Binding `create()` rejects with plain `Error` message `(instance.already_exists) Workflow instance with id "<id>" already exists`; `code` and `alreadyExists` are absent. `createBatch` is idempotent. | Direct create: 400 with `Workflow instance already exists: <id>`; batch create skips duplicates. |
+| unknown instance | Binding `get()` and handle operations reject with plain `Error("instance.not_found")`; `code` and `alreadyExists` are absent. `deleteBatch` keeps its item-level `code: 10400` result. | 404 with `Workflow instance not found: <id>` |
 | invalid restart target | `Restart target not found: <type>/<name>/<count>`; `Unknown workflow instance` | 404 |
 | serialization failure | `WorkflowSerializationError`; cyclic values fail as a catchable `TypeError`; the step ends `failed` without retry | n/a (instance transitions to `errored`) |
 | executor lease lost mid-run | `WorkflowLeaseLostError` inside the commit transaction; surfaces as a `lease-lost` suspension | n/a |
@@ -391,6 +392,10 @@ where Cloudflare's are undocumented.
 | rollback failure | `WorkflowRollbackHandlerMissingError`; handler errors terminate as `errored` | via `status().error` |
 | uncommitted persisted stream | `WorkflowStreamError` | 400 via the step endpoint |
 | REST envelope | — | 400 bad input, 404 not found, 405 wrong method |
+
+The two binding markers match the pinned Cloudflare local observation from
+2026-10-05 (Wrangler 4.141.0, workerd 1.20260925.2). This observation does not
+claim a hosted Cloudflare guarantee.
 
 ## CLI
 

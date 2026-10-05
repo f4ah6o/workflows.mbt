@@ -321,10 +321,14 @@ export async function handleWorkflowRest(runtime, request) {
 
     return fail(404, "Endpoint not found", 404);
   } catch (error) {
-    const notFound = String(error?.message).includes("not found");
+    const bindingMissing = error?.message === "instance.not_found";
+    const message = bindingMissing
+      ? `Workflow instance not found: ${decodeURIComponent(parts[5])}`
+      : error?.message ?? String(error);
+    const notFound = bindingMissing || message.includes("not found");
     return fail(
       notFound ? 404 : 400,
-      error?.message ?? String(error),
+      message,
       notFound ? 404 : 400,
     );
   }
