@@ -104,3 +104,7 @@ decisions, not code:
   (account ID + API token with Workflows access) as repo secrets, then
   trigger `compat-hosted.yml` via workflow_dispatch once to establish the
   first hosted evidence.
+
+Re-checked against main @ `664dc3e` (2026-10-09): still open — GitHub Issues
+remains disabled (`has_issues: false`) and hosted credentials remain
+unprovisioned.

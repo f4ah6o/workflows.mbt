@@ -123,3 +123,7 @@ upstream contract/docs changes. It does not reopen resolved PR #19 findings,
 enable GitHub Issues, provision hosted Cloudflare credentials, change the
 durable persistence model, or claim full latest/hosted compatibility without
 evidence. The existing parent packet tracks the separate operational gaps.
+
+Re-checked against main @ `664dc3e` (2026-10-09): still open — the ESM oracle
+startup and contract-drift fixes are in flight on PR #20 and not yet on main;
+latest compatibility remains an open finding.
