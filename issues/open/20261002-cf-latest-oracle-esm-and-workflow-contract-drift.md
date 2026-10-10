@@ -91,26 +91,26 @@ is a concrete lead for the ESM/CJS failure, not yet a proven complete cause.
 
 ## 4. Acceptance and validation
 
-- [ ] The exact recorded latest candidate starts through `cf dev` and loads
+- [x] The exact recorded latest candidate starts through `cf dev` and loads
       `@cloudflare/vite-plugin` successfully.
-- [ ] The isolated latest path and fallback drill have explicit, working ESM
+- [x] The isolated latest path and fallback drill have explicit, working ESM
       config loading; the pinned oracle still passes.
-- [ ] The Workflow fingerprint change is explained at member/signature level
+- [x] The Workflow fingerprint change is explained at member/signature level
       with an explicit support decision and any necessary implementation/tests.
-- [ ] `npm run test:host`, `npm run test:upstream-ops`,
+- [x] `npm run test:host`, `npm run test:upstream-ops`,
       `npm run test:compat`, and `npm run compat:typecheck` pass.
-- [ ] `npm run compat:pinned` passes without weakening its gates.
-- [ ] `npm run compat:latest` completes with full candidate-bound evidence.
+- [x] `npm run compat:pinned` passes without weakening its gates.
+- [x] `npm run compat:latest` completes with full candidate-bound evidence.
       Compatibility is claimed only for a validated `compatible` verdict;
       genuine unresolved drift remains an open finding.
-- [ ] `npm run compat:drill` passes for the changed oracle-loading path.
-- [ ] Docs-watch changes are classified; baseline changes are reviewed.
-- [ ] Latest coverage is valid when the evidence supports it. No missing or
+- [x] `npm run compat:drill` passes for the changed oracle-loading path.
+- [x] Docs-watch changes are classified; baseline changes are reviewed.
+- [x] Latest coverage is valid when the evidence supports it. No missing or
       failed upstream probe is counted as verified.
-- [ ] Pin/manifest/lockfile updates are proposed only after the verified
+- [x] Pin/manifest/lockfile updates are proposed only after the verified
       candidate qualifies for promotion; do not move the baseline just to
       silence the current failure.
-- [ ] Final diff review, scope review, and `git status` are recorded.
+- [x] Final diff review, scope review, and `git status` are recorded.
 
 These validation commands are acceptance requirements, not tests already
 performed for the follow-up. At filing time the observed main/pinned CI is
@@ -290,3 +290,79 @@ that pre-existing serialization gap remains outside this JSON binding fix.
 Re-checked against main @ `664dc3e` (2026-10-09): still open — the ESM oracle
 startup and contract-drift fixes are in flight on PR #20 and not yet on main;
 latest compatibility remains an open finding.
+
+## 2026-10-10 re-check: verified, `compatible` verdict on this branch
+
+Full acceptance suite run on the branch (commit `a778142`).
+
+### Results
+
+- `npm test`: PASS — MoonBit 6, host 41, SQLite storage 17 (PostgreSQL suite
+  skipped: no `WORKFLOWS_POSTGRES_URL`), compat 14, upstream-ops 20,
+  inventory 13, coverage 17, upstream-coverage 8, e2e 53.
+- `npm run compat:typecheck`: PASS.
+- `npm run compat:pinned`: PASS — contract `contract-pinned-1791636285937`,
+  differential 32/32, no gates weakened.
+- `npm run compat:drill`: PASS — `drill-pinned-1791635812184`; latest drill
+  also PASS (`drill-latest-1791636144144`, outputs match after kill/restart).
+- `npm run compat:latest`: PASS, verdict **`compatible`** — run
+  `latest-2026-10-10T12-44-07-070e37`, candidate `latest-03496bff7c145cbd`
+  (cf 1.0.0-beta.14 / vite-plugin 1.63.1 / vite 8.3.4 / wrangler 4.149.0 /
+  workers-types+workerd 20261010.1). All nine phases exit 0: contract clean,
+  differential 33/33 with 0 differences and 0 probe errors, typecheck pass.
+  Every probe completed; nothing counted as verified on missing evidence.
+- `update-candidate`: `status: proposed` — a pin/manifest/lockfile proposal
+  (`compat-results/update-candidate.patch`) was generated for review only;
+  nothing applied. Promotion remains a separate decision, not part of this fix.
+- Final `git status` on the branch: only the intended modifications
+  (see "Changes since the 2026-10-04 follow-up") plus this issue file;
+  generated `issues/open/20261010-drift-*.md` packets were deleted —
+  artifact packets are not committed per convention.
+
+### Changes since the 2026-10-04 follow-up
+
+The first re-check run of `compat:latest` reported `contract-drift` against
+today's registry `latest` — upstream had moved past the follow-up's verified
+tuple. Both observations were re-verified against the installed candidate,
+not just rebaselined:
+
+- `workers-types` `5.20261010.1` carries the *identical* reviewed surface:
+  extracted `Workflow` `2a505161`, `WorkflowBatchCreateOptions` `75c57f63`,
+  `WorkflowBatchCreateResult` `fd7fd0e2` — byte-identical hashes to the
+  `5.20261004.1` profile. `batch-create-surface.json` now lists both verified
+  versions; an unknown future signature still reports as drift.
+- `vite-plugin` `1.63.1` keeps the October invocation tracing scope:
+  differential evidence showed ambient span present + restored after both
+  callback forms, and the real-`cf dev` regression test passes against the
+  installed candidate (`WORKFLOWS_MBT_TRACING_CANDIDATE` run: ambientPresent,
+  ambientStable, all enterSpan/startActiveSpan observations match the local
+  `invocation` policy). `tracingScopeFor` and `verifiedScopes` now register
+  `1.63.1` → `invocation`; unobserved versions still default to `callback`.
+
+### Docs-watch (this run)
+
+4 sources changed, still advisory (`investigationRequired`, not a compat
+failure): new `createbatch` + `batch-multiple-workflow-invocations` sections
+document the implemented overload — semantically consistent. Changed
+`declare-workflows-in-exports`, `call-workflows-from-workers`,
+`cross-script-calls`, `workers-api-bindings`,
+`schedule-a-workflow-directly` sections and the Wrangler configuration
+sections (analytics/k2/containers/scheduling/ssh etc.) are
+platform/deployment documentation outside this runtime fix. Hash-only
+baseline; not rebaselined — baseline refresh belongs to candidate promotion.
+
+### Environment note
+
+Local `npm` 11.19 dedupes the optional `@cloudflare/workers-types` peer under
+`@cloudflare/vite-plugin` to the pinned `5.20260925.2`, producing an
+`invalid` marker that makes `npm ls --json --all` exit 1 and fails
+`upstream-ops` ("pinned candidate records the real transitive runtime
+graph"). The lockfile is correct; installing with npm 10 (`npx npm@10 ci`,
+matching CI's Node 22) restores the nested `5.20261001.1` copy and the suite
+passes. No repo change made; CI is unaffected.
+
+### Remaining open
+
+- Candidate promotion: proposal generated, not applied — review + separate PR.
+- Docs-watch baseline refresh pending promotion; entries stay advisory.
+- Hosted Cloudflare verification still not performed; no deployment or merge.
