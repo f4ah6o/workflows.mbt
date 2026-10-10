@@ -297,7 +297,7 @@ silently promoted into supported behavior.
 - [x] atomic event consume + wait completion
 - [x] restart-from-step invalidation
 - [x] stream output persistence (`step_streams` + `stream_chunks`)
-- [ ] PostgreSQL adapter
+- [x] PostgreSQL adapter (shared storage contract/runtime suite under `WORKFLOWS_POSTGRES_URL`)
 - [x] multi-process executor lease/claim: `runInstance` claims an instance via
   `lease_owner`/`lease_expires_at` with a heartbeat renewed at `leaseMs/3`;
   `listRunnable` excludes live foreign leases so a crashed executor's
@@ -465,9 +465,13 @@ These are intentionally not hidden behind compatibility claims:
    that the observed winner can differ from the cached replay winner. The same
    stronger guarantee is not claimed here; use an outer `step.do` when the
    winner must be durable.
-4. **PostgreSQL storage** — the storage contract is workflow-semantic and
-   `host/storage/storage.mjs` enumerates it, but only the SQLite adapter is
-   implemented and tested.
+4. **PostgreSQL storage verification boundary** — `host/storage/postgres.mjs`
+   implements the shared workflow-semantic storage contract. With PostgreSQL 16
+   connected through `WORKFLOWS_POSTGRES_URL`, the service-backed
+   [CI run #38039827225](https://github.com/f4ah6o/workflows.mbt/actions/runs/38039827225)
+   completed 18 PostgreSQL storage/runtime tests (35 total, 0 skipped).
+   The process-`SIGKILL`/restart E2E suite currently uses SQLite; equivalent
+   PostgreSQL process-crash E2E and multi-host scheduling are **not verified**.
 5. **Workflow placement / concurrency controls** — current Cloudflare
    surfaces expose instance `locationHint` plus Workflow `limits` and
    `concurrency`. The local single-machine runtime does not emulate

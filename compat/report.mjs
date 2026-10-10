@@ -30,6 +30,7 @@ const differentialPinned = load("differential-pinned.json");
 const differentialLatest = load("differential-latest.json");
 const driftPinned = load("drift-pinned.json");
 const driftLatest = load("drift-latest.json");
+const verdictPinned = load("verdict-pinned.json");
 const verdictLatest = load("verdict-latest.json");
 const verdictHosted = load("verdict-hosted.json");
 const updateCandidate = load("update-candidate-latest.json");
@@ -84,7 +85,10 @@ const lines = [
   "",
   "## Outcome",
   "",
-  "- pinned oracle: " + oracleOutcome(driftPinned, differentialPinned),
+  "- pinned oracle: " + (verdictPinned
+      ? "verdict **" + verdictPinned.verdict + "** (run " + (verdictPinned.runId ?? "?")
+        + ", candidate " + (verdictPinned.candidate?.id ?? "?") + ")"
+      : oracleOutcome(driftPinned, differentialPinned) + " — no pinned verdict file"),
   "- latest oracle: " + (verdictLatest
       ? `verdict **${verdictLatest.verdict}** (run ${verdictLatest.runId ?? "?"}, candidate ${verdictLatest.candidate?.id ?? "?"})`
       : oracleOutcome(driftLatest, differentialLatest) + " — no verdict file"),
