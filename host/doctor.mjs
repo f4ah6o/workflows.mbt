@@ -37,6 +37,7 @@ export async function runDoctor({
   buildDir,
   envName = null,
   modeName = null,
+  tracingScope,
   kernelPath = resolve(packageRoot, "dist/workflows_core.mjs"),
 } = {}) {
   const checks = [];
@@ -64,7 +65,7 @@ export async function runDoctor({
 
   let config = null;
   if (!(await run("config", async () => {
-    config = loadProjectConfig(configPath, { storagePath, storageUrl, buildDir, envName, modeName });
+    config = loadProjectConfig(configPath, { storagePath, storageUrl, buildDir, envName, modeName, tracingScope });
     return `${config.workflows.length} workflow(s); ${config.configFormat === "cloudflare" ? `mode ${config.modeName ?? "default"}` : `env ${config.envName ?? "top-level"}`}; config ${config.configPath}`;
   }))) {
     skipRest("workflow bindings", "config failed");

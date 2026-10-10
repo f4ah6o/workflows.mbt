@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { parse } from "jsonc-parser";
 import { loadLocalDevEnv } from "./env.mjs";
 import { parseDuration } from "./duration.mjs";
+import { resolveTracingScope } from "./execution-context.mjs";
 
 const cloudflareConfigReader = fileURLToPath(
   new URL("./cloudflare-config-reader.mjs", import.meta.url),
@@ -135,6 +136,9 @@ function localSettings(root, overrides) {
   }
   return {
     local,
+    tracingScope: resolveTracingScope(overrides.tracingScope === undefined
+      ? local?.compatibility?.tracingScope
+      : overrides.tracingScope),
     storageType,
     storageUrl,
     storageSchema,
@@ -145,6 +149,7 @@ function localSettings(root, overrides) {
 
 function commonLocalFields(settings) {
   return {
+    tracingScope: settings.tracingScope,
     localAdapters: settings.local?.adapters ?? {},
     retentionPolicy: resolveRetentionPolicy(settings.local),
     limits: {

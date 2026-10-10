@@ -152,11 +152,11 @@ export function computeRelevantInputs(rootDir, candidate, { inventoryDir = "comp
       return existsSync(path) ? (statSync(path).isDirectory() ? listFilesRecursive(path) : [path]) : [];
     });
   const probeSourcePaths = listFilesRecursive(join(rootDir, "compat/probes/src"));
-  const comparisonPaths = ["compat/normalize.mjs", "compat/probe-client.mjs"].map((p) => join(rootDir, p));
+  const comparisonPaths = ["compat/normalize.mjs", "compat/probe-client.mjs", "compat/candidate-policy.mjs", "compat/run-differential.mjs"].map((p) => join(rootDir, p));
   const inventoryPaths = listFilesRecursive(resolve(rootDir, inventoryDir)).filter((path) => path.endsWith(".json"));
   const configPaths = [
     "compat/probes/cloudflare.config.ts",
-    "compat/probes/vite.config.ts",
+    "compat/probes/vite.config.mts",
     "fixtures/e2e/workflows.mbt.json",
   ]
     .map((p) => join(rootDir, p))

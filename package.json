@@ -2,7 +2,7 @@
   "name": "@f4ah6o/workflows-mbt",
   "version": "0.1.0",
   "private": true,
-  "description": "Local durable-execution runtime compatible with Cloudflare Workflows — dependency insurance and fallback execution for existing workflow source.",
+  "description": "Local durable-execution runtime compatible with Cloudflare Workflows \u2014 dependency insurance and fallback execution for existing workflow source.",
   "type": "module",
   "bin": {
     "workflows": "./host/cli.mjs"
@@ -40,7 +40,7 @@
     "build:core": "node scripts/build-core.mjs",
     "test:moon": "moon test --target js",
     "test:mutants": "turtles --dir . --target js",
-    "test:host": "node --test tests/host.test.mjs",
+    "test:host": "node --test tests/host.test.mjs tests/execution-context.test.mjs tests/batch-create.test.mjs",
     "test:storage": "node --test tests/storage.test.mjs",
     "test:e2e": "node --test tests/e2e.test.mjs",
     "test": "npm run check:moon && npm run build:core && npm run test:moon && npm run test:host && npm run test:storage && npm run test:compat && npm run test:upstream-ops && npm run test:inventory && npm run test:coverage && npm run test:upstream-coverage && npm run test:e2e",
@@ -53,7 +53,7 @@
     "compat:upstream-coverage": "node compat/upstream-coverage.mjs",
     "compat:drill": "node compat/run-drill.mjs",
     "check:toolchain": "node scripts/check-toolchain.mjs",
-    "test:compat": "node --test tests/compat-probe-client.test.mjs tests/release-pin.test.mjs",
+    "test:compat": "node --test tests/compat-probe-client.test.mjs tests/release-pin.test.mjs tests/oracle-config.test.mjs tests/batch-contract.test.mjs tests/candidate-policy.test.mjs tests/tracing-oracle.test.mjs tests/candidate-typecheck.test.mjs",
     "prepack": "node scripts/prepare-pack.mjs",
     "postpack": "node scripts/prepare-pack.mjs --cleanup",
     "test:scenario": "node scripts/consumer-scenario.mjs",

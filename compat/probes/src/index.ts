@@ -1,6 +1,7 @@
 import { WorkflowEntrypoint, WorkflowStep } from "cloudflare:workers";
 import type { WorkflowEvent } from "cloudflare:workers";
 import { NonRetryableError } from "cloudflare:workflows";
+import { runBatchCreateProbe } from "./batch-create";
 
 type Params = { probe: string; counterUrl?: string };
 
@@ -13,6 +14,7 @@ let waitUntilMarker = "unset";
 export class OracleWorkflow extends WorkflowEntrypoint<{}, Params> {
   async run(event: WorkflowEvent<Params>, step: WorkflowStep) {
     switch (event.payload.probe) {
+      case "batch-echo": return event.payload;
       case "basic": {
         const value = await step.do("answer", async () => 42);
         return { value };
@@ -578,6 +580,7 @@ const ORCHESTRATED: Record<
   string,
   (env: any, request: Request, ctx: any) => Promise<any>
 > = {
+  "binding-create-batch": runBatchCreateProbe,
   // Binding CRUD: duplicate create, get, createBatch idempotence, deleteBatch
   // per-instance error reporting, workflow-scoped ID semantics.
   async "binding-crud"(env) {

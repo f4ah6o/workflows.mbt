@@ -241,16 +241,16 @@ try {
     outputsMatch: sameOutput,
     knownDifferences: [],
     pass: fallback.status === "complete" && sameOutput,
-    // Run-result fingerprint (issue §7) — relevant-input hashes + candidate
-    // identity so later readers can judge this drill evidence fresh or STALE.
-    fingerprint: buildResultFingerprint({
-      runId: process.env.WORKFLOWS_MBT_RUN_ID ?? "drill-" + oracle + "-" + Date.now(),
-      oracle,
-      candidate,
-      relevantInputs: computeRelevantInputs(root, candidate),
-      commit: record.commit,
-    }),
   };
+  // Build the fingerprint after record exists; reading record.commit inside
+  // its initializer would throw before the successful drill can be saved.
+  record.fingerprint = buildResultFingerprint({
+    runId: process.env.WORKFLOWS_MBT_RUN_ID ?? "drill-" + oracle + "-" + Date.now(),
+    oracle,
+    candidate,
+    relevantInputs: computeRelevantInputs(root, candidate),
+    commit: record.commit,
+  });
   const name = "drill-" + record.checkedAt.replaceAll(":", "-").replace(/\..*/, "") + ".json";
   writeFileSync(join(resultsDir, name), JSON.stringify(record, null, 2) + "\n");
   writeFileSync(join(resultsDir, "drill-latest.json"), JSON.stringify(record, null, 2) + "\n");

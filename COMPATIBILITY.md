@@ -377,7 +377,7 @@ where Cloudflare's are undocumented.
 
 | Behavior | Local error | REST |
 | --- | --- | --- |
-| duplicate instance ID | Binding `create()` rejects with plain `Error` message `(instance.already_exists) Workflow instance with id "<id>" already exists`; `code` and `alreadyExists` are absent. `createBatch` is idempotent. | Direct create: 400 with `Workflow instance already exists: <id>`; batch create skips duplicates. |
+| duplicate instance ID | Binding `create()` rejects with plain `Error` message `(instance.already_exists) Workflow instance with id "<id>" already exists`; `code` and `alreadyExists` are absent. Legacy `createBatch` is idempotent; the object batch returns indexed errors. | Direct create: 400 with `Workflow instance already exists: <id>`; legacy batch skips duplicates; object batch errors 10405/10415 |
 | unknown instance | Binding `get()` and handle operations reject with plain `Error("instance.not_found")`; `code` and `alreadyExists` are absent. `deleteBatch` keeps its item-level `code: 10400` result. | 404 with `Workflow instance not found: <id>` |
 | invalid restart target | `Restart target not found: <type>/<name>/<count>`; `Unknown workflow instance` | 404 |
 | serialization failure | `WorkflowSerializationError`; cyclic values fail as a catchable `TypeError`; the step ends `failed` without retry | n/a (instance transitions to `errored`) |
@@ -488,3 +488,33 @@ The tested P0/P1 surface is sufficient to describe this project as a
 The phrase **fully compatible** is deliberately not used. It requires continued
 oracle maintenance against upstream API/types changes and a shrinking
 Known-differences list.
+
+
+### Versioned batch and tracing behavior (October 2026)
+
+`WorkflowBinding.createBatch` accepts the legacy options array (array result)
+and the newer `{ count, params?, retention?, locationHint? }` /
+`{ instances: [...] }` forms (`{ created, errors }` result). ID/options validation and local JSON-payload preflight reject
+the whole request before creation; duplicate positions have indexed errors.
+Workflow params remain JSON-only locally. The latest upstream batch binding
+can accept BigInt/cyclic/function-containing payloads at creation; those broader
+RPC payload forms are not claimed compatible and fail locally before any write.
+Location hints are validated but do not place local instances geographically.
+The candidate-bound `binding-create-batch` probe covers the new forms without
+claiming pinned oracle support or altering the pinned coverage denominator.
+
+The pinned oracle has no ambient workflow tracing span. The observed October
+cf/Vite oracle has an invocation parent span. Select explicitly in
+`workflows.mbt.json`:
+
+```json
+{ "compatibility": { "tracingScope": "invocation" } }
+```
+
+The default is `callback` (pinned behavior); `--tracing-scope invocation`
+overrides the file. Both policies preserve callbacks, awaits, nested and
+concurrent spans, and parent restoration after errors. Local spans do not
+record/export traces (`isTraced` remains false). Oracle runs record the chosen
+policy and compare raw span observations, without masking the versioned drift.
+The normal environment binding is verified for batch objects; latest cf dev's
+`ctx.exports` loopback wrapper has a separately observed post-creation failure.

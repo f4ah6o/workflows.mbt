@@ -53,20 +53,39 @@ class LocalSpan {
   }
 }
 
-function createTracing() {
+// The pinned cf/Vite oracle has no ambient span in WorkflowEntrypoint.run;
+// the October 2026 oracle has a stable invocation span. Both use the same
+// Workers compatibility date, so changing compatibility_date cannot choose
+// between these behaviors. Keep the pinned behavior by default and make the
+// newer behavior an explicit local compatibility setting, never a test-only
+// environment override or a normalization of the upstream result.
+export function resolveTracingScope(scope = "callback") {
+  if (scope !== "callback" && scope !== "invocation") {
+    throw new TypeError('compatibility.tracingScope must be "callback" or "invocation"');
+  }
+  return scope;
+}
+
+function createTracing(scope) {
   const spanStore = new AsyncLocalStorage();
+  const invocationSpan = scope === "invocation" ? new LocalSpan() : undefined;
   // workerd keeps the active span in the invocation's async context, so it is
   // still the active span after an `await` inside the callback.
   const runWithSpan = (name, callback, args, autoEnd) => {
     const span = new LocalSpan(name);
-    const result = spanStore.run(span, () => callback(span, ...args));
-    if (autoEnd) {
-      if (result != null && typeof result.then === "function") {
-        return Promise.resolve(result).finally(() => finishSpan(span));
+    try {
+      const result = spanStore.run(span, () => callback(span, ...args));
+      if (autoEnd) {
+        if (result != null && typeof result.then === "function") {
+          return Promise.resolve(result).finally(() => finishSpan(span));
+        }
+        finishSpan(span);
       }
-      finishSpan(span);
+      return result;
+    } catch (error) {
+      if (autoEnd) finishSpan(span);
+      throw error;
     }
-    return result;
   };
   return {
     Span: LocalSpan,
@@ -80,7 +99,7 @@ function createTracing() {
       return new LocalSpan(name);
     },
     getActiveSpan() {
-      return spanStore.getStore();
+      return spanStore.getStore() ?? invocationSpan;
     },
   };
 }
@@ -92,7 +111,7 @@ export class WorkerExecutionContext {
     this.runtime = runtime;
     this.props = props;
     this.exports = exports;
-    this.tracing = createTracing();
+    this.tracing = createTracing(resolveTracingScope(runtime.config?.tracingScope));
     this.cache = undefined;
     this.access = undefined;
     this.#onAbort = onAbort;

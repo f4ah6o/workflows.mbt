@@ -56,6 +56,8 @@
             "WorkflowInstanceSubscription",
             "WorkflowInstanceTerminateOptions",
             "WorkflowBatchDeleteResult",
+            "WorkflowBatchCreateOptions",
+            "WorkflowBatchCreateResult",
             "ExecutionContext",
             "ExportedHandler",
             "ExportedHandlerFetchHandler",
