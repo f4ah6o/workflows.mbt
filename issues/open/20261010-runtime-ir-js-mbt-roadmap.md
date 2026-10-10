@@ -23,7 +23,7 @@ Cloudflare Workflows用の既存TS/JSを無改変で実行するフォールバ�
 2. 2026-10-10に確認した[PR #20](https://github.com/f4ah6o/workflows.mbt/pull/20)はopen・未マージ。PR本文はoracle起動修正後にも`createBatch`契約とentrypoint contextの差分が残ると報告している。これはPR側の報告であり、本ロードマップ作成時にテストを再実行した結果ではない。
 3. latestの復旧・差分分類は[既存の追跡課題](20261002-cf-latest-oracle-esm-and-workflow-contract-drift.md)、hosted canary等の運用条件は[upstream tracking課題](20260928-upstream-tracking-pipeline.md)を参照する。重複した修正issueは作らない。
 4. 内部のMoonBit JS出力とhostの接続は既存構成に含まれる。以下の公開SDK、Flow IR、変換器は新しい計画として扱い、既存の内部FFIと混同しない。
-5. PostgreSQLについては[README](../../README.md#configuration)が利用方法を記載する一方、[COMPATIBILITY.md](../../COMPATIBILITY.md#known-differences)には「SQLiteのみ実装・検証済み」と残る。両文書の主張は一致していない。実装・テスト・CI evidenceを確認するまでは、PostgreSQLの互換性を確定事実にしない。
+5. PostgreSQLについては[README](../../README.md#configuration)が利用方法を記載する一方、[COMPATIBILITY.md](../../COMPATIBILITY.md#known-differences)には「SQLiteのみ実装・検証済み」と残る。ただし[`host/storage/postgres.mjs`](../../host/storage/postgres.mjs)にadapterが存在し、[`tests/storage.test.mjs`](../../tests/storage.test.mjs)にはSQLite/PG共通のstorage-contract・runtimeテストがある（PG実行は`WORKFLOWS_POSTGRES_URL`に依存）。「未実装」とも「全範囲で検証済み」とも即断せず、P0でPG service付きCIの実行証拠とskip件数を突き合わせ、両文書の対応表現を整合させる。
 
 ## 問題
 
@@ -106,7 +106,7 @@ JS action      <---- typed interop ----> MoonBit action
 2. API/type drift、実際のsemantic drift、upstreamの取得・起動失敗を分離する。起動失敗や欠測を互換性PASSにしない。
 3. `compat/capabilities.json`と`COMPATIBILITY.md`を根拠として、対象API、oracle revision、compatibility date/flags、実測した範囲を固定する。Cloudflare最新全体の一致をP2設計の無期限の前提にせず、未解消差分を明示した検証済みprofileから進める。
 
-受入: `compat:pinned`と対象回帰テストがPASS。`compat:latest`は完全なcandidate-bound evidenceで判定され、差分があればopenのまま残す。Cloudflare本番の検証はhosted canaryを実行した範囲だけ認定する。
+受入: `compat:pinned`と対象回帰テストがPASS。`compat:latest`は完全なcandidate-bound evidenceで判定され、差分があればopenのまま残す。Cloudflare本番の検証はhosted canaryを実行した範囲だけ認定する。PG対応範囲は`host/storage/postgres.mjs`の存在だけで判断せず、PG service接続下の実行ログと`COMPATIBILITY.md`の主張を照合した結果として記録する。
 
 #### P1. MoonBit互換ランタイムの責務を安定化する
 
@@ -116,7 +116,7 @@ JS action      <---- typed interop ----> MoonBit action
 
 比較するobservable traceは、少なくともstepの`(type,name,count)`、順序・完了結果、retry attempt、timer/eventの消費、終端状態・error分類を含む。壁時計時刻、PID、内部UUIDなどの非決定的な値だけを明示的に正規化する。正規化ルールは対応する実装PRのfixtureで固定する。
 
-受入: 同じ無改変TS/JS fixtureで変更前後のobservable traceが一致する。SQLiteとPostgreSQLの契約、並列branch、event待ち、retry中、commit境界のprocess crashで回帰がない。MoonBit-onlyの規則テストとhost境界テストを分けて実行する。
+受入: 同じ無改変TS/JS fixtureで変更前後のobservable traceが一致する。SQLiteと、P0で検証対象と確定したPostgreSQL（`WORKFLOWS_POSTGRES_URL`を指定しskipしない実行）について、並列branch、event待ち、retry中、commit境界のprocess crashで回帰がない。PGの実測が欠ける場合はそのcoverageを未検証として記録し、二つのbackendを検証済みと宣言しない。MoonBit-onlyの規則テストとhost境界テストを分けて実行する。
 
 #### P2. MoonBitで書けるFlow IRを作る
 
@@ -186,7 +186,7 @@ JS action      <---- typed interop ----> MoonBit action
 
 最初の実装は次の単位に分ける。
 
-1. 既存PR #20とlatest差分の追跡を進め、受入可能なbaseline/profileを確定する。
+1. **P0を単独PRとして着手**: [`compat/oracle/manifest.json`](../../compat/oracle/manifest.json)と[`compat/capabilities.json`](../../compat/capabilities.json)を起点に、対象profile・candidate tuple・観測済み能力を固定する。`npm run compat:pinned`と`npm run compat:latest`のrun ID、revision、verdict、probe coverage、起動エラーを表に分離して残す。PR #20や[既存latest追跡課題](20261002-cf-latest-oracle-esm-and-workflow-contract-drift.md)を関連付け、修正自体は別PRに保つ。PGについてはservice付き`npm run test:storage`の実行/skip記録と両文書の差分を照合する。成果物は互換性根拠の追跡可能な更新であり、pin自動移行やhosted PASSの主張ではない。
 2. kernel/hostの責務表とCommand/Event契約を追加し、1種類のstepから既存テスト付きで移行する。
 3. Flow IR v1の型・codec・validatorとnegative testを追加する。SDK案はコンパイル可能なfixtureで確認する。
 4. 最小builder・action registry・evaluatorを追加し、`do -> sleep -> waitForEvent -> do`をSIGKILL/restartまで通す。
@@ -244,14 +244,21 @@ UI編集、類似workflow抽出、別プロセスRPC、native/Wasm host、multi-
 | JS/TS importerが未対応構文を誤変換する | 静的subsetを公開し、非対応入力は位置付き診断にする。無改変JS実行を必ず残す |
 | canonical IRの符号化差分で同一workflowが別digestになる | RFC 8785と意味を持つ順序を分けて規定し、MoonBit/JS跨ぎのgolden fixtureとround-tripで検証する |
 | upstream更新・Cloudflare hosted差異で根拠のない互換性主張が生じる | pinned/latest/hostedの実測profileを分け、候補失敗・欠測をverifiedに含めない |
-| PostgreSQLの実装状況が文書間で不一致 | `README.md`と`COMPATIBILITY.md`の差分を未確定事項として記録。storageコード・条件付きPG CIを確認するまで対応済みと断定しない |
+| PostgreSQLの対応記述が文書と実装で不一致 | adapterと共通テストの存在だけでPASSとせず、`WORKFLOWS_POSTGRES_URL`を有効にしたCIの実行ログ・skip・テスト範囲を確認する。`README.md`と`COMPATIBILITY.md`を証拠に合わせて整合させる |
 | MoonBit toolchain/JS FFI/APIの版差、`number`の精度 | 固定toolchainでコンパイル・相互呼び出しを検証し、非可逆なcodecを拒否する |
+
+## 未解決の質問
+
+1. **PostgreSQLの検証済み範囲（P0 → P1）** — adapterと共通テストは存在するが、`README.md`と`COMPATIBILITY.md`の宣言が食い違う。PG service接続を確認できるCIログとskip件数を根拠に、どのstorage・crash/replay契約を保証するか確定する。決まるまでPG coverageは未検証と扱う。P0の調査には着手可能だが、PGを含むP1の完了判定は保留。
+2. **実行中instanceに必要なartifactの保持期限（P2 → P3）** — IR definition digest、`ActionRef`のartifact digest、codec versionをどのストアから再解決し、waiting/paused/rollback中のinstanceとretention期間を通じてどう保持するか、P2の最小evaluator実装PRで仕様を固定する。欠損時はside effect前にfail-closedとし、process内registry IDや自動最新版置換を代用しない。P0/P1は着手可能だが、固定artifactを使うP2/P3の公開・再開互換性認定はこの契約の検証を必要とする。
+3. **JS/TS subset importerの静的境界（P5）** — parser、許可するexpression/effect、closure capture schema、型欠落時のdiagnosticをP5の最初の実装PRでfixtureとして確定する。現時点では任意のJSからMoonBitへの意味保存を保証しない。P0〜P4の進行条件にはしない。
 
 ## 変更履歴
 
 - 2026-10-10: 初稿。互換ランタイム、MoonBit Flow IR、JS↔MoonBitをP0〜P5へ分割し、クラッシュ再開・差分検証を要件化。
 - 2026-10-10: `polish-issue`基準で背景/問題/対象外、検証可能な受入チェックリスト、fixture例、テスト計画、リスク、担当モジュール、文書間不整合を明確化。コード・oracle・依存pinは変更しない。
 - 2026-10-10: canonical IRのbytes/digestの決定性、数値の境界、重複node ID・不正参照の拒否とcross-language golden testを明文化。
+- 2026-10-10: P0初回PRの入力/成果物、PG adapterと条件付きテストの実在、PG検証条件、実行中instanceのartifact保持方針と各Phaseの未解決ゲートを補記。
 
 ## 注記
 
