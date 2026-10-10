@@ -122,12 +122,12 @@ JS action      <---- typed interop ----> MoonBit action
 
 1. `Flow`、`Node`、`Expr`、`ActionRef`、`ValueSchema`をMoonBitの型で定義する。builderは型付きの入力・step出力参照からIRを構築し、永続化前に型を消した表現を検証する。任意のMoonBit関数・closureを丸ごとIRに保存する方式にはしない。
 2. 最初のvertical sliceは`Sequence`、`Do`、`Sleep`、`SleepUntil`、`WaitForEvent`、`Return`、`Fail`。stepのretry/timeout/non-retryable errorは既存kernelの契約を使う。次に`If`、決定的な`ForEach`、`ParallelAll`、`Try/Catch/Finally`を、個別のsemantic testとともに追加する。race/anyやcompensationは表現と再実行規則の検証後に対応する。
-3. JSONを交換形式にしたversion付きcanonical IRとvalidatorを作る。初期のportable value profileはJSON互換値から始め、非対応値を黙って文字列化・切捨てしない。既存JS互換経路のstructured value対応は縮小しない。
+3. JSONを交換形式にしたversion付きcanonical IRとvalidatorを作る。初期のportable value profileはJSON互換値から始め、非対応値を黙って文字列化・切捨てしない。既存JS互換経路のstructured value対応は縮小しない。canonical encodingには[RFC 8785（JCS）](https://www.rfc-editor.org/rfc/rfc8785)を採用し、schema version、node ID、制御フロー、ValueSchema、ActionRefを含むJSONを正規化する。object key順や数値の表現を固定する一方、意味を持つ配列・分岐順は並べ替えない。同じIRをMoonBit/JSのどちらから構築しても同じUTF-8 bytesとSHA-256 definition digestを得られることをgolden fixtureで検証する。初期profileで表現できない数値（非有限数、JS safe integer範囲外の整数等）を暗黙に丸めない。
 4. 最小action registryとevaluatorを同梱してローカル実行まで通す。再開時は同じ固定版のIRを先頭から評価し、完了stepの結果を再利用する。IR専用の別checkpoint engineは作らない。
 
 設計fixture例（新SDKの確定APIではない）: 入力 `{"orderId":"order-1"}` を受け、`Do(reserve)` → `Sleep` → `WaitForEvent(approved)` → `Do(finalize)` → `Return({"orderId":"order-1","approved":true})` と進む。各Doはversion付き`ActionRef`を持ち、sleep/eventの途中で再起動してもコミット済みstepのcallbackは再呼出ししない。外部effect完了後・commit前のクラッシュはat-least-onceとして別の冪等性テストにする。
 
-受入: `.mbt`で定義した`do -> sleep -> waitForEvent -> do -> return`がCLIから実行でき、sleep中・event待ち中にSIGKILLしても同じDBから再開する。IRのencode/decode、未知version、不正参照、型不一致、非対応operationにpositive/negative testがある。
+受入: `.mbt`で定義した`do -> sleep -> waitForEvent -> do -> return`がCLIから実行でき、sleep中・event待ち中にSIGKILLしても同じDBから再開する。IRのencode/decode、未知version、不正参照、重複node ID、型不一致、非対応operationにpositive/negative testがある。object keyの入力順を変えてもcanonical bytes/digestは一致し、制御フローを表す配列順の変更は黙って正規化されない。
 
 #### P3. JS ↔ MoonBitの相互呼び出しを公開する
 
@@ -154,7 +154,7 @@ JS action      <---- typed interop ----> MoonBit action
 3. canonical IRから読み書きできるMoonBit builder sourceを生成する。安全なpure expression/actionの変換subsetを拡張し、JSを残すhybrid出力と、JS actionを残さない`mbt-only-source`出力を区別する。後者は残存JS actionがあれば失敗する。`mbt-only-source`はソース言語の保証であり、JS host不要という保証ではない。
 4. `eval`、動的import、未知の高階制御、可変closure capture、非決定的なstep名・制御等は、変換対応がない限り位置・理由・対処を診断する。無改変JS実行経路は引き続き残す。AST変換や1回の実行traceだけで全分岐の変換成功と判定しない。
 
-受入: 対応subsetで`JS -> IR -> MoonBit -> IR -> JS`の正規化IRとobservable behaviorが一致する。コメント・空白・元の構文の完全復元は保証対象にしない。未対応入力で無言の意味変更がなく、診断テストがFAILを正しく確認する。通常実行だけでなく異なる分岐、error、event、crash/replayを含めて比較する。
+受入: 対応subsetで`JS -> IR -> MoonBit -> IR -> JS`の正規化IR（canonical bytesとdefinition digestを含む）とobservable behaviorが一致する。コメント・空白・元の構文の完全復元は保証対象にしない。未対応入力で無言の意味変更がなく、診断テストがFAILを正しく確認する。通常実行だけでなく異なる分岐、error、event、crash/replayを含めて比較する。
 
 ### IR・再開互換性の固定条件
 
@@ -164,6 +164,7 @@ JS action      <---- typed interop ----> MoonBit action
 | identity | `node_id`は明示的かつ安定。既存の`(instance_id, step_type, step_name, step_count)`へのmappingを固定し、行番号や配列位置だけに依存しない |
 | loop / parallel | 反復・branchで同名stepのcountと結果参照がreplay時にも安定する。正規化で観測可能な順序を消さない |
 | program version | IR schema、workflow定義digest、action artifact、codecをinstanceへ紐付ける。稼働中instanceは固定artifactで再開し、不一致時はfail-closed。自動で最新版へ付替えない |
+| canonical IR | schema versionを含むcanonical bytesの仕様を固定し、表現上のobject key順の差は同じdigest、意味のある制御フロー順の差は異なるdigestとして扱う。未知のnode ID・重複ID・不正な参照は実行前に拒否する |
 | 値とeffects | 純粋な式は再評価可能とし、非決定的処理・外部副作用はstep境界内へ置く。persistent valueと一時的なhost handleを区別する |
 | 配送保証 | callbackはat-least-once。外部API成功後・result commit前のcrashでは再実行し得る。冪等キーを業務側で扱い、exactly-onceの外部副作用を約束しない |
 | 検証と安全性 | 未知opcode/version、schema不整合、過大なIRを実行前に拒否。graph/反復の予算を定義する。任意コードを安全に実行するsandboxの提供とは別問題とする |
@@ -199,7 +200,7 @@ UI編集、類似workflow抽出、別プロセスRPC、native/Wasm host、multi-
 
 - [ ] **P0 / 互換性の根拠** — Given pinned profileとlatest candidateが明示されている、when `npm run compat:pinned`と`npm run compat:latest`を実行する、then pinnedの合否とlatestの`compatible`・drift・取得/起動失敗・証拠不足を別々に判定できる。latest失敗をPASSへ置き換えず、hosted未実行は未検証と記録する。
 - [ ] **P1 / kernel境界** — Given既存の無改変TS/JS fixturesと固定DB、when新Command/Event契約へ1種類のstepを移行して通常実行・commit境界のSIGKILL/restartを行う、then比較対象のobservable traceと保存済みstep結果が従来と一致し、lease/fencing/atomic commitを壊さない。
-- [ ] **P2 / MoonBit builder→IR→実行** — Given型付き`.mbt`定義、固定IR/action artifactおよび有効なevent、when`do → sleep → waitForEvent → do → return`をCLI経由で実行・途中SIGKILL・同じDBから再開する、then完了値が一致し、コミット済みcallbackは再実行されない。未知schema、破損参照、型不一致は実行前に拒否される。
+- [ ] **P2 / MoonBit builder→IR→実行** — Given型付き`.mbt`定義、固定IR/action artifactおよび有効なevent、when`do → sleep → waitForEvent → do → return`をCLI経由で実行・途中SIGKILL・同じDBから再開する、then完了値が一致し、コミット済みcallbackは再実行されない。等価なIRは生成経路によらずcanonical bytes/digestが一致し、未知schema、重複node ID、破損参照、型不一致は実行前に拒否される。
 - [ ] **P3 / JS↔MoonBit bridge** — GivenJS/MoonBitの混在actionと版付き`ActionRef`、when両方向を呼び出して再起動する、then値・非再試行error・timeoutの分類が契約どおりで、missing action、digest/codec不一致、整数の精度損失は副作用前に診断される。
 - [ ] **P4 / Cloudflare emitter** — Given同一MoonBit/IR定義と検証済みCloudflare profile、whenローカル実行と生成JSの`cf dev`実行を比較する、then出力、step identity、retry、event、error、replayの差が説明可能な検証記録として残り、対応外operation・ローカル依存の混入はbuild時に拒否される。
 - [ ] **P5 / subset importerとround-trip** — Given宣言済みのJS/TS grammar・effect subset、when`JS → IR → MoonBit → IR → JS`を実施する、then正規化IRと複数分岐・error・crash/replayのobservable behaviorが一致する。対象外の動的構文やJS action残存時の`mbt-only-source`指定は位置付きの理由で失敗する。
@@ -218,7 +219,7 @@ UI編集、類似workflow抽出、別プロセスRPC、native/Wasm host、multi-
 | 永続化 | `npm run test:storage`、`npm run test:e2e`、`npm run test:scenario` | SQLiteの実測とcommit境界のSIGKILL/restart。PostgreSQLは`WORKFLOWS_POSTGRES_URL`を与えた場合だけ検証し、未設定時のskipをPASSと数えない |
 | 配布 | `npm run test:consumer` | compilerを持たないconsumerが固定artifactを実行・再開できる |
 | 無改変JS互換性 | `npm run compat:typecheck`、`test:compat`、`compat:pinned`、`compat:latest`、`compat:drill` | candidateとprofileに紐付くoracle比較。欠測をPASSにしない |
-| IR / interop | P2/P3で新設するunit・property・negative・crash tests | codec往復、参照整合性、両方向呼出し、version不一致拒否 |
+| IR / interop | P2/P3で新設するunit・property・negative・crash tests | codec往復、canonical bytes/digestのgolden・cross-language一致、重複node ID/不正参照拒否、両方向呼出し、version不一致拒否 |
 | Code generation / import | P4/P5で新設するcompiler・round-trip・differential tests | 生成物の実コンパイル、対応subsetの意味保存、未対応入力の診断 |
 | Cloudflare本番 | 既存hosted canaryに新しいfixtureを追加 | 実際に実行したrevision/profileと結果。未実行は未検証 |
 
@@ -241,6 +242,7 @@ UI編集、類似workflow抽出、別プロセスRPC、native/Wasm host、multi-
 | artifact更新により途中instanceが異なるコードで再開する | IR、workflow digest、action、codecをinstanceごとに固定し、不一致はfail-closed。移行は別PRで扱う |
 | 外部副作用の重複と原子性の破壊 | at-least-onceを明記し、冪等キー・commit境界SIGKILL・storage lease/fencingを検証する |
 | JS/TS importerが未対応構文を誤変換する | 静的subsetを公開し、非対応入力は位置付き診断にする。無改変JS実行を必ず残す |
+| canonical IRの符号化差分で同一workflowが別digestになる | RFC 8785と意味を持つ順序を分けて規定し、MoonBit/JS跨ぎのgolden fixtureとround-tripで検証する |
 | upstream更新・Cloudflare hosted差異で根拠のない互換性主張が生じる | pinned/latest/hostedの実測profileを分け、候補失敗・欠測をverifiedに含めない |
 | PostgreSQLの実装状況が文書間で不一致 | `README.md`と`COMPATIBILITY.md`の差分を未確定事項として記録。storageコード・条件付きPG CIを確認するまで対応済みと断定しない |
 | MoonBit toolchain/JS FFI/APIの版差、`number`の精度 | 固定toolchainでコンパイル・相互呼び出しを検証し、非可逆なcodecを拒否する |
@@ -249,6 +251,7 @@ UI編集、類似workflow抽出、別プロセスRPC、native/Wasm host、multi-
 
 - 2026-10-10: 初稿。互換ランタイム、MoonBit Flow IR、JS↔MoonBitをP0〜P5へ分割し、クラッシュ再開・差分検証を要件化。
 - 2026-10-10: `polish-issue`基準で背景/問題/対象外、検証可能な受入チェックリスト、fixture例、テスト計画、リスク、担当モジュール、文書間不整合を明確化。コード・oracle・依存pinは変更しない。
+- 2026-10-10: canonical IRのbytes/digestの決定性、数値の境界、重複node ID・不正参照の拒否とcross-language golden testを明文化。
 
 ## 注記
 
