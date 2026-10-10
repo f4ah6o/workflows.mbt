@@ -15,5 +15,6 @@ test("only observed oracle plugin versions opt into invocation tracing", () => {
   assert.equal(tracingScopeFor(candidate(null, "1.62.4")), "invocation");
   assert.equal(tracingScopeFor(candidate(null, "1.62.5")), "invocation");
   assert.equal(tracingScopeFor(candidate(null, "1.63.0")), "callback");
+  assert.equal(tracingScopeFor(candidate(null, "1.63.1")), "invocation");
   assert.equal(tracingScopeFor(null), "callback");
 });

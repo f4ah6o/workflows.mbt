@@ -17,7 +17,7 @@ const candidatePath = process.env.WORKFLOWS_MBT_TRACING_CANDIDATE;
 const candidate = candidatePath ? JSON.parse(readFileSync(candidatePath, "utf8")) : null;
 const packageRoot = candidate?.installDir ?? root;
 const pluginVersion = JSON.parse(readFileSync(join(packageRoot, "node_modules/@cloudflare/vite-plugin/package.json"), "utf8")).version;
-const verifiedScopes = { "1.62.0": "callback", "1.62.4": "invocation", "1.62.5": "invocation" };
+const verifiedScopes = { "1.62.0": "callback", "1.62.4": "invocation", "1.62.5": "invocation", "1.63.1": "invocation" };
 
 async function freePort() {
   const server = createServer();

@@ -1,7 +1,7 @@
 // Versioned local behavior for the actually resolved upstream candidate.
 // Unknown candidates keep the pinned default so new drift stays observable.
 export function tracingScopeFor(candidate) {
-  return ["1.62.4", "1.62.5"].includes(candidate?.versions?.vitePlugin)
+  return ["1.62.4", "1.62.5", "1.63.1"].includes(candidate?.versions?.vitePlugin)
     ? "invocation" : "callback";
 }
 
