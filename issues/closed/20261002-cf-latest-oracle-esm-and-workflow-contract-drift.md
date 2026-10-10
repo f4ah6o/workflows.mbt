@@ -1,6 +1,6 @@
 # Latest cf oracle: createBatch contract and ctx.tracing drift
 
-Status: open
+Status: closed (resolved by PR #20, merged 2026-10-10)
 Priority: P2
 Created: 2026-10-02
 Observed baseline: `main` @ `c1db2db32c316f3c2c55e3464f9cbf10a07ad1a6`
