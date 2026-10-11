@@ -1,17 +1,21 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { appendFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { buildResultFingerprint, computeRelevantInputs } from "../compat/coverage-model.mjs";
 import { runPinned } from "../compat/run-pinned.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const catalog = JSON.parse(readFileSync(join(root, "compat/probes/catalog.json"), "utf8"));
+const candidatePolicyPath = join(root, "compat/candidate-policy.mjs");
+const { differentialProbes } = existsSync(candidatePolicyPath)
+  ? await import(pathToFileURL(candidatePolicyPath))
+  : { differentialProbes: (catalog) => catalog.probes.filter((probe) => probe.differential !== false).map((probe) => probe.id) };
 
-function fixture(t, { isolated = false } = {}) {
+function fixture(t, { isolated = false, hardlinkNodeModules = false } = {}) {
   const scratch = mkdtempSync(join(tmpdir(), "wfmbt-report-"));
   t.after(() => rmSync(scratch, { recursive: true, force: true }));
   let repository = root;
@@ -22,8 +26,12 @@ function fixture(t, { isolated = false } = {}) {
       "package-lock.json", ".moonbit-toolchain.json", "COMPATIBILITY.md"]) {
       cpSync(join(root, path), join(repository, path), { recursive: true });
     }
-    symlinkSync(join(root, "node_modules"), join(repository, "node_modules"),
-      process.platform === "win32" ? "junction" : "dir");
+    if (hardlinkNodeModules && process.platform !== "win32") {
+      execFileSync("cp", ["-al", join(root, "node_modules"), join(repository, "node_modules")]);
+    } else {
+      symlinkSync(join(root, "node_modules"), join(repository, "node_modules"),
+        process.platform === "win32" ? "junction" : "dir");
+    }
   }
   const results = join(scratch, "results");
   const inventory = join(scratch, "inventory");
@@ -37,7 +45,7 @@ function fixture(t, { isolated = false } = {}) {
   const differential = {
     oracle: "pinned", runId: verdict.runId, candidateId: candidate.id,
     checkedAt: new Date().toISOString(), pass: true,
-    probes: catalog.probes.filter((probe) => probe.differential !== false).map((probe) => probe.id).sort(),
+    probes: differentialProbes(catalog, candidate).sort(),
     differences: {}, probeErrors: {}, sideErrors: {},
     fingerprint: buildResultFingerprint({
       runId: verdict.runId, oracle: "pinned", candidate,
@@ -61,6 +69,15 @@ function fixture(t, { isolated = false } = {}) {
     };
   }
   return { write, report, inventory, results, verdict, differential, repository };
+}
+
+function restrictCatalogToCandidate(repository, candidate) {
+  const path = join(repository, "compat/probes/catalog.json");
+  const isolatedCatalog = JSON.parse(readFileSync(path, "utf8"));
+  const applicable = new Set(differentialProbes(isolatedCatalog, candidate));
+  isolatedCatalog.probes = isolatedCatalog.probes.filter((probe) =>
+    probe.differential === false || applicable.has(probe.id));
+  writeFileSync(path, JSON.stringify(isolatedCatalog));
 }
 
 test("pinned report downgrades a compatible verdict after relevant inputs change", (t) => {
@@ -135,7 +152,7 @@ test("legacy fingerprints without verification inputs are stale, not backfilled"
 });
 
 test("a successful pinned run followed by candidate failure cannot reuse compatible evidence", (t) => {
-  const f = fixture(t, { isolated: true });
+  const f = fixture(t, { isolated: true, hardlinkNodeModules: true });
   const read = (name) => JSON.parse(readFileSync(join(f.results, name), "utf8"));
   const run = (runId) => runPinned({
     cwd: f.repository,
@@ -148,6 +165,7 @@ test("a successful pinned run followed by candidate failure cannot reuse compati
       if (["compat/run-typecheck.mjs", "compat/oracle/check.mjs", "compat/run-differential.mjs"].includes(script)) {
         const candidate = read("candidate-pinned.json");
         if (candidate.status !== "ok") return { status: 1 };
+        restrictCatalogToCandidate(f.repository, candidate);
         const common = {
           runId,
           candidateId: candidate.id,
@@ -165,6 +183,7 @@ test("a successful pinned run followed by candidate failure cannot reuse compati
         if (script === "compat/run-differential.mjs") f.write("differential-pinned.json", {
           ...f.differential,
           ...common,
+          probes: differentialProbes(catalog, candidate).sort(),
           fingerprint: buildResultFingerprint({ runId, oracle: "pinned", candidate,
             relevantInputs: computeRelevantInputs(f.repository, candidate, { inventoryDir: f.inventory }) }),
         });
