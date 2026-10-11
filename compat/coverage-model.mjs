@@ -154,6 +154,16 @@ export function computeRelevantInputs(rootDir, candidate, { inventoryDir = "comp
   const probeSourcePaths = listFilesRecursive(join(rootDir, "compat/probes/src"));
   const comparisonPaths = ["compat/normalize.mjs", "compat/probe-client.mjs"].map((p) => join(rootDir, p));
   const inventoryPaths = listFilesRecursive(resolve(rootDir, inventoryDir)).filter((path) => path.endsWith(".json"));
+  // The pinned verdict also depends on candidate resolution, contract
+  // baselines and typechecking, not just differential probe inputs.
+  const verificationPaths = [
+    ...listFilesRecursive(join(rootDir, "compat/oracle")),
+    ...listFilesRecursive(join(rootDir, "compat/typecheck")),
+    ...["compat/candidate.mjs", "compat/run-typecheck.mjs", "compat/run-pinned.mjs",
+      "compat/run-differential.mjs", "compat/verdict.mjs", "compat/coverage-model.mjs",
+      "package.json", "package-lock.json", ".moonbit-toolchain.json"]
+      .map((path) => join(rootDir, path)).filter((path) => existsSync(path)),
+  ];
   const configPaths = [
     "compat/probes/cloudflare.config.ts",
     "compat/probes/vite.config.ts",
@@ -170,6 +180,7 @@ export function computeRelevantInputs(rootDir, candidate, { inventoryDir = "comp
     inventoryHash: hashFiles(rootDir, inventoryPaths),
     capabilityHash: sha256File(join(rootDir, "compat/capabilities.json")),
     configHash: hashFiles(rootDir, configPaths),
+    verificationSourceHash: hashFiles(rootDir, verificationPaths),
     upstreamCandidate: candidateIdentity(candidate),
     compatibilityDate: conditions.probesCompatibilityDate ?? conditions.compatibilityDate ?? null,
     compatibilityFlags: conditions.compatibilityFlags ?? [],
@@ -197,6 +208,7 @@ export function buildResultFingerprint({ runId, oracle, candidate, relevantInput
       inventoryHash: relevantInputs.inventoryHash,
       capabilityHash: relevantInputs.capabilityHash,
       configHash: relevantInputs.configHash,
+      verificationSourceHash: relevantInputs.verificationSourceHash,
     },
   };
 }
