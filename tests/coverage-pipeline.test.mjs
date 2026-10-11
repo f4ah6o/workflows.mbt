@@ -257,7 +257,7 @@ test("validator failure produces INVALID coverage and a non-zero exit", () => {
   assert.equal(coverage.status, "INVALID");
 });
 
-test("report.mjs aborts when the validator fails — no normal report", () => {
+test("report.mjs replaces prior reports with INVALID diagnostics when the validator fails", () => {
   const dirPath = dir();
   const env = coverageEnv(dirPath);
   const badMatrix = join(dirPath, "bad-capabilities.json");
@@ -265,9 +265,17 @@ test("report.mjs aborts when the validator fails — no normal report", () => {
   bad.capabilities[0].requirements = ["req.workflows-core.nonexistent.requirement"];
   writeFileSync(badMatrix, JSON.stringify(bad));
 
+  const reportPath = join(dirPath, "results", "report.md");
+  mkdirSync(join(dirPath, "results"), { recursive: true });
+  writeFileSync(reportPath, "old compatible report");
+
   const result = run("compat/report.mjs", [], { ...env, WORKFLOWS_MBT_CAPABILITIES: badMatrix });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /INVALID|unvalidated/);
+  const report = readFileSync(reportPath, "utf8");
+  assert.match(report, /Coverage: \*\*INVALID\*\*/);
+  assert.match(report, /pinned oracle: unverified/);
+  assert.doesNotMatch(report, /old compatible report/);
 });
 
 // ── regression gate (issue §13) ────────────────────────────────────────────

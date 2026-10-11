@@ -65,14 +65,16 @@ function fixture(t, { isolated = false, hardlinkNodeModules = false } = {}) {
   const record = createPinnedEvidenceRecorder({ rootDir: repository, resultsDir: results,
     runId: verdict.runId, inventoryDir: inventory });
   for (const name of PINNED_REQUIRED_PHASES) record({ name, status: 0, error: null });
-  function report() {
+  function report(expectedStatus = 0) {
     const result = spawnSync(process.execPath, [join(repository, "compat/report.mjs")], {
       env: { ...process.env, WORKFLOWS_MBT_RESULTS_DIR: results, WORKFLOWS_MBT_INVENTORY_DIR: inventory },
       encoding: "utf8", timeout: 120000,
     });
-    assert.equal(result.status, 0, result.stderr + result.stdout);
+    assert.equal(result.status, expectedStatus, result.stderr + result.stdout);
     const markdown = readFileSync(join(results, "report.md"), "utf8");
     return {
+      markdown,
+      stderr: result.stderr,
       outcome: markdown.split("\n").find((line) => line.startsWith("- pinned oracle:")),
       coverage: JSON.parse(readFileSync(join(results, "coverage.json"), "utf8")),
     };
@@ -290,11 +292,14 @@ for (const failedPhase of ["candidate-typecheck", "typecheck", "capabilities", "
   });
 }
 
-for (const driftPhase of ["contract", "differential"]) {
-  test("pinned report preserves fresh, complete " + driftPhase + " drift evidence", (t) => {
+for (const [driftPhase, probe] of [["contract", null], ["differential", "binding-create-batch"], ["differential", "basic"]]) {
+  test("pinned report preserves fresh, complete " + driftPhase + " drift evidence" + (probe ? " for " + probe : ""), (t) => {
     const f = fixture(t);
-    rmSync(f.results, { recursive: true });
-    mkdirSync(f.results);
+    assert.match(f.report().outcome, /verdict \*\*compatible\*\*/);
+    for (const name of ["candidate", "typecheck", "drift", "differential", "verdict", "run"]) {
+      rmSync(join(f.results, name + "-pinned.json"));
+    }
+    const expectedReportStatus = probe === "basic" ? 1 : 0;
     const runId = "observed-" + driftPhase + "-drift";
     const candidate = { ...f.verdict.candidate, runId };
     const common = { runId, candidateId: candidate.id, pass: true, checkedAt: new Date().toISOString() };
@@ -315,12 +320,12 @@ for (const driftPhase of ["contract", "differential"]) {
         if (script === "compat/run-differential.mjs") {
           const pass = driftPhase !== "differential";
           f.write("differential-pinned.json", { ...f.differential, ...common, pass,
-            differences: pass ? {} : { "binding-create-batch": { expected: "upstream", actual: "local" } },
+            differences: pass ? {} : { [probe]: { expected: "upstream", actual: "local" } },
             fingerprint: buildResultFingerprint({ runId, oracle: "pinned", candidate,
               relevantInputs: computeRelevantInputs(root, candidate, { inventoryDir: f.inventory }) }) });
           return { status: pass ? 0 : 1 };
         }
-        if (script === "compat/verdict.mjs") {
+        if (script === "compat/verdict.mjs" || (script === "compat/check-capabilities.mjs" && probe === "basic")) {
           return spawnSync(command, args, { ...options, stdio: "pipe", encoding: "utf8", timeout: 120000 });
         }
         if (script === "compat/check-capabilities.mjs" && driftPhase === "differential") return { status: 1 };
@@ -333,19 +338,35 @@ for (const driftPhase of ["contract", "differential"]) {
     const classification = driftPhase === "contract" ? "contract-drift" : "semantic-drift";
     assert.equal(verdict.verdict, classification);
     assert.equal(verdict.pass, false);
-    const report = f.report();
-    assert.equal(report.coverage.oracles.pinned.fresh, true);
+    const report = f.report(expectedReportStatus);
+    if (probe === "basic") {
+      assert.equal(result.phases.find((phase) => phase.name === "capabilities").status, 1);
+      assert.equal(report.coverage.status, "INVALID");
+      assert.match(report.stderr, /claims pinned_differential/);
+      assert.match(report.markdown, /Coverage: \*\*INVALID\*\*/);
+      assert.doesNotMatch(report.markdown, /verdict \*\*compatible\*\*/);
+    } else {
+      assert.equal(report.coverage.oracles.pinned.fresh, true);
+    }
     assert.ok(report.outcome.includes("verdict **" + classification + "**"), report.outcome);
 
     f.write("verdict-pinned.json", { ...verdict, verdict: "compatible", pass: true });
-    assert.match(f.report().outcome, /unverified/);
+    assert.match(f.report(expectedReportStatus).outcome, /unverified/);
     f.write("verdict-pinned.json", verdict);
     const path = join(f.results, driftPhase === "contract" ? "drift-pinned.json" : "differential-pinned.json");
     const original = readFileSync(path);
     appendFileSync(path, "\n");
-    assert.match(f.report().outcome, /unverified/);
+    assert.match(f.report(expectedReportStatus).outcome, /unverified/);
     writeFileSync(path, original);
+    const typecheck = readFileSync(join(f.results, "typecheck-pinned.json"));
     rmSync(join(f.results, "typecheck-pinned.json"));
-    assert.match(f.report().outcome, /unverified/);
+    assert.match(f.report(expectedReportStatus).outcome, /unverified/);
+    if (probe === "basic") {
+      writeFileSync(join(f.results, "typecheck-pinned.json"), typecheck);
+      appendFileSync(join(f.inventory, "classification.json"), "\n");
+      assert.match(f.report(1).outcome, /STALE/);
+      writeFileSync(join(f.results, "verdict-pinned.json"), "not JSON");
+      assert.match(f.report(1).outcome, /unverified/);
+    }
   });
 }
