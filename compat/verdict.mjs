@@ -231,7 +231,9 @@ const record = {
   oracle,
   verdict,
   pass: verdict === "compatible",
-  runId: differential.result?.runId ?? contract.result?.runId ?? null,
+  runId: candidate.result?.status === "acquisition-failure"
+    ? candidate.result.runId ?? process.env.WORKFLOWS_MBT_RUN_ID ?? null
+    : differential.result?.runId ?? contract.result?.runId ?? null,
   checkedAt: new Date().toISOString(),
   commit: gitCommit(),
   candidate: candidate.status === "ok" && candidate.result ? {

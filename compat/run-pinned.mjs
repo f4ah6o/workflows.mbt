@@ -3,12 +3,13 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { writePinnedFailure } from "./candidate.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 export const PINNED_PHASES = Object.freeze([
   { name: "candidate", script: "compat/candidate.mjs", args: ["--mode", "pinned"] },
-  { name: "typecheck", npmScript: "compat:typecheck" },
+  { name: "typecheck", script: "node_modules/typescript/bin/tsc", args: ["-p", "compat/typecheck/tsconfig.json"] },
   { name: "candidate-typecheck", script: "compat/run-typecheck.mjs", args: ["--oracle", "pinned"] },
   { name: "contract", script: "compat/oracle/check.mjs", args: ["--mode", "pinned"] },
   { name: "differential", script: "compat/run-differential.mjs", args: ["--oracle", "pinned"] },
@@ -22,21 +23,29 @@ export function runPinned({
   runId = "pinned-" + new Date().toISOString().replaceAll(":", "-") + "-" + randomUUID().slice(0, 8),
   spawn = spawnSync,
   readVerdict = (path) => JSON.parse(readFileSync(path, "utf8")),
+  recordCandidateFailure = writePinnedFailure,
   output = console,
 } = {}) {
   const runEnv = { ...env, WORKFLOWS_MBT_RUN_ID: runId };
+  const resultsDir = env.WORKFLOWS_MBT_RESULTS_DIR
+    ? resolve(cwd, env.WORKFLOWS_MBT_RESULTS_DIR)
+    : join(cwd, "compat-results");
+  // Invalidate the previous candidate even if the resolver cannot start.
+  recordCandidateFailure(resultsDir, runId, new Error("pinned candidate resolution has not completed"));
   const phases = [];
   for (const phase of PINNED_PHASES) {
-    const command = phase.npmScript
-      ? (process.platform === "win32" ? "npm.cmd" : "npm")
-      : process.execPath;
-    const args = phase.npmScript ? ["run", phase.npmScript] : [phase.script, ...phase.args];
+    const command = process.execPath;
+    const args = [phase.script, ...phase.args];
     const started = Date.now();
     let result;
     try {
       result = spawn(command, args, { cwd, env: runEnv, stdio: "inherit" });
     } catch (error) {
       result = { status: 1, error };
+    }
+    if (phase.name === "candidate" && (result.error || result.status !== 0)) {
+      recordCandidateFailure(resultsDir, runId,
+        result.error ?? new Error("pinned candidate phase failed (status " + result.status + ")"));
     }
     phases.push({
       name: phase.name,
@@ -46,9 +55,6 @@ export function runPinned({
     });
   }
 
-  const resultsDir = env.WORKFLOWS_MBT_RESULTS_DIR
-    ? resolve(cwd, env.WORKFLOWS_MBT_RESULTS_DIR)
-    : join(cwd, "compat-results");
   let verdictStatus = "missing-or-malformed";
   try {
     const verdict = readVerdict(join(resultsDir, "verdict-pinned.json"));

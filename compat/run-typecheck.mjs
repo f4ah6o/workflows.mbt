@@ -87,11 +87,9 @@ writeFileSync(configPath, JSON.stringify({
   files: generated.files.map((f) => join(root, "compat/typecheck", f)),
 }, null, 2) + "\n");
 
-const tsc = process.platform === "win32"
-  ? join(root, "node_modules/.bin/tsc.cmd")
-  : join(root, "node_modules/.bin/tsc");
+const tsc = join(root, "node_modules/typescript/bin/tsc");
 const started = Date.now();
-const proc = spawnSync(tsc, ["-p", configPath], {
+const proc = spawnSync(process.execPath, [tsc, "-p", configPath], {
   cwd: root,
   encoding: "utf8",
   timeout: 120000,

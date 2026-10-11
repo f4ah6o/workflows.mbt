@@ -159,7 +159,7 @@ export function computeRelevantInputs(rootDir, candidate, { inventoryDir = "comp
   const verificationPaths = [
     ...listFilesRecursive(join(rootDir, "compat/oracle")),
     ...listFilesRecursive(join(rootDir, "compat/typecheck")),
-    ...["compat/candidate.mjs", "compat/run-typecheck.mjs", "compat/run-pinned.mjs",
+    ...["compat/candidate.mjs", "compat/cli-command.mjs", "compat/run-typecheck.mjs", "compat/run-pinned.mjs",
       "compat/run-differential.mjs", "compat/verdict.mjs", "compat/coverage-model.mjs",
       "package.json", "package-lock.json", ".moonbit-toolchain.json"]
       .map((path) => join(rootDir, path)).filter((path) => existsSync(path)),

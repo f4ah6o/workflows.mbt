@@ -7,6 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { candidateUsable, loadCandidate, resultsDirFor } from "./candidate.mjs";
+import { packageBinCommand } from "./cli-command.mjs";
 import { buildResultFingerprint, computeRelevantInputs } from "./coverage-model.mjs";
 import { collectTraces, diffRun } from "./probe-client.mjs";
 
@@ -66,10 +67,7 @@ const fingerprint = () => buildResultFingerprint({
 });
 
 function cfCommand() {
-  const bin = process.platform === "win32" && candidate.paths.cfBin.endsWith("/cf")
-    ? candidate.paths.cfBin + ".cmd"
-    : candidate.paths.cfBin;
-  return { command: bin, args: [] };
+  return packageBinCommand(candidate.paths.cfPkg, "cf");
 }
 
 if (!candidateUsable(candidate)) {

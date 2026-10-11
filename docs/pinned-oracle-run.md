@@ -8,4 +8,6 @@ The pinned tuple is defined by `compat/oracle/manifest.json`. Latest and hosted 
 
 For differences or acquisition failures, inspect `compat-results/verdict-pinned.json` and the phase-specific result files; do not refresh baselines merely to silence drift.
 
+The run records an acquisition-failure candidate marker for its run ID before launching phases, replacing stale candidate success if resolution cannot start or fails. TypeScript and Cloudflare JavaScript CLIs are launched through Node; npm-based candidate resolution uses its JavaScript CLI on Windows.
+
 `compat:report` revalidates coverage freshness before displaying a pinned verdict. The shared evidence fingerprint includes the oracle manifest and contract baselines, the complete typecheck fixture/config directory, verification scripts, dependency manifests/lockfile and MoonBit toolchain pin, in addition to runtime/probe inputs. Changing any of these invalidates saved evidence; older fingerprints without these verification hashes are also `STALE` and require a new run. The verdict must additionally match the validated evidence's run ID and candidate ID. Unrelated documentation changes do not invalidate evidence.

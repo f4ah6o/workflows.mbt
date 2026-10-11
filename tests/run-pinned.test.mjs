@@ -1,25 +1,33 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { resolvePinned } from "../compat/candidate.mjs";
 import { PINNED_PHASES, runPinned } from "../compat/run-pinned.mjs";
 
 const runId = "pinned-fixture-1";
 const goodVerdict = { oracle: "pinned", verdict: "compatible", pass: true, runId };
 const quiet = { log() {} };
+const fixtureRoot = join(tmpdir(), "workflows-mbt-pinned-fixture");
+const fixtureCwd = join(fixtureRoot, "repository");
+const fixtureResults = join(fixtureRoot, "evidence");
 
 function fixture({ failedPhase, verdict = goodVerdict, readFailure = false } = {}) {
   const calls = [];
   const result = runPinned({
-    cwd: "/fixture/repository",
-    env: { WORKFLOWS_MBT_RESULTS_DIR: "/fixture/evidence", EXISTING: "yes" },
+    cwd: fixtureCwd,
+    env: { WORKFLOWS_MBT_RESULTS_DIR: fixtureResults, EXISTING: "yes" },
     runId,
     output: quiet,
+    recordCandidateFailure() {},
     spawn(command, args, options) {
       calls.push({ command, args, options });
       const index = calls.length - 1;
       return { status: PINNED_PHASES[index].name === failedPhase ? 1 : 0 };
     },
     readVerdict(path) {
-      assert.equal(path, "/fixture/evidence/verdict-pinned.json");
+      assert.equal(path, join(fixtureResults, "verdict-pinned.json"));
       if (readFailure) throw new SyntaxError("invalid JSON");
       return verdict;
     },
@@ -32,9 +40,10 @@ test("pinned pipeline executes every phase with one immutable candidate-bound ru
   assert.equal(result.pass, true);
   assert.equal(result.verdictStatus, "compatible");
   assert.deepEqual(result.phases.map((phase) => phase.name), PINNED_PHASES.map((phase) => phase.name));
+  assert.deepEqual(calls.map((call) => call.command), PINNED_PHASES.map(() => process.execPath));
   assert.deepEqual(calls.map((call) => call.args), [
     ["compat/candidate.mjs", "--mode", "pinned"],
-    ["run", "compat:typecheck"],
+    ["node_modules/typescript/bin/tsc", "-p", "compat/typecheck/tsconfig.json"],
     ["compat/run-typecheck.mjs", "--oracle", "pinned"],
     ["compat/oracle/check.mjs", "--mode", "pinned"],
     ["compat/run-differential.mjs", "--oracle", "pinned"],
@@ -44,7 +53,7 @@ test("pinned pipeline executes every phase with one immutable candidate-bound ru
   for (const call of calls) {
     assert.equal(call.options.env.WORKFLOWS_MBT_RUN_ID, runId);
     assert.equal(call.options.env.EXISTING, "yes");
-    assert.equal(call.options.cwd, "/fixture/repository");
+    assert.equal(call.options.cwd, fixtureCwd);
   }
 });
 
@@ -76,7 +85,8 @@ test("missing, stale, and inconsistent verdicts fail closed even after zero phas
 test("spawn exceptions fail the phase and preserve later phase execution", () => {
   const calls = [];
   const result = runPinned({
-    cwd: "/fixture/repository", runId, output: quiet,
+    cwd: fixtureCwd, runId, output: quiet,
+    recordCandidateFailure() {},
     spawn(_command, _args) {
       const phase = PINNED_PHASES[calls.length];
       calls.push(phase.name);
@@ -88,4 +98,46 @@ test("spawn exceptions fail the phase and preserve later phase execution", () =>
   assert.equal(result.pass, false);
   assert.deepEqual(calls, PINNED_PHASES.map((phase) => phase.name));
   assert.equal(result.phases.find((phase) => phase.name === "contract").error, "spawn denied");
+});
+
+test("candidate resolution writes a fresh failure marker before launch and replaces it on spawn failure", (t) => {
+  const scratch = mkdtempSync(join(tmpdir(), "workflows-mbt-candidate-failure-"));
+  t.after(() => rmSync(scratch, { recursive: true, force: true }));
+  const resultsDir = join(scratch, "results");
+  const candidatePath = join(resultsDir, "candidate-pinned.json");
+  const runId = "candidate-spawn-failure";
+  const result = runPinned({
+    cwd: scratch,
+    env: { WORKFLOWS_MBT_RESULTS_DIR: resultsDir },
+    runId,
+    output: quiet,
+    spawn(_command, args) {
+      if (args[0] === "compat/candidate.mjs") {
+        assert.equal(existsSync(candidatePath), true);
+        const marker = JSON.parse(readFileSync(candidatePath, "utf8"));
+        assert.equal(marker.status, "acquisition-failure");
+        assert.equal(marker.runId, runId);
+        assert.match(marker.error, /resolution has not completed/);
+        throw new Error("candidate spawn denied");
+      }
+      return { status: 0 };
+    },
+    readVerdict() { return goodVerdict; },
+  });
+
+  assert.equal(result.pass, false);
+  const marker = JSON.parse(readFileSync(candidatePath, "utf8"));
+  assert.equal(marker.status, "acquisition-failure");
+  assert.equal(marker.runId, runId);
+  assert.equal(marker.error, "candidate spawn denied");
+});
+
+test("standalone pinned resolution returns and persists an acquisition failure", async (t) => {
+  const scratch = mkdtempSync(join(tmpdir(), "workflows-mbt-pinned-resolution-"));
+  t.after(() => rmSync(scratch, { recursive: true, force: true }));
+  const resultsDir = join(scratch, "results");
+  const candidate = await resolvePinned(join(scratch, "missing-repository"), resultsDir);
+
+  assert.equal(candidate.status, "acquisition-failure");
+  assert.equal(JSON.parse(readFileSync(join(resultsDir, "candidate-pinned.json"), "utf8")).id, candidate.id);
 });

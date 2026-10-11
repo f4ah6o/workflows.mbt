@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { buildResultFingerprint, computeRelevantInputs } from "../compat/coverage-model.mjs";
+import { runPinned } from "../compat/run-pinned.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const catalog = JSON.parse(readFileSync(join(root, "compat/probes/catalog.json"), "utf8"));
@@ -21,7 +22,8 @@ function fixture(t, { isolated = false } = {}) {
       "package-lock.json", ".moonbit-toolchain.json", "COMPATIBILITY.md"]) {
       cpSync(join(root, path), join(repository, path), { recursive: true });
     }
-    symlinkSync(join(root, "node_modules"), join(repository, "node_modules"), "dir");
+    symlinkSync(join(root, "node_modules"), join(repository, "node_modules"),
+      process.platform === "win32" ? "junction" : "dir");
   }
   const results = join(scratch, "results");
   const inventory = join(scratch, "inventory");
@@ -111,6 +113,7 @@ test("pinned report invalidates every contract and typecheck input independently
     "compat/oracle/wrangler-schema.json", "compat/typecheck/main.ts",
     "compat/typecheck/tsconfig.json", "compat/typecheck/worker-configuration.d.ts",
     "package-lock.json", "compat/oracle/check.mjs", "compat/run-typecheck.mjs",
+    "compat/cli-command.mjs",
   ]) {
     const path = join(f.repository, relative);
     const original = readFileSync(path);
@@ -129,4 +132,62 @@ test("legacy fingerprints without verification inputs are stale, not backfilled"
   delete f.differential.fingerprint.relevantInputs.verificationSourceHash;
   f.write("differential-pinned.json", f.differential);
   assert.match(f.report().outcome, /STALE/);
+});
+
+test("a successful pinned run followed by candidate failure cannot reuse compatible evidence", (t) => {
+  const f = fixture(t, { isolated: true });
+  const read = (name) => JSON.parse(readFileSync(join(f.results, name), "utf8"));
+  const run = (runId) => runPinned({
+    cwd: f.repository,
+    env: { ...process.env, WORKFLOWS_MBT_RESULTS_DIR: f.results,
+      WORKFLOWS_MBT_INVENTORY_DIR: f.inventory },
+    runId,
+    output: { log() {} },
+    spawn(command, args, options) {
+      const script = args[0];
+      if (["compat/run-typecheck.mjs", "compat/oracle/check.mjs", "compat/run-differential.mjs"].includes(script)) {
+        const candidate = read("candidate-pinned.json");
+        if (candidate.status !== "ok") return { status: 1 };
+        const common = {
+          runId,
+          candidateId: candidate.id,
+          pass: true,
+          checkedAt: new Date().toISOString(),
+        };
+        // Hermetic successful oracle evidence; acquisition and aggregation run for real.
+        if (script === "compat/run-typecheck.mjs") f.write("typecheck-pinned.json", common);
+        if (script === "compat/oracle/check.mjs") f.write("drift-pinned.json", {
+          ...common,
+          mode: "pinned",
+          versions: candidate.versions ?? {},
+          drift: { added: [], removed: [], changed: [] },
+        });
+        if (script === "compat/run-differential.mjs") f.write("differential-pinned.json", {
+          ...f.differential,
+          ...common,
+          fingerprint: buildResultFingerprint({ runId, oracle: "pinned", candidate,
+            relevantInputs: computeRelevantInputs(f.repository, candidate, { inventoryDir: f.inventory }) }),
+        });
+        return { status: 0 };
+      }
+      if (!["compat/candidate.mjs", "compat/verdict.mjs"].includes(script)) return { status: 0 };
+      return spawnSync(command, args, { ...options, stdio: "pipe", encoding: "utf8", timeout: 120000 });
+    },
+  });
+  assert.equal(run("first-success").pass, true);
+  assert.match(f.report().outcome, /verdict \*\*compatible\*\*/);
+
+  const path = join(f.repository, "compat/oracle/manifest.json");
+  const manifest = JSON.parse(readFileSync(path, "utf8"));
+  writeFileSync(path, JSON.stringify({ ...manifest, cf: "0.0.0-not-installed" }));
+  const failed = run("second-failure");
+  assert.equal(failed.pass, false);
+  for (const phase of ["candidate-typecheck", "contract", "differential"]) {
+    assert.equal(failed.phases.find((item) => item.name === phase).status, 1, phase);
+  }
+  assert.equal(read("candidate-pinned.json").status, "acquisition-failure");
+  assert.equal(read("candidate-pinned.json").runId, "second-failure");
+  assert.equal(read("verdict-pinned.json").verdict, "upstream-acquisition-failure");
+  assert.equal(read("verdict-pinned.json").runId, "second-failure");
+  assert.doesNotMatch(f.report().outcome, /compatible/);
 });
