@@ -21,6 +21,7 @@ function fixture({ failedPhase, verdict = goodVerdict, readFailure = false } = {
     runId,
     output: quiet,
     recordCandidateFailure() {},
+    evidenceRecorder() { return () => {}; },
     spawn(command, args, options) {
       calls.push({ command, args, options });
       const index = calls.length - 1;
@@ -47,8 +48,8 @@ test("pinned pipeline executes every phase with one immutable candidate-bound ru
     ["compat/run-typecheck.mjs", "--oracle", "pinned"],
     ["compat/oracle/check.mjs", "--mode", "pinned"],
     ["compat/run-differential.mjs", "--oracle", "pinned"],
-    ["compat/verdict.mjs", "--oracle", "pinned"],
     ["compat/check-capabilities.mjs", "--require-pinned"],
+    ["compat/verdict.mjs", "--oracle", "pinned"],
   ]);
   for (const call of calls) {
     assert.equal(call.options.env.WORKFLOWS_MBT_RUN_ID, runId);
@@ -87,6 +88,7 @@ test("spawn exceptions fail the phase and preserve later phase execution", () =>
   const result = runPinned({
     cwd: fixtureCwd, runId, output: quiet,
     recordCandidateFailure() {},
+    evidenceRecorder() { return () => {}; },
     spawn(_command, _args) {
       const phase = PINNED_PHASES[calls.length];
       calls.push(phase.name);

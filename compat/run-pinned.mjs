@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { writePinnedFailure } from "./candidate.mjs";
+import { createPinnedEvidenceRecorder } from "./pinned-evidence.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -13,8 +14,8 @@ export const PINNED_PHASES = Object.freeze([
   { name: "candidate-typecheck", script: "compat/run-typecheck.mjs", args: ["--oracle", "pinned"] },
   { name: "contract", script: "compat/oracle/check.mjs", args: ["--mode", "pinned"] },
   { name: "differential", script: "compat/run-differential.mjs", args: ["--oracle", "pinned"] },
-  { name: "verdict", script: "compat/verdict.mjs", args: ["--oracle", "pinned"] },
   { name: "capabilities", script: "compat/check-capabilities.mjs", args: ["--require-pinned"] },
+  { name: "verdict", script: "compat/verdict.mjs", args: ["--oracle", "pinned"] },
 ]);
 
 export function runPinned({
@@ -24,6 +25,7 @@ export function runPinned({
   spawn = spawnSync,
   readVerdict = (path) => JSON.parse(readFileSync(path, "utf8")),
   recordCandidateFailure = writePinnedFailure,
+  evidenceRecorder = createPinnedEvidenceRecorder,
   output = console,
 } = {}) {
   const runEnv = { ...env, WORKFLOWS_MBT_RUN_ID: runId };
@@ -32,6 +34,8 @@ export function runPinned({
     : join(cwd, "compat-results");
   // Invalidate the previous candidate even if the resolver cannot start.
   recordCandidateFailure(resultsDir, runId, new Error("pinned candidate resolution has not completed"));
+  const recordPhase = evidenceRecorder({ rootDir: cwd, resultsDir, runId,
+    inventoryDir: env.WORKFLOWS_MBT_INVENTORY_DIR });
   const phases = [];
   for (const phase of PINNED_PHASES) {
     const command = process.execPath;
@@ -53,6 +57,7 @@ export function runPinned({
       error: result.error?.message ?? null,
       durationMs: Date.now() - started,
     });
+    recordPhase(phases.at(-1));
   }
 
   let verdictStatus = "missing-or-malformed";

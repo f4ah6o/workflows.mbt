@@ -7,6 +7,7 @@ import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { buildResultFingerprint, computeRelevantInputs } from "../compat/coverage-model.mjs";
 import { runPinned } from "../compat/run-pinned.mjs";
+import { createPinnedEvidenceRecorder, PINNED_REQUIRED_PHASES } from "../compat/pinned-evidence.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const catalog = JSON.parse(readFileSync(join(root, "compat/probes/catalog.json"), "utf8"));
@@ -38,7 +39,7 @@ function fixture(t, { isolated = false, hardlinkNodeModules = false } = {}) {
   mkdirSync(results);
   cpSync(join(repository, "compat/inventory"), inventory, { recursive: true });
   const write = (name, value) => writeFileSync(join(results, name), JSON.stringify(value));
-  const candidate = { id: "report-candidate", mode: "pinned", status: "ok" };
+  const candidate = { id: "report-candidate", mode: "pinned", status: "ok", runId: "report-run" };
   const verdict = {
     oracle: "pinned", verdict: "compatible", pass: true, runId: "report-run", candidate,
   };
@@ -54,8 +55,16 @@ function fixture(t, { isolated = false, hardlinkNodeModules = false } = {}) {
     }),
   };
   write("candidate-pinned.json", candidate);
+  const common = { runId: verdict.runId, candidateId: candidate.id, pass: true,
+    checkedAt: new Date().toISOString() };
+  write("drift-pinned.json", { ...common, mode: "pinned", versions: {},
+    drift: { added: [], removed: [], changed: [] } });
+  write("typecheck-pinned.json", { ...common, oracle: "pinned" });
   write("differential-pinned.json", differential);
   write("verdict-pinned.json", verdict);
+  const record = createPinnedEvidenceRecorder({ rootDir: repository, resultsDir: results,
+    runId: verdict.runId, inventoryDir: inventory });
+  for (const name of PINNED_REQUIRED_PHASES) record({ name, status: 0, error: null });
   function report() {
     const result = spawnSync(process.execPath, [join(repository, "compat/report.mjs")], {
       env: { ...process.env, WORKFLOWS_MBT_RESULTS_DIR: results, WORKFLOWS_MBT_INVENTORY_DIR: inventory },
@@ -119,7 +128,7 @@ test("pinned report requires measured, fingerprinted evidence", (t) => {
 test("pinned report retains the no-verdict fallback", (t) => {
   const f = fixture(t);
   rmSync(join(f.results, "verdict-pinned.json"));
-  assert.match(f.report().outcome, /contract not run \+ semantic probes pass — no pinned verdict file/);
+  assert.match(f.report().outcome, /contract clean \+ semantic probes pass — no pinned verdict file/);
 });
 
 test("pinned report invalidates every contract and typecheck input independently", (t) => {
@@ -165,7 +174,6 @@ test("a successful pinned run followed by candidate failure cannot reuse compati
       if (["compat/run-typecheck.mjs", "compat/oracle/check.mjs", "compat/run-differential.mjs"].includes(script)) {
         const candidate = read("candidate-pinned.json");
         if (candidate.status !== "ok") return { status: 1 };
-        restrictCatalogToCandidate(f.repository, candidate);
         const common = {
           runId,
           candidateId: candidate.id,
@@ -190,7 +198,11 @@ test("a successful pinned run followed by candidate failure cannot reuse compati
         return { status: 0 };
       }
       if (!["compat/candidate.mjs", "compat/verdict.mjs"].includes(script)) return { status: 0 };
-      return spawnSync(command, args, { ...options, stdio: "pipe", encoding: "utf8", timeout: 120000 });
+      const result = spawnSync(command, args, { ...options, stdio: "pipe", encoding: "utf8", timeout: 120000 });
+      if (script === "compat/candidate.mjs" && result.status === 0) {
+        restrictCatalogToCandidate(f.repository, read("candidate-pinned.json"));
+      }
+      return result;
     },
   });
   assert.equal(run("first-success").pass, true);
@@ -210,3 +222,70 @@ test("a successful pinned run followed by candidate failure cannot reuse compati
   assert.equal(read("verdict-pinned.json").runId, "second-failure");
   assert.doesNotMatch(f.report().outcome, /compatible/);
 });
+
+for (const name of ["drift-pinned.json", "typecheck-pinned.json"]) {
+  test("pinned report rejects missing " + name + " after success", (t) => {
+    const f = fixture(t);
+    assert.match(f.report().outcome, /verdict \*\*compatible\*\*/);
+    rmSync(join(f.results, name));
+    const result = f.report();
+    assert.equal(result.coverage.oracles.pinned.fresh, true);
+    assert.match(result.outcome, /unverified/);
+    assert.doesNotMatch(result.outcome, /compatible/);
+  });
+}
+
+test("pinned report rejects mismatched phase identities and failed process receipts", (t) => {
+  const f = fixture(t);
+  for (const name of ["drift-pinned.json", "typecheck-pinned.json"]) {
+    const original = JSON.parse(readFileSync(join(f.results, name), "utf8"));
+    for (const patch of [{ runId: "old-run" }, { runId: null }, { candidateId: "other" }, { pass: false }]) {
+      f.write(name, { ...original, ...patch });
+      assert.match(f.report().outcome, /unverified/);
+    }
+    f.write(name, original);
+  }
+  const receipts = JSON.parse(readFileSync(join(f.results, "run-pinned.json"), "utf8"));
+  receipts.phases.find((p) => p.name === "typecheck").status = 1;
+  f.write("run-pinned.json", receipts);
+  assert.match(f.report().outcome, /unverified/);
+});
+
+for (const failedPhase of ["candidate-typecheck", "typecheck", "capabilities", "missing-typecheck-run-id"]) {
+  test("pinned verdict fails closed when " + failedPhase + " fails without an output", (t) => {
+    const f = fixture(t);
+    const runId = "failed-" + failedPhase;
+    const candidate = { ...f.verdict.candidate, runId };
+    const result = runPinned({
+      cwd: root, runId,
+      env: { ...process.env, WORKFLOWS_MBT_RESULTS_DIR: f.results, WORKFLOWS_MBT_INVENTORY_DIR: f.inventory },
+      output: { log() {} },
+      spawn(command, args, options) {
+        const script = args[0];
+        if (script === "compat/candidate.mjs") f.write("candidate-pinned.json", candidate);
+        const output = { "compat/run-typecheck.mjs": "typecheck-pinned.json",
+          "compat/oracle/check.mjs": "drift-pinned.json", "compat/run-differential.mjs": "differential-pinned.json" }[script];
+        if (output) {
+          if (failedPhase === "candidate-typecheck" && script === "compat/run-typecheck.mjs") {
+            rmSync(join(f.results, output));
+            return { status: 1 };
+          }
+          const previous = JSON.parse(readFileSync(join(f.results, output), "utf8"));
+          f.write(output, { ...previous,
+            runId: failedPhase === "missing-typecheck-run-id" && output === "typecheck-pinned.json" ? null : runId });
+        }
+        if (script === "compat/verdict.mjs") {
+          return spawnSync(command, args, { ...options, stdio: "pipe", encoding: "utf8", timeout: 120000 });
+        }
+        if (failedPhase === "typecheck" && script === "node_modules/typescript/bin/tsc") return { status: 1 };
+        if (failedPhase === "capabilities" && script === "compat/check-capabilities.mjs") return { status: 1 };
+        return { status: 0 };
+      },
+    });
+    assert.equal(result.pass, false);
+    const verdict = JSON.parse(readFileSync(join(f.results, "verdict-pinned.json"), "utf8"));
+    assert.equal(verdict.pass, false);
+    assert.equal(verdict.verdict, failedPhase === "typecheck" ? "local-runtime-failure" : "incomplete-evidence");
+    assert.doesNotMatch(f.report().outcome, /compatible/);
+  });
+}

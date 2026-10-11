@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { resultsDirFor } from "./candidate.mjs";
+import { validatePinnedEvidence } from "./pinned-evidence.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const out = resultsDirFor(root);
@@ -83,6 +84,12 @@ function pinnedOutcome() {
   if (!verdictPinned.verdict
       || (verdictPinned.verdict === "compatible" && verdictPinned.pass !== true)) {
     return "unverified — invalid pinned verdict";
+  }
+  const chain = validatePinnedEvidence({ rootDir: root, resultsDir: out,
+    runId: verdictPinned.runId, candidateId: verdictPinned.candidate.id,
+    inventoryDir: process.env.WORKFLOWS_MBT_INVENTORY_DIR });
+  if (chain.status !== "ok") {
+    return (chain.status === "stale" ? "STALE" : "unverified") + " — " + chain.issues.join("; ");
   }
   return "verdict **" + verdictPinned.verdict + "** (run " + verdictPinned.runId
     + ", candidate " + verdictPinned.candidate.id + ")";

@@ -30,6 +30,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { resultsDirFor } from "./candidate.mjs";
+import { validatePinnedEvidence } from "./pinned-evidence.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const oracleIndex = process.argv.indexOf("--oracle");
@@ -63,7 +64,7 @@ function loadPhase(name, requiredFields) {
     return { file: name, status: "malformed" };
   }
   for (const field of requiredFields) {
-    if (parsed[field] == null) return { file: name, status: "malformed", missingField: field };
+    if (parsed?.[field] == null || (field === "runId" && !parsed[field])) return { file: name, status: "malformed", missingField: field };
   }
   return { file: name, status: "ok", result: parsed };
 }
@@ -77,7 +78,7 @@ const differentialRequired = oracle === "hosted"
   ? ["oracle", "checkedAt", "probes", "pass"]
   : ["oracle", "checkedAt", "candidateId", "probes", "pass"];
 const differential = loadPhase(`differential-${oracle}.json`, differentialRequired);
-const typecheck = loadPhase(`typecheck-${oracle}.json`, ["candidateId", "pass"]);
+const typecheck = loadPhase(`typecheck-${oracle}.json`, ["candidateId", "pass", ...(oracle === "pinned" ? ["runId"] : [])]);
 
 const issues = [];
 const phases = {};
@@ -115,7 +116,7 @@ const differentialOutcome = phaseStatus(differential, "differential", (r) => ({
   differences: Object.keys(r.differences ?? {}).length,
   probeErrors: Object.keys(r.probeErrors ?? {}).length,
 }));
-const typecheckOutcome = typecheck.status === "missing" ? "not-run"
+const typecheckOutcome = oracle !== "pinned" && typecheck.status === "missing" ? "not-run"
   : phaseStatus(typecheck, "typecheck");
 
 // Hosted: no contract phase (the hosted oracle does not typecheck the
@@ -201,6 +202,16 @@ if (oracle === "hosted" && differentialOutcome === "invalid") {
     } else {
       verdict = "compatible";
     }
+  }
+}
+
+if (oracle === "pinned" && verdict === "compatible") {
+  const evidence = validatePinnedEvidence({ rootDir: root, resultsDir,
+    runId: process.env.WORKFLOWS_MBT_RUN_ID ?? differential.result?.runId,
+    candidateId: candidate.result?.id, inventoryDir: process.env.WORKFLOWS_MBT_INVENTORY_DIR });
+  if (evidence.status !== "ok") {
+    verdict = evidence.issues.includes("typecheck process failed") ? "local-runtime-failure" : "incomplete-evidence";
+    issues.push(...evidence.issues);
   }
 }
 
