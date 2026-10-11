@@ -242,6 +242,13 @@
       "capabilities": [
         "worker.http"
       ]
+    },
+    {
+      "id": "binding-create-batch",
+      "kind": "orchestrated",
+      "minimumWorkersTypes": "5.20261002.1",
+      "capabilities": [],
+      "note": "Candidate-scoped object-overload evidence; excluded from pinned capability denominator until reviewed pin promotion."
     }
   ]
 }

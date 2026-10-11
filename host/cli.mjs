@@ -52,7 +52,7 @@ function usage(stream = console.error) {
   workflows pause|resume|terminate <workflow> <instance-id>
   workflows restart <workflow> <instance-id> [--from <name>] [--count 2] [--type do]
   workflows --version | --help | -h
-Common options: --config <cloudflare.config.ts|wrangler.jsonc> --mode <name> --storage <sqlite-path|postgres-url>\nLegacy Wrangler config keeps --env <name>.`);
+Common options: --config <cloudflare.config.ts|wrangler.jsonc> --mode <name> --storage <sqlite-path|postgres-url>\nTracing compatibility: --tracing-scope <callback|invocation> (default callback)\nLegacy Wrangler config keeps --env <name>.`);
 }
 
 const COMMANDS = new Set([
@@ -80,6 +80,7 @@ if (flags.help === true || command === "help") {
     buildDir: flags["build-dir"] === true ? undefined : flags["build-dir"],
     envName: flags.env === true ? undefined : flags.env,
     modeName: flags.mode === true ? undefined : flags.mode,
+    tracingScope: flags["tracing-scope"],
   });
   if (flags.json === true) console.log(JSON.stringify(report, null, 2));
   else console.log(formatDoctorReport(report));
@@ -94,6 +95,7 @@ if (flags.help === true || command === "help") {
     buildDir: flags["build-dir"] === true ? undefined : flags["build-dir"],
     envName: flags.env === true ? undefined : flags.env,
     modeName: flags.mode === true ? undefined : flags.mode,
+    tracingScope: flags["tracing-scope"],
   });
   try {
     if (command === "dev") {

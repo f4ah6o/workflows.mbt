@@ -1,3 +1,4 @@
+import { differentialProbes as probesForCandidate } from "../compat/candidate-policy.mjs";
 // Upstream-tracking fault-injection suite (spec §7). Every case is hermetic:
 // it runs the real compat/*.mjs scripts against a throwaway results dir via
 // WORKFLOWS_MBT_RESULTS_DIR, so failures are injected by crafting evidence —
@@ -14,9 +15,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const catalog = JSON.parse(readFileSync(join(root, "compat/probes/catalog.json"), "utf8"));
-const differentialProbes = catalog.probes
-  .filter((probe) => probe.differential !== false)
-  .map((probe) => probe.id);
+const differentialProbes = probesForCandidate(catalog, { versions: { workersTypes: "5.20260928.1" } });
 
 function dir() {
   return mkdtempSync(join(tmpdir(), "wfmbt-ops-"));

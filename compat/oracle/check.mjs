@@ -1,3 +1,4 @@
+import { extractBatchDeclarations } from "./batch-contract.mjs";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -32,7 +33,7 @@ function gitCommit() {
 }
 
 const manifest = JSON.parse(readFileSync(join(root, "compat/oracle/manifest.json"), "utf8"));
-const expectedApi = JSON.parse(readFileSync(join(root, "compat/oracle/api-surface.json"), "utf8"));
+let expectedApi = JSON.parse(readFileSync(join(root, "compat/oracle/api-surface.json"), "utf8"));
 const expectedSchema = JSON.parse(readFileSync(join(root, "compat/oracle/wrangler-schema.json"), "utf8"));
 
 function stripComments(text) {
@@ -219,6 +220,7 @@ function extractApiSurface(text) {
   for (const [name, block] of Object.entries(blocks)) {
     if (!block) throw new Error("Could not locate Cloudflare declaration: " + name);
   }
+  Object.assign(blocks, extractBatchDeclarations(text));
   const eventStart = text.search(/type\s+WorkflowInstanceEvent\b/);
   const eventEnd = text.search(/type\s+WorkflowInstanceEventType\b/);
   const eventText = eventStart >= 0 && eventEnd > eventStart ? text.slice(eventStart, eventEnd) : "";
@@ -360,6 +362,12 @@ try {
   if (!existsSync(typesPath)) throw new Error("Missing " + typesPath);
   if (!existsSync(schemaPath)) throw new Error("Missing " + schemaPath);
 
+  // A reviewed additive contract for exact verified workers-types releases.
+  // Never rewrite the pinned baseline or accept an unknown future signature.
+  const batchProfile = JSON.parse(readFileSync(join(root, "compat/oracle/batch-create-surface.json"), "utf8"));
+  if (mode === "latest" && batchProfile.workersTypes.includes(versions.workersTypes)) {
+    expectedApi = { ...expectedApi, hashes: { ...expectedApi.hashes, ...batchProfile.hashes } };
+  }
   const api = extractApiSurface(readFileSync(typesPath, "utf8"));
   if (!writeSnapshot) {
   const schema = extractSchemaSurface(JSON.parse(readFileSync(schemaPath, "utf8")));
@@ -376,6 +384,7 @@ try {
   }
   compareSet("Wrangler.workflows[]", expectedSchema.workflowBindingKeys, schema.workflowBindingKeys, drift);
 
+  compareSet("ApiDeclaration", Object.keys(expectedApi.hashes), Object.keys(api.hashes), drift);
   for (const [name, expectedHash] of Object.entries(expectedApi.hashes)) {
     const actualHash = api.hashes[name];
     if (actualHash !== expectedHash) drift.changed.push(name + ": " + expectedHash + " -> " + actualHash);
@@ -408,6 +417,7 @@ try {
     versions,
     runtime: candidate.runtime ?? null,
     baselineHash: "sha256:" + sha256File(join(root, "compat/oracle/api-surface.json")),
+    batchProfileHash: "sha256:" + sha256File(join(root, "compat/oracle/batch-create-surface.json")),
     localSurface,
     drift,
     pass: drift.added.length === 0 && drift.removed.length === 0 && drift.changed.length === 0,

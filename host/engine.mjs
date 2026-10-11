@@ -95,6 +95,7 @@ export class WorkflowRuntime {
     env = {},
     envName = null,
     modeName = null,
+    tracingScope,
     kernelPath = resolve(packageRoot, "dist/workflows_core.mjs"),
     storage: storageOverride = null,
   } = {}) {
@@ -104,6 +105,7 @@ export class WorkflowRuntime {
       buildDir,
       envName,
       modeName,
+      tracingScope,
     });
     const kernel = await loadKernel(kernelPath);
     const storage = storageOverride ?? openStorage(config);
@@ -225,11 +227,11 @@ export class WorkflowRuntime {
       typeof id !== "string" ||
       id.length < 1 ||
       id.length > 100 ||
-      /^cf_[0-9a-f]{64}$/i.test(id)
+      /^cf_[0-9a-f]{64}$/.test(id)
     ) {
       throw new TypeError("Workflow instance id must be 1..100 characters and not use the reserved cf_<sha256> namespace");
     }
-    const payload = serializeJson(options.params ?? {}, "workflow params");
+    const payload = serializeJson(options.params === undefined ? {} : options.params, "workflow params");
     const retention = this.resolveRetention(workflow, options.retention ?? {});
     this.storage.createInstance({ id, workflowName, payload, retention });
     return new WorkflowInstanceHandle(this, workflowName, id);

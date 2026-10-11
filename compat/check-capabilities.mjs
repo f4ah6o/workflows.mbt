@@ -1,3 +1,4 @@
+import { differentialProbes } from "./candidate-policy.mjs";
 // Validates compat/capabilities.json (formatVersion 2) against the probe
 // catalog, the resolved inventory (baselines ⋈ classification), and the
 // differential results actually produced.
@@ -219,12 +220,10 @@ for (const row of matrix.capabilities ?? []) {
 
 // A differential run must cover the whole differential-eligible catalog; a
 // partial/stale file is not evidence for any row.
-const catalogDifferentialProbes = catalog.probes
-  .filter((probe) => probe.differential !== false)
-  .map((probe) => probe.id)
-  .sort();
 for (const [oracle, result] of Object.entries(differential)) {
   if (!result) continue;
+  const candidate = loadResult("candidate-" + oracle + ".json");
+  const catalogDifferentialProbes = differentialProbes(catalog, candidate).sort();
   const covered = [...(result.probes ?? [])].sort();
   if (JSON.stringify(covered) !== JSON.stringify(catalogDifferentialProbes)) {
     fail("differential-" + oracle + ".json covers " + covered.length + "/" + catalogDifferentialProbes.length + " catalog probes — stale or partial result");

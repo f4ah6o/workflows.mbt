@@ -155,7 +155,7 @@ export function computeRelevantInputs(rootDir, candidate, { inventoryDir = "comp
       return existsSync(path) ? (statSync(path).isDirectory() ? listFilesRecursive(path) : [path]) : [];
     });
   const probeSourcePaths = listFilesRecursive(join(rootDir, "compat/probes/src"));
-  const comparisonPaths = ["compat/normalize.mjs", "compat/probe-client.mjs"].map((p) => join(rootDir, p));
+  const comparisonPaths = ["compat/normalize.mjs", "compat/probe-client.mjs", "compat/candidate-policy.mjs", "compat/run-differential.mjs"].map((p) => join(rootDir, p));
   const inventoryRoot = isAbsolute(inventoryDir) ? inventoryDir : resolve(rootDir, inventoryDir);
   const inventoryPaths = listFilesRecursive(inventoryRoot).filter((path) => path.endsWith(".json"));
   // The pinned verdict also depends on candidate resolution, contract
@@ -170,7 +170,7 @@ export function computeRelevantInputs(rootDir, candidate, { inventoryDir = "comp
   ];
   const configPaths = [
     "compat/probes/cloudflare.config.ts",
-    "compat/probes/vite.config.ts",
+    "compat/probes/vite.config.mts",
     "fixtures/e2e/workflows.mbt.json",
   ]
     .map((p) => join(rootDir, p))

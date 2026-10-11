@@ -108,3 +108,8 @@ decisions, not code:
 Re-checked against main @ `664dc3e` (2026-10-09): still open — GitHub Issues
 remains disabled (`has_issues: false`) and hosted credentials remain
 unprovisioned.
+
+Re-checked against main @ `49c71e0` (2026-10-10): still open — `has_issues`
+is still `false` (repo admin must enable Issues in Settings → Features) and
+the Cloudflare hosted credentials for `compat-hosted.yml` are still
+unprovisioned (repo secrets). Both remaining gaps are operational, not code.

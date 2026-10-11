@@ -1,3 +1,4 @@
+import { differentialProbes } from "./candidate-policy.mjs";
 // Run verdict — classifies one compat run into a machine-readable outcome so
 // "upstream could not be fetched" is never reported as "compatible", and a
 // stale/partial result file is never evidence.
@@ -51,10 +52,6 @@ function gitCommit() {
 }
 
 const catalog = JSON.parse(readFileSync(join(root, "compat/probes/catalog.json"), "utf8"));
-const catalogDifferential = catalog.probes
-  .filter((probe) => probe.differential !== false)
-  .map((probe) => probe.id)
-  .sort();
 
 function loadPhase(name, requiredFields) {
   const path = join(resultsDir, name);
@@ -74,6 +71,7 @@ function loadPhase(name, requiredFields) {
 // Hosted has no candidate/contract phases — it verifies the probe catalog only.
 const candidate = oracle === "hosted" ? { status: "ok", result: null }
   : loadPhase(`candidate-${oracle}.json`, ["status", "id"]);
+const catalogDifferential = differentialProbes(catalog, candidate.result).sort();
 const contract = loadPhase(`drift-${oracle}.json`, ["mode", "checkedAt", "candidateId", "pass"]);
 const differentialRequired = oracle === "hosted"
   ? ["oracle", "checkedAt", "probes", "pass"]
