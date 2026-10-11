@@ -57,7 +57,7 @@
     "prepack": "node scripts/prepare-pack.mjs",
     "postpack": "node scripts/prepare-pack.mjs --cleanup",
     "test:scenario": "node scripts/consumer-scenario.mjs",
-    "test:upstream-ops": "node --test tests/upstream-ops.test.mjs tests/run-pinned.test.mjs",
+    "test:upstream-ops": "node --test tests/upstream-ops.test.mjs tests/run-pinned.test.mjs tests/report.test.mjs",
     "test:inventory": "node --test tests/coverage-inventory.test.mjs",
     "test:coverage": "node --test tests/coverage-pipeline.test.mjs",
     "test:upstream-coverage": "node --test tests/upstream-coverage.test.mjs",

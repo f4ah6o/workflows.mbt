@@ -2,9 +2,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { resultsDirFor } from "./candidate.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const out = join(root, "compat-results");
+const out = resultsDirFor(root);
 mkdirSync(out, { recursive: true });
 const manifest = JSON.parse(readFileSync(join(root, "compat/oracle/manifest.json"), "utf8"));
 
@@ -63,6 +64,30 @@ function oracleOutcome(contract, semantic) {
   return contractText + " + " + semanticText;
 }
 
+function pinnedOutcome() {
+  if (!verdictPinned) {
+    return oracleOutcome(driftPinned, differentialPinned) + " — no pinned verdict file";
+  }
+  const evidence = coverage?.oracles?.pinned;
+  if (coverage?.status !== "ok" || evidence?.measured !== true) {
+    return "unverified — no validated pinned differential evidence";
+  }
+  if (evidence.fresh !== true) {
+    return "STALE — pinned evidence no longer matches current inputs; rerun compat:pinned";
+  }
+  if (verdictPinned.oracle !== "pinned"
+      || !verdictPinned.runId || verdictPinned.runId !== evidence.runId
+      || !verdictPinned.candidate?.id || verdictPinned.candidate.id !== evidence.candidateId) {
+    return "unverified — pinned verdict does not match the evidence run/candidate";
+  }
+  if (!verdictPinned.verdict
+      || (verdictPinned.verdict === "compatible" && verdictPinned.pass !== true)) {
+    return "unverified — invalid pinned verdict";
+  }
+  return "verdict **" + verdictPinned.verdict + "** (run " + verdictPinned.runId
+    + ", candidate " + verdictPinned.candidate.id + ")";
+}
+
 const EVIDENCE_LABELS = [
   ["implemented", "impl"],
   ["repository_tested", "repo-tested"],
@@ -85,10 +110,7 @@ const lines = [
   "",
   "## Outcome",
   "",
-  "- pinned oracle: " + (verdictPinned
-      ? "verdict **" + verdictPinned.verdict + "** (run " + (verdictPinned.runId ?? "?")
-        + ", candidate " + (verdictPinned.candidate?.id ?? "?") + ")"
-      : oracleOutcome(driftPinned, differentialPinned) + " — no pinned verdict file"),
+  "- pinned oracle: " + pinnedOutcome(),
   "- latest oracle: " + (verdictLatest
       ? `verdict **${verdictLatest.verdict}** (run ${verdictLatest.runId ?? "?"}, candidate ${verdictLatest.candidate?.id ?? "?"})`
       : oracleOutcome(driftLatest, differentialLatest) + " — no verdict file"),
