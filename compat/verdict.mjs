@@ -209,7 +209,7 @@ if (oracle === "pinned" && verdict === "compatible") {
   const evidence = validatePinnedEvidence({ rootDir: root, resultsDir,
     runId: process.env.WORKFLOWS_MBT_RUN_ID ?? differential.result?.runId,
     candidateId: candidate.result?.id, inventoryDir: process.env.WORKFLOWS_MBT_INVENTORY_DIR });
-  if (evidence.status !== "ok") {
+  if (evidence.status !== "ok" || evidence.pass !== true) {
     verdict = evidence.issues.includes("typecheck process failed") ? "local-runtime-failure" : "incomplete-evidence";
     issues.push(...evidence.issues);
   }

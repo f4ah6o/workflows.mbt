@@ -82,7 +82,7 @@ function pinnedOutcome() {
     return "unverified — pinned verdict does not match the evidence run/candidate";
   }
   if (!verdictPinned.verdict
-      || (verdictPinned.verdict === "compatible" && verdictPinned.pass !== true)) {
+      || verdictPinned.pass !== (verdictPinned.verdict === "compatible")) {
     return "unverified — invalid pinned verdict";
   }
   const chain = validatePinnedEvidence({ rootDir: root, resultsDir: out,
@@ -90,6 +90,9 @@ function pinnedOutcome() {
     inventoryDir: process.env.WORKFLOWS_MBT_INVENTORY_DIR });
   if (chain.status !== "ok") {
     return (chain.status === "stale" ? "STALE" : "unverified") + " — " + chain.issues.join("; ");
+  }
+  if (verdictPinned.verdict === "compatible" && chain.pass !== true) {
+    return "unverified — " + chain.issues.join("; ");
   }
   return "verdict **" + verdictPinned.verdict + "** (run " + verdictPinned.runId
     + ", candidate " + verdictPinned.candidate.id + ")";

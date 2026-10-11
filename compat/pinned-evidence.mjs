@@ -76,5 +76,5 @@ export function validatePinnedEvidence({ rootDir, resultsDir, runId, candidateId
       || fingerprintIsStale(record.fingerprint, inputs)) {
     return { status: "stale", issues: ["pinned run inputs no longer match"] };
   }
-  return { status: issues.length ? "failed" : "ok", issues };
+  return { status: "ok", pass: issues.length === 0, issues };
 }

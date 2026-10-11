@@ -289,3 +289,63 @@ for (const failedPhase of ["candidate-typecheck", "typecheck", "capabilities", "
     assert.doesNotMatch(f.report().outcome, /compatible/);
   });
 }
+
+for (const driftPhase of ["contract", "differential"]) {
+  test("pinned report preserves fresh, complete " + driftPhase + " drift evidence", (t) => {
+    const f = fixture(t);
+    rmSync(f.results, { recursive: true });
+    mkdirSync(f.results);
+    const runId = "observed-" + driftPhase + "-drift";
+    const candidate = { ...f.verdict.candidate, runId };
+    const common = { runId, candidateId: candidate.id, pass: true, checkedAt: new Date().toISOString() };
+    const result = runPinned({
+      cwd: root, runId,
+      env: { ...process.env, WORKFLOWS_MBT_RESULTS_DIR: f.results, WORKFLOWS_MBT_INVENTORY_DIR: f.inventory },
+      output: { log() {} },
+      spawn(command, args, options) {
+        const script = args[0];
+        if (script === "compat/candidate.mjs") f.write("candidate-pinned.json", candidate);
+        if (script === "compat/run-typecheck.mjs") f.write("typecheck-pinned.json", { ...common, oracle: "pinned" });
+        if (script === "compat/oracle/check.mjs") {
+          const pass = driftPhase !== "contract";
+          f.write("drift-pinned.json", { ...common, mode: "pinned", pass, versions: {},
+            drift: { added: [], removed: pass ? [] : ["WorkflowStep.do"], changed: [] } });
+          return { status: pass ? 0 : 1 };
+        }
+        if (script === "compat/run-differential.mjs") {
+          const pass = driftPhase !== "differential";
+          f.write("differential-pinned.json", { ...f.differential, ...common, pass,
+            differences: pass ? {} : { "binding-create-batch": { expected: "upstream", actual: "local" } },
+            fingerprint: buildResultFingerprint({ runId, oracle: "pinned", candidate,
+              relevantInputs: computeRelevantInputs(root, candidate, { inventoryDir: f.inventory }) }) });
+          return { status: pass ? 0 : 1 };
+        }
+        if (script === "compat/verdict.mjs") {
+          return spawnSync(command, args, { ...options, stdio: "pipe", encoding: "utf8", timeout: 120000 });
+        }
+        if (script === "compat/check-capabilities.mjs" && driftPhase === "differential") return { status: 1 };
+        return { status: 0 };
+      },
+    });
+    assert.equal(result.pass, false);
+    assert.equal(result.phases.find((phase) => phase.name === driftPhase).status, 1);
+    const verdict = JSON.parse(readFileSync(join(f.results, "verdict-pinned.json"), "utf8"));
+    const classification = driftPhase === "contract" ? "contract-drift" : "semantic-drift";
+    assert.equal(verdict.verdict, classification);
+    assert.equal(verdict.pass, false);
+    const report = f.report();
+    assert.equal(report.coverage.oracles.pinned.fresh, true);
+    assert.ok(report.outcome.includes("verdict **" + classification + "**"), report.outcome);
+
+    f.write("verdict-pinned.json", { ...verdict, verdict: "compatible", pass: true });
+    assert.match(f.report().outcome, /unverified/);
+    f.write("verdict-pinned.json", verdict);
+    const path = join(f.results, driftPhase === "contract" ? "drift-pinned.json" : "differential-pinned.json");
+    const original = readFileSync(path);
+    appendFileSync(path, "\n");
+    assert.match(f.report().outcome, /unverified/);
+    writeFileSync(path, original);
+    rmSync(join(f.results, "typecheck-pinned.json"));
+    assert.match(f.report().outcome, /unverified/);
+  });
+}
