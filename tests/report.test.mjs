@@ -65,6 +65,7 @@ function fixture(t, { isolated = false, hardlinkNodeModules = false } = {}) {
   const record = createPinnedEvidenceRecorder({ rootDir: repository, resultsDir: results,
     runId: verdict.runId, inventoryDir: inventory });
   for (const name of PINNED_REQUIRED_PHASES) record({ name, status: 0, error: null });
+  record({ name: "verdict", status: 0, error: null });
   function report(expectedStatus = 0) {
     const result = spawnSync(process.execPath, [join(repository, "compat/report.mjs")], {
       env: { ...process.env, WORKFLOWS_MBT_RESULTS_DIR: results, WORKFLOWS_MBT_INVENTORY_DIR: inventory },
@@ -90,6 +91,27 @@ function restrictCatalogToCandidate(repository, candidate) {
     probe.differential === false || applicable.has(probe.id));
   writeFileSync(path, JSON.stringify(isolatedCatalog));
 }
+
+test("pinned report rejects verdict-only drift substitutions and missing verdict receipts", (t) => {
+  const f = fixture(t);
+  assert.match(f.report().outcome, /verdict \*\*compatible\*\*/);
+  for (const verdict of ["semantic-drift", "contract-drift"]) {
+    f.write("verdict-pinned.json", { ...f.verdict, verdict, pass: false });
+    assert.match(f.report().outcome, /unverified/);
+  }
+  f.write("verdict-pinned.json", f.verdict);
+  const record = JSON.parse(readFileSync(join(f.results, "run-pinned.json"), "utf8"));
+  for (const patch of ["missing-receipt", "missing-hash", "failed-generator"]) {
+    const changed = structuredClone(record);
+    if (patch === "missing-receipt") changed.phases = changed.phases.filter((p) => p.name !== "verdict");
+    if (patch === "missing-hash") delete changed.phases.find((p) => p.name === "verdict").outputHash;
+    if (patch === "failed-generator") changed.phases.find((p) => p.name === "verdict").status = 1;
+    f.write("run-pinned.json", changed);
+    assert.match(f.report().outcome, /unverified/);
+  }
+  f.write("run-pinned.json", record);
+  assert.match(f.report().outcome, /verdict \*\*compatible\*\*/);
+});
 
 test("pinned report downgrades a compatible verdict after relevant inputs change", (t) => {
   const f = fixture(t);
@@ -334,7 +356,8 @@ for (const [driftPhase, probe] of [["contract", null], ["differential", "binding
     });
     assert.equal(result.pass, false);
     assert.equal(result.phases.find((phase) => phase.name === driftPhase).status, 1);
-    const verdict = JSON.parse(readFileSync(join(f.results, "verdict-pinned.json"), "utf8"));
+    const verdictBytes = readFileSync(join(f.results, "verdict-pinned.json"));
+    const verdict = JSON.parse(verdictBytes);
     const classification = driftPhase === "contract" ? "contract-drift" : "semantic-drift";
     assert.equal(verdict.verdict, classification);
     assert.equal(verdict.pass, false);
@@ -350,9 +373,15 @@ for (const [driftPhase, probe] of [["contract", null], ["differential", "binding
     }
     assert.ok(report.outcome.includes("verdict **" + classification + "**"), report.outcome);
 
+    const changedClassification = classification === "contract-drift" ? "semantic-drift" : "contract-drift";
+    f.write("verdict-pinned.json", { ...verdict, verdict: changedClassification });
+    assert.match(f.report(expectedReportStatus).outcome, /unverified/);
+    writeFileSync(join(f.results, "verdict-pinned.json"), verdictBytes);
+    assert.ok(f.report(expectedReportStatus).outcome.includes("verdict **" + classification + "**"));
+
     f.write("verdict-pinned.json", { ...verdict, verdict: "compatible", pass: true });
     assert.match(f.report(expectedReportStatus).outcome, /unverified/);
-    f.write("verdict-pinned.json", verdict);
+    writeFileSync(join(f.results, "verdict-pinned.json"), verdictBytes);
     const path = join(f.results, driftPhase === "contract" ? "drift-pinned.json" : "differential-pinned.json");
     const original = readFileSync(path);
     appendFileSync(path, "\n");

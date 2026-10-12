@@ -46,6 +46,7 @@ function pinnedFailureDiagnostic() {
     }
     const chain = validatePinnedEvidence({ rootDir: root, resultsDir: out,
       runId: verdict.runId, candidateId: verdict.candidate.id,
+      requireVerdict: true,
       inventoryDir: process.env.WORKFLOWS_MBT_INVENTORY_DIR });
     if (chain.status !== "ok") {
       return (chain.status === "stale" ? "STALE" : "unverified") + " — " + chain.issues.join("; ");
@@ -121,6 +122,7 @@ function pinnedOutcome() {
   }
   const chain = validatePinnedEvidence({ rootDir: root, resultsDir: out,
     runId: verdictPinned.runId, candidateId: verdictPinned.candidate.id,
+    requireVerdict: true,
     inventoryDir: process.env.WORKFLOWS_MBT_INVENTORY_DIR });
   if (chain.status !== "ok") {
     return (chain.status === "stale" ? "STALE" : "unverified") + " — " + chain.issues.join("; ");

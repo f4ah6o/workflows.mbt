@@ -10,6 +10,8 @@ The pinned tuple is defined by `compat/oracle/manifest.json`. Latest and hosted 
 
 Evidence validity is separate from a passing outcome: complete, fresh negative evidence retains its verdict classification (such as `contract-drift` or `semantic-drift`) in the report, even when the recorded phase exits nonzero. Only a `compatible` outcome additionally requires every phase to pass.
 
+After the verdict generator exits, the orchestrator records its exit status and the hash of `verdict-pinned.json` in the same run receipt. Both normal and INVALID-coverage reports require this binding as well as the unchanged phase evidence. Editing only a saved verdict (including changing one negative classification to another) is `unverified`. Verdict generation itself checks the preceding phase chain without requiring its own future receipt. Older runs lacking the verdict receipt must be rerun, not backfilled. These hashes detect independently changed artifacts; they are not signatures protecting against coordinated modification of both artifacts and receipts.
+
 If coverage validation fails (including drift on a declared-supported probe), `compat:report` still exits nonzero and replaces `report.md` with a diagnostic-only report marked `Coverage: INVALID`. It never emits compatibility claims or coverage totals on that path. A negative pinned verdict is shown only after independently validating its complete, fresh evidence chain; missing/malformed/changed evidence is `unverified`, and stale inputs are `STALE`. The previous report is invalidated before validation starts.
 
 For differences or acquisition failures, inspect `compat-results/verdict-pinned.json` and the phase-specific result files; do not refresh baselines merely to silence drift.

@@ -8,6 +8,7 @@ const outputs = {
   "candidate-typecheck": "typecheck-pinned.json",
   contract: "drift-pinned.json",
   differential: "differential-pinned.json",
+  verdict: "verdict-pinned.json",
 };
 
 function readJson(path) {
@@ -21,7 +22,7 @@ export function createPinnedEvidenceRecorder({ rootDir, resultsDir, runId, inven
   mkdirSync(resultsDir, { recursive: true });
   save();
   return (phase) => {
-    if (!PINNED_REQUIRED_PHASES.includes(phase.name)) return;
+    if (!PINNED_REQUIRED_PHASES.includes(phase.name) && phase.name !== "verdict") return;
     if (phase.name === "candidate") {
       const candidate = readJson(join(resultsDir, outputs.candidate));
       record.candidateId = candidate?.id ?? null;
@@ -41,7 +42,7 @@ export function createPinnedEvidenceRecorder({ rootDir, resultsDir, runId, inven
 }
 
 // Both the machine verdict and the report use the same complete evidence gate.
-export function validatePinnedEvidence({ rootDir, resultsDir, runId, candidateId, inventoryDir }) {
+export function validatePinnedEvidence({ rootDir, resultsDir, runId, candidateId, inventoryDir, requireVerdict = false }) {
   const issues = [];
   const invalid = (message) => ({ status: "unverified", issues: [message] });
   const record = readJson(join(resultsDir, "run-pinned.json"));
@@ -75,6 +76,21 @@ export function validatePinnedEvidence({ rootDir, resultsDir, runId, candidateId
   if (record.fingerprint?.runId !== record.runId || record.fingerprint?.oracle !== "pinned"
       || fingerprintIsStale(record.fingerprint, inputs)) {
     return { status: "stale", issues: ["pinned run inputs no longer match"] };
+  }
+  // Generation validates the phase chain before the verdict exists; reports
+  // additionally bind the saved verdict to the completed generator process.
+  if (requireVerdict) {
+    const receipts = record.phases.filter((phase) => phase?.name === "verdict");
+    const verdict = readJson(join(resultsDir, outputs.verdict));
+    if (receipts.length !== 1 || !verdict || verdict.oracle !== "pinned"
+        || verdict.runId !== record.runId || verdict.candidate?.id !== record.candidateId
+        || typeof verdict.pass !== "boolean" || verdict.pass !== (verdict.verdict === "compatible")
+        || receipts[0].status !== (verdict.pass ? 0 : 1) || receipts[0].error) {
+      return invalid("missing or invalid pinned verdict receipt/output");
+    }
+    if (!receipts[0].outputHash || sha256File(join(resultsDir, outputs.verdict)) !== receipts[0].outputHash) {
+      return invalid("pinned verdict changed after generation");
+    }
   }
   return { status: "ok", pass: issues.length === 0, issues };
 }
