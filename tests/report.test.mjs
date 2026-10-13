@@ -149,10 +149,25 @@ test("pinned report requires measured, fingerprinted evidence", (t) => {
   assert.match(f.report().outcome, /unverified/);
 });
 
-test("pinned report retains the no-verdict fallback", (t) => {
+test("pinned report never shows success wording without a verdict", (t) => {
   const f = fixture(t);
   rmSync(join(f.results, "verdict-pinned.json"));
-  assert.match(f.report().outcome, /contract clean \+ semantic probes pass — no pinned verdict file/);
+  const missing = f.report();
+  assert.match(missing.outcome, /unverified/);
+  assert.doesNotMatch(missing.outcome, /contract clean|semantic probes pass|compatible/);
+  appendFileSync(join(f.inventory, "classification.json"), "\n");
+  const stale = f.report();
+  assert.match(stale.outcome, /STALE/);
+  assert.doesNotMatch(stale.outcome, /contract clean|semantic probes pass|compatible/);
+});
+
+test("pinned report regenerates as unverified when the verdict file is malformed", (t) => {
+  const f = fixture(t);
+  writeFileSync(join(f.results, "verdict-pinned.json"), "not JSON");
+  const result = f.report();
+  assert.equal(result.coverage.oracles.pinned.fresh, true);
+  assert.match(result.outcome, /unverified/);
+  assert.doesNotMatch(result.outcome, /compatible/);
 });
 
 test("pinned report invalidates every contract and typecheck input independently", (t) => {

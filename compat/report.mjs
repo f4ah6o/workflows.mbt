@@ -58,9 +58,16 @@ function pinnedFailureDiagnostic() {
   }
 }
 
+// Missing or malformed optional evidence is never a compatibility claim:
+// treat unparseable result files as absent so the render below can still
+// regenerate report.md with an unverified outcome (issue §11).
 function load(name) {
   const path = join(out, name);
-  return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
+  try {
+    return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
+  } catch {
+    return null;
+  }
 }
 
 const differentialPinned = load("differential-pinned.json");
@@ -101,15 +108,17 @@ function oracleOutcome(contract, semantic) {
 }
 
 function pinnedOutcome() {
-  if (!verdictPinned) {
-    return oracleOutcome(driftPinned, differentialPinned) + " — no pinned verdict file";
-  }
   const evidence = coverage?.oracles?.pinned;
   if (coverage?.status !== "ok" || evidence?.measured !== true) {
     return "unverified — no validated pinned differential evidence";
   }
   if (evidence.fresh !== true) {
     return "STALE — pinned evidence no longer matches current inputs; rerun compat:pinned";
+  }
+  // Without the pinned verdict there is no validated compatibility claim, even
+  // when raw phase files happen to show passes: they are unverified diagnostics.
+  if (!verdictPinned) {
+    return "unverified — no pinned verdict file";
   }
   if (verdictPinned.oracle !== "pinned"
       || !verdictPinned.runId || verdictPinned.runId !== evidence.runId
