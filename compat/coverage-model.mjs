@@ -11,7 +11,7 @@
 
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 
 export const ORACLES = ["pinned", "latest", "hosted"];
 
@@ -108,8 +108,11 @@ export function sha256File(path) {
 
 // Deterministic hash of a set of files keyed by their sorted relative paths.
 export function hashFiles(rootDir, paths) {
-  const relPaths = paths.map((path) => relative(rootDir, path)).sort();
-  const parts = relPaths.map((rel) => rel + "\n" + readFileSync(join(rootDir, rel), "utf8"));
+  const files = paths.map((path) => {
+    const absolutePath = isAbsolute(path) ? path : resolve(rootDir, path);
+    return { path: absolutePath, rel: relative(rootDir, absolutePath) };
+  }).sort((left, right) => left.rel < right.rel ? -1 : left.rel > right.rel ? 1 : 0);
+  const parts = files.map(({ path, rel }) => rel + "\n" + readFileSync(path, "utf8"));
   return sha256Text(parts.join("\n---\n"));
 }
 
@@ -153,7 +156,19 @@ export function computeRelevantInputs(rootDir, candidate, { inventoryDir = "comp
     });
   const probeSourcePaths = listFilesRecursive(join(rootDir, "compat/probes/src"));
   const comparisonPaths = ["compat/normalize.mjs", "compat/probe-client.mjs", "compat/candidate-policy.mjs", "compat/run-differential.mjs"].map((p) => join(rootDir, p));
-  const inventoryPaths = listFilesRecursive(resolve(rootDir, inventoryDir)).filter((path) => path.endsWith(".json"));
+  const inventoryRoot = isAbsolute(inventoryDir) ? inventoryDir : resolve(rootDir, inventoryDir);
+  const inventoryPaths = listFilesRecursive(inventoryRoot).filter((path) => path.endsWith(".json"));
+  // The pinned verdict also depends on candidate resolution, contract
+  // baselines and typechecking, not just differential probe inputs.
+  const verificationPaths = [
+    ...listFilesRecursive(join(rootDir, "compat/oracle")),
+    ...listFilesRecursive(join(rootDir, "compat/typecheck")),
+    ...["compat/candidate.mjs", "compat/cli-command.mjs", "compat/run-typecheck.mjs", "compat/run-pinned.mjs",
+      "compat/run-differential.mjs", "compat/verdict.mjs", "compat/coverage-model.mjs",
+      "compat/pinned-evidence.mjs", "compat/check-capabilities.mjs",
+      "package.json", "package-lock.json", ".moonbit-toolchain.json"]
+      .map((path) => join(rootDir, path)).filter((path) => existsSync(path)),
+  ];
   const configPaths = [
     "compat/probes/cloudflare.config.ts",
     "compat/probes/vite.config.mts",
@@ -170,6 +185,7 @@ export function computeRelevantInputs(rootDir, candidate, { inventoryDir = "comp
     inventoryHash: hashFiles(rootDir, inventoryPaths),
     capabilityHash: sha256File(join(rootDir, "compat/capabilities.json")),
     configHash: hashFiles(rootDir, configPaths),
+    verificationSourceHash: hashFiles(rootDir, verificationPaths),
     upstreamCandidate: candidateIdentity(candidate),
     compatibilityDate: conditions.probesCompatibilityDate ?? conditions.compatibilityDate ?? null,
     compatibilityFlags: conditions.compatibilityFlags ?? [],
@@ -197,6 +213,7 @@ export function buildResultFingerprint({ runId, oracle, candidate, relevantInput
       inventoryHash: relevantInputs.inventoryHash,
       capabilityHash: relevantInputs.capabilityHash,
       configHash: relevantInputs.configHash,
+      verificationSourceHash: relevantInputs.verificationSourceHash,
     },
   };
 }

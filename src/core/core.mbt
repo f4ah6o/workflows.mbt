@@ -7,13 +7,13 @@ pub fn step_key(
   instance_id : String,
   step_type : String,
   name : String,
-  count : Int,
+  count : Int32,
 ) -> String {
   instance_id + "/" + step_type + "/" + name + "/" + count.to_string()
 }
 
 ///|
-fn pow2(n : Int) -> Int {
+fn pow2(n : Int32) -> Int32 {
   if n <= 0 {
     1
   } else {
@@ -25,7 +25,11 @@ fn pow2(n : Int) -> Int {
 /// Compute the durable delay after a failed attempt. attempt is 1-origin and is
 /// the attempt which just failed, so the first exponential retry uses base_ms.
 #export_name("wf_retry_delay_ms")
-pub fn retry_delay_ms(base_ms : Int, attempt : Int, backoff : String) -> Int {
+pub fn retry_delay_ms(
+  base_ms : Int32,
+  attempt : Int32,
+  backoff : String,
+) -> Int32 {
   if base_ms < 0 {
     0
   } else if backoff == "linear" {
@@ -39,13 +43,13 @@ pub fn retry_delay_ms(base_ms : Int, attempt : Int, backoff : String) -> Int {
 
 ///|
 #export_name("wf_default_retry_limit")
-pub fn default_retry_limit() -> Int {
+pub fn default_retry_limit() -> Int32 {
   5
 }
 
 ///|
 #export_name("wf_default_retry_delay_ms")
-pub fn default_retry_delay_ms() -> Int {
+pub fn default_retry_delay_ms() -> Int32 {
   10000
 }
 
@@ -57,7 +61,7 @@ pub fn default_step_timeout() -> String {
 
 ///|
 #export_name("wf_default_wait_timeout_ms")
-pub fn default_wait_timeout_ms() -> Int {
+pub fn default_wait_timeout_ms() -> Int32 {
   86400000
 }
 
@@ -94,6 +98,9 @@ pub fn can_execute_instance(status : String) -> Bool {
 ///|
 /// Restart-from-step reuses every step that precedes the target ordinal.
 #export_name("wf_reuse_before_restart")
-pub fn reuse_before_restart(step_ordinal : Int, target_ordinal : Int) -> Bool {
+pub fn reuse_before_restart(
+  step_ordinal : Int32,
+  target_ordinal : Int32,
+) -> Bool {
   step_ordinal < target_ordinal
 }

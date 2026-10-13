@@ -1,11 +1,14 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { resultsDirFor } from "./candidate.mjs";
+import { validatePinnedEvidence } from "./pinned-evidence.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const out = join(root, "compat-results");
+const out = resultsDirFor(root);
 mkdirSync(out, { recursive: true });
+rmSync(join(out, "report.md"), { force: true });
 const manifest = JSON.parse(readFileSync(join(root, "compat/oracle/manifest.json"), "utf8"));
 
 // Re-validate the chain first so the report only ever renders evidence the
@@ -17,19 +20,61 @@ const coverageCheck = spawnSync(process.execPath, [join(root, "compat/coverage.m
   stdio: "inherit",
 });
 if (coverageCheck.status !== 0) {
-  console.error("coverage.mjs failed (status " + coverageCheck.status + ") — coverage INVALID, not rendering a report on unvalidated data");
+  const diagnostic = [
+    "# Compatibility verification report — INVALID", "",
+    "Generated: " + new Date().toISOString(), "",
+    "- Coverage: **INVALID** (coverage.mjs exit status " + coverageCheck.status + ")",
+    "- No compatibility claim or coverage totals are available. This diagnostic replaces any previous report.", "",
+    "## Diagnostic outcome", "",
+    "- pinned oracle: " + pinnedFailureDiagnostic(),
+    "- latest/hosted: not evaluated in this failure report", "",
+    "Inspect verdict-pinned.json, run-pinned.json, coverage.json and validator stderr for details.", "",
+  ].join("\n");
+  writeFileSync(join(out, "report.md"), diagnostic);
+  console.log(diagnostic);
+  console.error("coverage.mjs failed (status " + coverageCheck.status + ") — coverage INVALID, wrote diagnostic-only report");
   process.exit(coverageCheck.status ?? 1);
 }
 
+function pinnedFailureDiagnostic() {
+  try {
+    const verdict = load("verdict-pinned.json");
+    if (verdict?.oracle !== "pinned" || !verdict.runId || !verdict.candidate?.id
+        || verdict.pass !== false || !["contract-drift", "semantic-drift", "local-runtime-failure",
+          "upstream-execution-failure", "upstream-acquisition-failure", "incomplete-evidence"].includes(verdict.verdict)) {
+      return "unverified — no current negative pinned verdict validated";
+    }
+    const chain = validatePinnedEvidence({ rootDir: root, resultsDir: out,
+      runId: verdict.runId, candidateId: verdict.candidate.id,
+      requireVerdict: true,
+      inventoryDir: process.env.WORKFLOWS_MBT_INVENTORY_DIR });
+    if (chain.status !== "ok") {
+      return (chain.status === "stale" ? "STALE" : "unverified") + " — " + chain.issues.join("; ");
+    }
+    return "diagnostic verdict **" + verdict.verdict + "** (run " + verdict.runId
+      + ", candidate " + verdict.candidate.id + ") — coverage remains INVALID";
+  } catch {
+    return "unverified — pinned evidence could not be validated";
+  }
+}
+
+// Missing or malformed optional evidence is never a compatibility claim:
+// treat unparseable result files as absent so the render below can still
+// regenerate report.md with an unverified outcome (issue §11).
 function load(name) {
   const path = join(out, name);
-  return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
+  try {
+    return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
+  } catch {
+    return null;
+  }
 }
 
 const differentialPinned = load("differential-pinned.json");
 const differentialLatest = load("differential-latest.json");
 const driftPinned = load("drift-pinned.json");
 const driftLatest = load("drift-latest.json");
+const verdictPinned = load("verdict-pinned.json");
 const verdictLatest = load("verdict-latest.json");
 const verdictHosted = load("verdict-hosted.json");
 const updateCandidate = load("update-candidate-latest.json");
@@ -62,6 +107,42 @@ function oracleOutcome(contract, semantic) {
   return contractText + " + " + semanticText;
 }
 
+function pinnedOutcome() {
+  const evidence = coverage?.oracles?.pinned;
+  if (coverage?.status !== "ok" || evidence?.measured !== true) {
+    return "unverified — no validated pinned differential evidence";
+  }
+  if (evidence.fresh !== true) {
+    return "STALE — pinned evidence no longer matches current inputs; rerun compat:pinned";
+  }
+  // Without the pinned verdict there is no validated compatibility claim, even
+  // when raw phase files happen to show passes: they are unverified diagnostics.
+  if (!verdictPinned) {
+    return "unverified — no pinned verdict file";
+  }
+  if (verdictPinned.oracle !== "pinned"
+      || !verdictPinned.runId || verdictPinned.runId !== evidence.runId
+      || !verdictPinned.candidate?.id || verdictPinned.candidate.id !== evidence.candidateId) {
+    return "unverified — pinned verdict does not match the evidence run/candidate";
+  }
+  if (!verdictPinned.verdict
+      || verdictPinned.pass !== (verdictPinned.verdict === "compatible")) {
+    return "unverified — invalid pinned verdict";
+  }
+  const chain = validatePinnedEvidence({ rootDir: root, resultsDir: out,
+    runId: verdictPinned.runId, candidateId: verdictPinned.candidate.id,
+    requireVerdict: true,
+    inventoryDir: process.env.WORKFLOWS_MBT_INVENTORY_DIR });
+  if (chain.status !== "ok") {
+    return (chain.status === "stale" ? "STALE" : "unverified") + " — " + chain.issues.join("; ");
+  }
+  if (verdictPinned.verdict === "compatible" && chain.pass !== true) {
+    return "unverified — " + chain.issues.join("; ");
+  }
+  return "verdict **" + verdictPinned.verdict + "** (run " + verdictPinned.runId
+    + ", candidate " + verdictPinned.candidate.id + ")";
+}
+
 const EVIDENCE_LABELS = [
   ["implemented", "impl"],
   ["repository_tested", "repo-tested"],
@@ -84,7 +165,7 @@ const lines = [
   "",
   "## Outcome",
   "",
-  "- pinned oracle: " + oracleOutcome(driftPinned, differentialPinned),
+  "- pinned oracle: " + pinnedOutcome(),
   "- latest oracle: " + (verdictLatest
       ? `verdict **${verdictLatest.verdict}** (run ${verdictLatest.runId ?? "?"}, candidate ${verdictLatest.candidate?.id ?? "?"})`
       : oracleOutcome(driftLatest, differentialLatest) + " — no verdict file"),

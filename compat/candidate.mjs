@@ -36,6 +36,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { parse as parseJsonc } from "jsonc-parser";
+import { npmCommand } from "./cli-command.mjs";
 
 const execFileP = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -114,10 +115,11 @@ function flattenLs(node, into = {}) {
   return into;
 }
 
-async function npmLsGraph(dir) {
-  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-  const { stdout } = await execFileP(npm, ["ls", "--json", "--all", "--long=false"], {
+async function npmLsGraph(dir, env = process.env) {
+  const npm = npmCommand(["ls", "--json", "--all", "--long=false"], { env });
+  const { stdout } = await execFileP(npm.command, npm.args, {
     cwd: dir,
+    env,
     maxBuffer: 32 * 1024 * 1024,
   });
   const parsed = JSON.parse(stdout);
@@ -151,6 +153,28 @@ function nodeModulesVersion(rootDir, pkg) {
 }
 
 export async function resolvePinned(rootDir = root, resultsDir = resultsDirFor(rootDir)) {
+  try {
+    return await resolvePinnedCandidate(rootDir, resultsDir);
+  } catch (error) {
+    return writePinnedFailure(resultsDir, process.env.WORKFLOWS_MBT_RUN_ID ?? null, error);
+  }
+}
+
+export function writePinnedFailure(resultsDir, runId, error) {
+  const candidate = {
+    formatVersion: 1,
+    mode: "pinned",
+    status: "acquisition-failure",
+    runId,
+    resolvedAt: new Date().toISOString(),
+    error: error?.message ?? String(error),
+  };
+  candidate.id = "pinned-failed-" + sha256(JSON.stringify(candidate)).slice(0, 16);
+  writeCandidate(candidate, resultsDir);
+  return candidate;
+}
+
+async function resolvePinnedCandidate(rootDir, resultsDir) {
   const versions = {
     cf: nodeModulesVersion(rootDir, "cf"),
     vitePlugin: nodeModulesVersion(rootDir, "@cloudflare/vite-plugin"),
@@ -177,6 +201,7 @@ export async function resolvePinned(rootDir = root, resultsDir = resultsDirFor(r
     formatVersion: 1,
     mode: "pinned",
     status: "ok",
+    runId: process.env.WORKFLOWS_MBT_RUN_ID ?? null,
     resolvedAt: new Date().toISOString(),
     source: { type: "package-lock", lockfile: "package-lock.json" },
     requested: {
@@ -214,8 +239,8 @@ export async function resolvePinned(rootDir = root, resultsDir = resultsDirFor(r
 }
 
 async function npmView(pkg, spec, env) {
-  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-  const { stdout } = await execFileP(npm, ["view", pkg + "@" + spec, "--json"], {
+  const npm = npmCommand(["view", pkg + "@" + spec, "--json"], { env });
+  const { stdout } = await execFileP(npm.command, npm.args, {
     cwd: root,
     env,
     maxBuffer: 16 * 1024 * 1024,
@@ -301,8 +326,8 @@ export async function resolveLatest(rootDir = root, resultsDir = resultsDirFor(r
         workerd: resolved.workerd.version,
       },
     }, null, 2) + "\n");
-    const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-    await execFileP(npm, ["install", "--no-audit", "--no-fund"], {
+    const npm = npmCommand(["install", "--no-audit", "--no-fund"], { env });
+    await execFileP(npm.command, npm.args, {
       cwd: installDir,
       env,
       maxBuffer: 16 * 1024 * 1024,
@@ -315,7 +340,7 @@ export async function resolveLatest(rootDir = root, resultsDir = resultsDirFor(r
   //    wrangler will actually start, which is what the differential verifies.
   let dependency;
   try {
-    dependency = await npmLsGraph(installDir);
+    dependency = await npmLsGraph(installDir, env);
   } catch (error) {
     return fail("graph", error);
   }

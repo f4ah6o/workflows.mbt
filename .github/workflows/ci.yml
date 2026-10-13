@@ -146,3 +146,22 @@ jobs:
         with:
           name: compatibility-pinned
           path: compat-results/
+
+  compat-windows-cli:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install host dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Compatibility CLI tests
+        run: node --test tests/compat-cli.test.mjs tests/run-pinned.test.mjs tests/report.test.mjs
+
+      - name: Compatibility typecheck
+        run: npm run compat:typecheck

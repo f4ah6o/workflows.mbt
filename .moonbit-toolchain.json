@@ -1,11 +1,11 @@
 {
-  "moon": "0.1.20260920",
-  "moonc": "0.10.14+7d59c7ec9",
+  "moon": "0.1.20261012",
+  "moonc": "0.10.15+943464bfa",
   "release": {
-    "tag": "toolchain/0.1.20260920",
-    "moonAsset": "moonbit-linux-x86_64-0.1.20260920.tar.gz",
-    "moonSha256": "9226694de9ff978db1ecf820b7710c4224e84ec7a76b19a222d96f0cd4e31b6a",
-    "coreAsset": "core-0.10.14-7d59c7ec9.tar.gz",
-    "coreSha256": "6f18b8fdea18f85e628a75e4a1bd3977c5a5c9c6a836fd8824192b0e6bd91b14"
+    "tag": "toolchain/0.1.20261012",
+    "moonAsset": "moonbit-linux-x86_64-0.1.20261012.tar.gz",
+    "moonSha256": "24b93a5409d2a4fb8e3d1b84b473f27b63476cef4418094764df96cb26b03c09",
+    "coreAsset": "core-0.10.15-943464bfa.tar.gz",
+    "coreSha256": "96d30f4dbcc6a9e1736ef26fbdd0e8fb0e97cb01d50e55d2a0072208b8061ae5"
   }
 }
