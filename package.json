@@ -16,7 +16,7 @@
     "examples",
     "scripts",
     "src",
-    "moon.mod.json",
+    "moon.mod",
     ".moonbit-toolchain.json",
     "npm-shrinkwrap.json",
     "!**/.workflows",
